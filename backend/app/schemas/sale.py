@@ -39,6 +39,9 @@ class SaleCreate(SaleBase):
     discount: Optional[float] = 0.0
     tax: Optional[float] = 0.0
     amount_paid: Optional[float] = None  # If None, assumes full payment
+    # Customer linking - can provide customer_ref_id or phone to link/create customer
+    customer_ref_id: Optional[int] = None  # Direct link to customer by internal ID
+    customer_id: Optional[str] = None  # Link by readable customer_id (e.g., CUST001)
 
 class Sale(SaleBase):
     id: int
@@ -52,6 +55,9 @@ class Sale(SaleBase):
     change_amount: float = 0.0
     created_at: datetime
     items: List[SaleItem] = []
+    # Customer linking fields
+    customer_ref_id: Optional[int] = None
+    is_walkin: bool = True
 
     class Config:
         from_attributes = True

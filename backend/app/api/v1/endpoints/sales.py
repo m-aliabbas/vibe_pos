@@ -17,6 +17,7 @@ from app.api import deps
 from app.models.sale import Sale, SaleItem
 from app.models.product import Product, ProductVariation
 from app.models.user import User, UserRole
+from app.models.customer import Customer
 from app.schemas.sale import SaleCreate, Sale as SaleSchema, SaleStats
 
 router = APIRouter()
@@ -375,10 +376,71 @@ def create_sale(
     # Normalize phone number
     normalized_phone = normalize_phone_number(sale_in.customer_phone)
     
+    # === CUSTOMER LINKING LOGIC ===
+    # Priority: customer_ref_id > customer_id > phone > walk-in
+    customer_ref_id = None
+    is_walkin = True
+    customer = None
+    
+    # 1. If customer_ref_id provided (direct internal ID)
+    if sale_in.customer_ref_id:
+        customer = db.query(Customer).filter(Customer.id == sale_in.customer_ref_id).first()
+        if customer:
+            customer_ref_id = customer.id
+            is_walkin = False
+    
+    # 2. Else if customer_id provided (readable ID like CUST001)
+    elif sale_in.customer_id:
+        customer = db.query(Customer).filter(
+            Customer.customer_id == sale_in.customer_id.strip().upper()
+        ).first()
+        if customer:
+            customer_ref_id = customer.id
+            is_walkin = False
+    
+    # 3. Else if phone provided - find or create customer
+    elif normalized_phone:
+        customer = db.query(Customer).filter(Customer.phone == normalized_phone).first()
+        
+        if not customer:
+            # Auto-create customer with phone number
+            # Generate customer_id
+            last_customer = db.query(Customer).filter(
+                Customer.customer_id.like("CUST%")
+            ).order_by(Customer.id.desc()).first()
+            
+            if last_customer and last_customer.customer_id:
+                try:
+                    last_num = int(last_customer.customer_id.replace("CUST", ""))
+                    new_num = last_num + 1
+                except ValueError:
+                    new_num = 1
+            else:
+                new_num = 1
+            
+            new_customer_id = f"CUST{new_num:04d}"
+            
+            customer = Customer(
+                customer_id=new_customer_id,
+                phone=normalized_phone,
+                name=sale_in.customer_name,
+                member_since=datetime.utcnow(),
+            )
+            db.add(customer)
+            db.flush()  # Get customer ID
+        
+        customer_ref_id = customer.id
+        is_walkin = False
+    
+    # 4. Else - walk-in customer (no linking)
+    # is_walkin remains True, customer_ref_id remains None
+    
     # Create sale record
     db_sale = Sale(
         user_id=current_user.id,
-        customer_name=sale_in.customer_name,
+        customer_ref_id=customer_ref_id,
+        is_walkin=is_walkin,
+        customer_name=sale_in.customer_name or (customer.name if customer else None),
         customer_phone=normalized_phone,
         payment_method=sale_in.payment_method,
         subtotal=subtotal,
@@ -432,6 +494,16 @@ def create_sale(
             variation.quantity -= int(quantity_in_base_units)
         else:
             product.quantity -= int(quantity_in_base_units)
+    
+    # Update customer statistics if linked
+    if customer and customer_ref_id:
+        customer.total_purchases += 1
+        customer.total_spent += total
+        # Add to outstanding balance if there's amount due (udhar)
+        if amount_due > 0:
+            customer.outstanding_balance += amount_due
+        customer.updated_at = datetime.utcnow()
+        db.add(customer)
     
     # Commit transaction
     try:
