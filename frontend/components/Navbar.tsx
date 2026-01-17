@@ -27,6 +27,7 @@ import {
   Menu,
   X,
   Home,
+  UserCheck,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -56,6 +57,7 @@ export function Navbar() {
     { href: user?.role === 'admin' ? '/admin' : '/sales', label: 'Home', icon: Home, show: true },
     { href: '/sales', label: 'Sales', icon: Store, show: true },
     { href: '/inventory', label: 'Inventory', icon: Package, show: true },
+    { href: '/customers', label: 'Customers', icon: UserCheck, show: true },
     { href: '/vendors', label: 'Vendors', icon: Truck, show: true },
     { href: '/sales/history', label: 'History', icon: Receipt, show: true },
     { href: '/admin', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
