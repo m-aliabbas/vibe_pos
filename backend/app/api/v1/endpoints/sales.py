@@ -616,9 +616,7 @@ def get_sale(
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
     
-    # Cashiers can only see their own sales
-    if current_user.role == UserRole.CASHIER and sale.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this sale")
+    # All authenticated users can view any sale (removed cashier restriction)
     
     return sale
 

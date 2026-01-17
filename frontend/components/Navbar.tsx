@@ -60,7 +60,7 @@ export function Navbar() {
     { href: '/customers', label: 'Customers', icon: UserCheck, show: true },
     { href: '/vendors', label: 'Vendors', icon: Truck, show: true },
     { href: '/sales/history', label: 'History', icon: Receipt, show: true },
-    { href: '/admin', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
+    // { href: '/admin', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
     { href: '/users', label: 'Users', icon: Users, show: user?.role === 'admin' },
   ];
 
