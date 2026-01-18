@@ -1,4 +1,4 @@
-fastapi
+fastapi==0.109.0
 uvicorn
 sqlalchemy
 alembic
@@ -7,6 +7,8 @@ pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
 python-multipart
-reportlab
-pillow
+reportlab==4.0.9
+pillow==12.1.0
 requests
+neonize==0.3.12
+python-dotenv

@@ -1,13 +1,21 @@
+# app/seed.py
 from app.db.session import SessionLocal
 from app.models.user import User, UserRole
 from app.models.vendor import Vendor
 from app.models.product import Product, ProductVariation
 from app.core.security import get_password_hash
-import json
 
-def seed():
-    db = SessionLocal()
-    
+def is_seeded(db) -> bool:
+    """
+    Decide what "seeded" means.
+    A simple, reliable rule: admin exists AND at least one product exists.
+    """
+    admin_exists = db.query(User).filter(User.username == "admin").first() is not None
+    any_product = db.query(Product).first() is not None
+    return admin_exists and any_product
+
+
+def seed_db(db) -> None:
     # Create Admin User
     if not db.query(User).filter(User.username == "admin").first():
         admin = User(
@@ -21,7 +29,7 @@ def seed():
         print("✓ Admin user created")
     else:
         print("✓ Admin user already exists")
-    
+
     # Create Cashier User
     if not db.query(User).filter(User.username == "cashier").first():
         cashier = User(
@@ -35,9 +43,9 @@ def seed():
         print("✓ Cashier user created")
     else:
         print("✓ Cashier user already exists")
-    
+
     db.commit()
-    
+
     # Create Sample Vendor
     if not db.query(Vendor).filter(Vendor.name == "ABC Suppliers").first():
         vendor = Vendor(
@@ -52,9 +60,7 @@ def seed():
         print("✓ Sample vendor created")
     else:
         print("✓ Sample vendor already exists")
-    
-    # Create Sample Products
-    
+
     # 1. T-Shirt with Size & Color variations
     tshirt = db.query(Product).filter(Product.name == "Cotton T-Shirt").first()
     if not tshirt:
@@ -65,7 +71,7 @@ def seed():
             description="Comfortable cotton t-shirt",
             selling_price=15.00,
             cost_price=8.00,
-            quantity=0,  # Stock is in variations
+            quantity=0,
             has_variations=True,
             variation_attributes=["Size", "Color"],
             base_unit="piece",
@@ -74,11 +80,10 @@ def seed():
         db.add(tshirt)
         db.commit()
         print("✓ T-Shirt product created")
-        
-        # Create variations for T-Shirt
+
         sizes = ["S", "M", "L", "XL"]
         colors = ["Red", "Blue", "Black"]
-        
+
         for size in sizes:
             for color in colors:
                 variation = ProductVariation(
@@ -90,12 +95,12 @@ def seed():
                     barcode=None
                 )
                 db.add(variation)
-        
+
         db.commit()
         print(f"  ✓ Created {len(sizes) * len(colors)} T-Shirt variations")
     else:
         print("✓ T-Shirt product already exists")
-    
+
     # 2. Eggs with unit of measure (dozen)
     eggs = db.query(Product).filter(Product.name == "Fresh Eggs").first()
     if not eggs:
@@ -104,9 +109,9 @@ def seed():
             sku="EGG001",
             category="Dairy & Eggs",
             description="Farm fresh eggs",
-            selling_price=0.50,  # Price per piece
+            selling_price=0.50,
             cost_price=0.30,
-            quantity=500,  # 500 pieces in stock
+            quantity=500,
             has_variations=False,
             variation_attributes=[],
             base_unit="piece",
@@ -120,7 +125,7 @@ def seed():
         print("✓ Fresh Eggs product created with unit options")
     else:
         print("✓ Fresh Eggs product already exists")
-    
+
     # 3. Bottled Water with bulk units
     water = db.query(Product).filter(Product.name == "Mineral Water").first()
     if not water:
@@ -129,9 +134,9 @@ def seed():
             sku="WTR001",
             category="Beverages",
             description="500ml bottled water",
-            selling_price=1.00,  # Price per bottle
+            selling_price=1.00,
             cost_price=0.60,
-            quantity=1000,  # 1000 bottles in stock
+            quantity=1000,
             has_variations=False,
             variation_attributes=[],
             base_unit="bottle",
@@ -145,7 +150,7 @@ def seed():
         print("✓ Mineral Water product created with unit options")
     else:
         print("✓ Mineral Water product already exists")
-    
+
     # 4. Rice with weight-based units
     rice = db.query(Product).filter(Product.name == "Basmati Rice").first()
     if not rice:
@@ -154,9 +159,9 @@ def seed():
             sku="RICE001",
             category="Grains",
             description="Premium basmati rice",
-            selling_price=3.00,  # Price per kg
+            selling_price=3.00,
             cost_price=2.00,
-            quantity=500,  # 500 kg in stock
+            quantity=500,
             has_variations=False,
             variation_attributes=[],
             base_unit="kg",
@@ -171,7 +176,7 @@ def seed():
         print("✓ Basmati Rice product created with weight-based units")
     else:
         print("✓ Basmati Rice product already exists")
-    
+
     # 5. Running Shoes with Size variation
     shoes = db.query(Product).filter(Product.name == "Running Shoes").first()
     if not shoes:
@@ -182,7 +187,7 @@ def seed():
             description="Comfortable running shoes",
             selling_price=60.00,
             cost_price=35.00,
-            quantity=0,  # Stock is in variations
+            quantity=0,
             has_variations=True,
             variation_attributes=["Size"],
             base_unit="pair",
@@ -191,10 +196,8 @@ def seed():
         db.add(shoes)
         db.commit()
         print("✓ Running Shoes product created")
-        
-        # Create variations for Shoes
+
         sizes = ["7", "8", "9", "10", "11", "12"]
-        
         for size in sizes:
             variation = ProductVariation(
                 product_id=shoes.id,
@@ -205,13 +208,13 @@ def seed():
                 barcode=None
             )
             db.add(variation)
-        
+
         db.commit()
         print(f"  ✓ Created {len(sizes)} Running Shoes variations")
     else:
         print("✓ Running Shoes product already exists")
-    
-    # 6. Regular product without variations (for comparison)
+
+    # 6. Regular product without variations
     cola = db.query(Product).filter(Product.name == "Coca Cola").first()
     if not cola:
         cola = Product(
@@ -232,24 +235,28 @@ def seed():
         print("✓ Coca Cola product created (regular product)")
     else:
         print("✓ Coca Cola product already exists")
-    
-    print("\n" + "="*50)
+
+    print("\n" + "=" * 50)
     print("🎉 Seed data completed successfully!")
-    print("="*50)
-    print("\nSample credentials:")
-    print("  Admin:   username='admin',   password='admin123'")
-    print("  Cashier: username='cashier', password='cashier123'")
-    print("\nSample products created:")
-    print("  • Cotton T-Shirt (12 variations: S/M/L/XL × Red/Blue/Black)")
-    print("  • Fresh Eggs (with dozen and tray units)")
-    print("  • Mineral Water (with pack and case units)")
-    print("  • Basmati Rice (with gram, 5kg bag, 10kg bag units)")
-    print("  • Running Shoes (6 size variations)")
-    print("  • Coca Cola (regular product without variations)")
-    print("="*50 + "\n")
-    
-    db.close()
+    print("=" * 50)
+
+
+def ensure_seeded() -> None:
+    db = SessionLocal()
+    try:
+        if is_seeded(db):
+            print("✓ Seed already applied (skipping)")
+            return
+
+        print("⚙️ Database not seeded yet. Seeding now...")
+        seed_db(db)
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Seeding failed: {e}")
+        raise
+    finally:
+        db.close()
 
 if __name__ == "__main__":
-    seed()
-
+    ensure_seeded()

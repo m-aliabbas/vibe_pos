@@ -27,8 +27,10 @@ def get_today_date_time_pakistan_time():
     return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
 
 # Create data directory for WhatsApp session
-BACKEND_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
-WHATSAPP_DATA_DIR = BACKEND_DIR / "data" / "whatsapp"
+from app.core.config import settings
+
+# Create data directory for WhatsApp session
+WHATSAPP_DATA_DIR = Path(settings.DATA_DIR) / "whatsapp"
 WHATSAPP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 SESSION_FILE = str(WHATSAPP_DATA_DIR / "my_bot_session.db")
 
@@ -107,7 +109,7 @@ def on_message(client: NewClient, message: MessageEv):
         
         if message.Message.extendedTextMessage:
             text = message.Message.extendedTextMessage.text
-            print(f"💬 Message content: {text}")
+            print(f"💬 Message content: {text} from sender: {sender}")
             if sender in ["923171585452"]:
                 x = random.uniform(0.1, 5.2)
                 if 'day' in text.lower() and 'daily' not in text.lower() or 'today' in text.lower():

@@ -46,16 +46,47 @@ fn main() {
 
                 let (mut rx, _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");
 
-                // Spawn a thread to log sidecar output
+                // Spawn a thread to log Next.js sidecar output
                 tauri::async_runtime::spawn(async move {
                     while let Some(event) = rx.recv().await {
                         if let CommandEvent::Stdout(line) = &event {
-                            println!("SERVER: {}", String::from_utf8_lossy(line));
+                            println!("NEXT SERVER: {}", String::from_utf8_lossy(line));
                         } else if let CommandEvent::Stderr(line) = &event {
-                            println!("SERVER ERROR: {}", String::from_utf8_lossy(line));
+                            println!("NEXT SERVER ERROR: {}", String::from_utf8_lossy(line));
                         }
                     }
                 });
+
+                // Launch Python Backend Sidecar in a visible Terminal Window (User Requirement)
+                #[cfg(target_os = "macos")]
+                {
+                    let current_exe = std::env::current_exe().unwrap();
+                    let bin_dir = current_exe.parent().unwrap();
+                    
+                    // In startup (dev), bin has triple. In bundle (release), it is renamed to just the name.
+                    let backend_name = if cfg!(debug_assertions) {
+                        "backend-server-aarch64-apple-darwin"
+                    } else {
+                        "backend-server"
+                    };
+
+                    let backend_path = bin_dir.join(backend_name);
+                    
+                    println!("Launching backend from: {:?}", backend_path);
+                    
+                    std::process::Command::new("open")
+                        .arg("-a")
+                        .arg("Terminal")
+                        .arg(backend_path)
+                        .spawn()
+                        .expect("Failed to launch backend terminal");
+                }
+                 #[cfg(not(target_os = "macos"))]
+                {
+                   // Fallback for non-macOS (e.g. standard sidecar) or Windows (cmd /c start ...)
+                   // For now, focusing on the macOS requirement.
+                   let _ = app.shell().sidecar("backend-server").unwrap().spawn();
+                }
 
                 // Perform navigation in a separate thread to not block main thread
                 let window_clone = window.clone();

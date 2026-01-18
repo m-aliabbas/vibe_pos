@@ -11,10 +11,13 @@
     "active": true,
     "targets": "all",
     "resources": [
-      "../.next/standalone/**/*"
+      "../.next/standalone/**/*",
+      "bin/.env",
+      "bin/data/**/*"
     ],
     "externalBin": [
-      "bin/next-server"
+      "bin/next-server",
+      "bin/backend-server"
     ],
     "copyright": "",
     "category": "Business",
