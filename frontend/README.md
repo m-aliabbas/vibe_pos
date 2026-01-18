@@ -81,12 +81,19 @@ We can configure Tauri to automatically start the Next.js server, but for now, r
 ```bash
 npm run tauri:build
 ```
+Output: `src-tauri/target/release/bundle/dmg/*.dmg`
 
-This will:
-1. Build Next.js in standalone mode
-2. Compile the Rust backend
-3. Bundle everything into a native application
-4. Output will be in `src-tauri/target/release/bundle/`
+### Windows
+Building for Windows requires a Windows environment (VM or Physical PC) or a CI/CD pipeline (like GitHub Actions).
+1.  **Install Prerequisites**:
+    - [Rust](https://www.rust-lang.org/tools/install)
+    - [C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+    - [Node.js](https://nodejs.org/)
+2.  **Run Build**:
+    ```bash
+    npm run tauri:build
+    ```
+Output: `src-tauri/target/release/bundle/msi/*.msi`
 
 ### Build Outputs
 

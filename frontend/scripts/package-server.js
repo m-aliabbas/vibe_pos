@@ -3,7 +3,24 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 // Configuration
-const TARGET_TRIPLE = 'aarch64-apple-darwin'; // For M1/M2 Macs
+const platform = process.platform;
+const arch = process.arch;
+
+let TARGET_TRIPLE = '';
+let EXTENSION = '';
+
+if (platform === 'darwin') {
+    TARGET_TRIPLE = arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
+} else if (platform === 'win32') {
+    TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
+    EXTENSION = '.exe';
+} else if (platform === 'linux') {
+    TARGET_TRIPLE = 'x86_64-unknown-linux-gnu';
+} else {
+    console.error(`Unsupported platform: ${platform}`);
+    process.exit(1);
+}
+
 const BIN_NAME = 'next-server';
 const BIN_DIR = path.join(__dirname, '../src-tauri/bin');
 
@@ -52,7 +69,7 @@ copyDir(publicSrc, publicDest);
 // 2. Bundle Node.js binary as the sidecar
 console.log('🤖  Bundling Node.js binary...');
 const nodePath = process.execPath; // Use the current Node binary
-const sidecarPath = path.join(BIN_DIR, `${BIN_NAME}-${TARGET_TRIPLE}`);
+const sidecarPath = path.join(BIN_DIR, `${BIN_NAME}-${TARGET_TRIPLE}${EXTENSION}`);
 
 fs.copyFileSync(nodePath, sidecarPath);
 fs.chmodSync(sidecarPath, 0o755);
