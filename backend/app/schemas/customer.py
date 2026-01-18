@@ -53,6 +53,10 @@ class CustomerBase(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
     address: Optional[str] = None
+    # Vehicle Oil Change Tracking (optional)
+    current_mileage: Optional[int] = None
+    oil_change_interval: Optional[int] = None
+    next_oil_change_mileage: Optional[int] = None
 
 
 class CustomerCreate(CustomerBase):
@@ -66,9 +70,16 @@ class CustomerUpdate(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
     address: Optional[str] = None
+    # Vehicle Oil Change Tracking (optional)
+    current_mileage: Optional[int] = None
+    oil_change_interval: Optional[int] = None
+    next_oil_change_mileage: Optional[int] = None
 
 
 class CustomerResponse(CustomerBase):
+    current_mileage: Optional[int] = None
+    oil_change_interval: Optional[int] = None
+    next_oil_change_mileage: Optional[int] = None
     id: int
     total_purchases: int
     total_spent: float
@@ -103,6 +114,8 @@ class CustomerListResponse(BaseModel):
     total_purchases: int
     total_spent: float
     outstanding_balance: float
+    current_mileage: Optional[int] = None
+    next_oil_change_mileage: Optional[int] = None
     created_at: datetime
 
     class Config:

@@ -57,7 +57,11 @@ export default function CustomersPage() {
     name: "",
     email: "",
     address: "",
+    current_mileage: undefined,
+    oil_change_interval: undefined,
+    next_oil_change_mileage: undefined,
   });
+  const [showVehicleInfo, setShowVehicleInfo] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -112,7 +116,11 @@ export default function CustomersPage() {
         name: "",
         email: "",
         address: "",
+        current_mileage: undefined,
+        oil_change_interval: undefined,
+        next_oil_change_mileage: undefined,
       });
+      setShowVehicleInfo(false);
       fetchCustomers();
     } catch (error: any) {
       console.error("Failed to create customer:", error);
@@ -226,6 +234,85 @@ export default function CustomersPage() {
                   />
                 </div>
               </div>
+              
+              {/* Vehicle Info Section */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="vehicle-info"
+                    checked={showVehicleInfo}
+                    onChange={(e) => setShowVehicleInfo(e.target.checked)}
+                    className="w-4 h-4 rounded border-gray-300"
+                  />
+                  <Label htmlFor="vehicle-info" className="mb-0 cursor-pointer">
+                    Add Vehicle Information (Oil Change Tracking)
+                  </Label>
+                </div>
+              </div>
+              
+              {showVehicleInfo && (
+                <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg space-y-4">
+                  <h3 className="font-semibold text-sm">Vehicle Oil Change Details</h3>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="current_mileage">Current Mileage (km)</Label>
+                      <Input
+                        id="current_mileage"
+                        type="number"
+                        placeholder="e.g., 441221"
+                        value={newCustomer.current_mileage || ""}
+                        onChange={(e) => {
+                          const mileage = e.target.value ? parseInt(e.target.value) : undefined;
+                          const nextMileage = mileage && newCustomer.oil_change_interval
+                            ? mileage + newCustomer.oil_change_interval
+                            : undefined;
+                          setNewCustomer({ 
+                            ...newCustomer, 
+                            current_mileage: mileage,
+                            next_oil_change_mileage: nextMileage
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="oil_change_interval">Oil Change Interval (km)</Label>
+                      <Input
+                        id="oil_change_interval"
+                        type="number"
+                        placeholder="e.g., 3000"
+                        value={newCustomer.oil_change_interval || ""}
+                        onChange={(e) => {
+                          const interval = e.target.value ? parseInt(e.target.value) : undefined;
+                          const nextMileage = newCustomer.current_mileage && interval 
+                            ? newCustomer.current_mileage + interval 
+                            : undefined;
+                          setNewCustomer({ 
+                            ...newCustomer, 
+                            oil_change_interval: interval,
+                            next_oil_change_mileage: nextMileage
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="next_oil_change_mileage">Next Oil Change (km)</Label>
+                      <Input
+                        id="next_oil_change_mileage"
+                        type="number"
+                        placeholder="e.g., 444221"
+                        value={newCustomer.next_oil_change_mileage || ""}
+                        readOnly
+                        className="bg-gray-100"
+                        onChange={(e) => setNewCustomer({ 
+                          ...newCustomer, 
+                          next_oil_change_mileage: e.target.value ? parseInt(e.target.value) : undefined
+                        })}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button
@@ -277,7 +364,7 @@ export default function CustomersPage() {
                 <TableRow>
                   <TableHead>Customer</TableHead>
                   <TableHead>Contact</TableHead>
-                  <TableHead>Purchases</TableHead>
+                  {/* <TableHead>Purchases</TableHead> */}
                   <TableHead>Total Spent</TableHead>
                   <TableHead>Outstanding</TableHead>
                   <TableHead>Member Since</TableHead>
@@ -309,11 +396,11 @@ export default function CustomersPage() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    {/* <TableCell>
                       <Badge variant="secondary">
                         {customer.total_purchases} sales
                       </Badge>
-                    </TableCell>
+                    </TableCell> */}
                     <TableCell className="font-medium">
                       {formatCurrency(customer.total_spent)}
                     </TableCell>

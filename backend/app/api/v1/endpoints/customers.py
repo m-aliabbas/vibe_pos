@@ -134,6 +134,9 @@ def create_customer(
         email=customer_in.email,
         name=customer_in.name,
         address=customer_in.address,
+        current_mileage=customer_in.current_mileage,
+        oil_change_interval=customer_in.oil_change_interval,
+        next_oil_change_mileage=customer_in.next_oil_change_mileage,
         member_since=datetime.utcnow(),
     )
     
@@ -183,6 +186,9 @@ def find_or_create_customer(
         email=customer_in.email,
         name=customer_in.name,
         address=customer_in.address,
+        current_mileage=customer_in.current_mileage,
+        oil_change_interval=customer_in.oil_change_interval,
+        next_oil_change_mileage=customer_in.next_oil_change_mileage,
         member_since=datetime.utcnow(),
     )
     
@@ -253,6 +259,12 @@ def update_customer(
         customer.name = customer_in.name
     if customer_in.address is not None:
         customer.address = customer_in.address
+    if customer_in.current_mileage is not None:
+        customer.current_mileage = customer_in.current_mileage
+    if customer_in.oil_change_interval is not None:
+        customer.oil_change_interval = customer_in.oil_change_interval
+    if customer_in.next_oil_change_mileage is not None:
+        customer.next_oil_change_mileage = customer_in.next_oil_change_mileage
     
     customer.updated_at = datetime.utcnow()
     

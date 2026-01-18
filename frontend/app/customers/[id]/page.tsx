@@ -66,7 +66,11 @@ export default function CustomerDetailPage() {
     name: "",
     email: "",
     address: "",
+    current_mileage: undefined as number | undefined,
+    oil_change_interval: undefined as number | undefined,
+    next_oil_change_mileage: undefined as number | undefined,
   });
+  const [showVehicleEdit, setShowVehicleEdit] = useState(false);
 
   const customerId = parseInt(params.id as string);
 
@@ -91,6 +95,9 @@ export default function CustomerDetailPage() {
         name: customerData.name || "",
         email: customerData.email || "",
         address: customerData.address || "",
+        current_mileage: customerData.current_mileage || undefined,
+        oil_change_interval: customerData.oil_change_interval || undefined,
+        next_oil_change_mileage: customerData.next_oil_change_mileage || undefined,
       });
     } catch (error) {
       console.error("Failed to fetch customer:", error);
@@ -243,6 +250,81 @@ export default function CustomerDetailPage() {
                     value={editCustomer.address}
                     onChange={(e) => setEditCustomer({ ...editCustomer, address: e.target.value })}
                   />
+                </div>
+                
+                {/* Vehicle Info Section */}
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <input
+                      type="checkbox"
+                      id="edit-vehicle-info"
+                      checked={showVehicleEdit}
+                      onChange={(e) => setShowVehicleEdit(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-300"
+                    />
+                    <Label htmlFor="edit-vehicle-info" className="mb-0 cursor-pointer">
+                      Edit Vehicle Information
+                    </Label>
+                  </div>
+                  
+                  {showVehicleEdit && (
+                    <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg space-y-4">
+                      <h3 className="font-semibold text-sm">Vehicle Oil Change Details</h3>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-current_mileage">Current Mileage (km)</Label>
+                          <Input
+                            id="edit-current_mileage"
+                            type="number"
+                            placeholder="e.g., 441221"
+                            value={editCustomer.current_mileage || ""}
+                            onChange={(e) => {
+                              const mileage = e.target.value ? parseInt(e.target.value) : undefined;
+                              const nextMileage = mileage && editCustomer.oil_change_interval
+                                ? mileage + editCustomer.oil_change_interval
+                                : undefined;
+                              setEditCustomer({ 
+                                ...editCustomer, 
+                                current_mileage: mileage,
+                                next_oil_change_mileage: nextMileage
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-oil_change_interval">Oil Change Interval (km)</Label>
+                          <Input
+                            id="edit-oil_change_interval"
+                            type="number"
+                            placeholder="e.g., 3000"
+                            value={editCustomer.oil_change_interval || ""}
+                            onChange={(e) => {
+                              const interval = e.target.value ? parseInt(e.target.value) : undefined;
+                              const nextMileage = editCustomer.current_mileage && interval
+                                ? editCustomer.current_mileage + interval
+                                : undefined;
+                              setEditCustomer({ 
+                                ...editCustomer, 
+                                oil_change_interval: interval,
+                                next_oil_change_mileage: nextMileage
+                              });
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-next_oil_change_mileage">Next Oil Change (km)</Label>
+                          <Input
+                            id="edit-next_oil_change_mileage"
+                            type="number"
+                            placeholder="e.g., 444221"
+                            value={editCustomer.next_oil_change_mileage || ""}
+                            readOnly
+                            className="bg-gray-100"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter>
@@ -461,6 +543,39 @@ export default function CustomerDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Vehicle Oil Change Information */}
+      {(customer.current_mileage || customer.oil_change_interval || customer.next_oil_change_mileage) && (
+        <Card className="bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Vehicle Oil Change Tracking
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-lg">
+                <div className="text-sm text-muted-foreground mb-1">Current Mileage</div>
+                <div className="text-2xl font-bold">{customer.current_mileage?.toLocaleString() || "-"} km</div>
+              </div>
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-lg">
+                <div className="text-sm text-muted-foreground mb-1">Oil Change Interval</div>
+                <div className="text-2xl font-bold">{customer.oil_change_interval?.toLocaleString() || "-"} km</div>
+              </div>
+              <div className="bg-white dark:bg-slate-900 p-4 rounded-lg">
+                <div className="text-sm text-muted-foreground mb-1">Next Oil Change Due</div>
+                <div className="text-2xl font-bold">{customer.next_oil_change_mileage?.toLocaleString() || "-"} km</div>
+                {customer.current_mileage && customer.next_oil_change_mileage && (
+                  <div className="text-xs text-muted-foreground mt-2">
+                    Remaining: {(customer.next_oil_change_mileage - customer.current_mileage).toLocaleString()} km
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tabs for detailed information */}
       <Tabs defaultValue="purchases" className="space-y-4">

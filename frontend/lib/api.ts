@@ -36,6 +36,9 @@ export interface CustomerResponse {
     total_purchases: number;
     total_spent: number;
     outstanding_balance: number;
+    current_mileage?: number;
+    oil_change_interval?: number;
+    next_oil_change_mileage?: number;
     member_since: string;
     created_at: string;
     updated_at: string;
@@ -49,11 +52,17 @@ export interface CustomerCreate {
     email?: string;
     name?: string;
     address?: string;
+    current_mileage?: number;
+    oil_change_interval?: number;
+    next_oil_change_mileage?: number;
 }
 
 export interface CustomerUpdate {
     phone?: string;
     customer_id?: string;
+    current_mileage?: number;
+    oil_change_interval?: number;
+    next_oil_change_mileage?: number;
     email?: string;
     name?: string;
     address?: string;
@@ -67,6 +76,8 @@ export interface CustomerListResponse {
     total_purchases: number;
     total_spent: number;
     outstanding_balance: number;
+    current_mileage?: number;
+    next_oil_change_mileage?: number;
     created_at: string;
 }
 

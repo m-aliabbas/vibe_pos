@@ -26,6 +26,11 @@ class Customer(Base):
     total_spent = Column(Float, default=0.0)  # Total amount spent
     outstanding_balance = Column(Float, default=0.0)  # Credit/udhar amount (positive = customer owes)
     
+    # Vehicle Oil Change Tracking (optional)
+    current_mileage = Column(Integer, nullable=True)  # Current vehicle mileage
+    oil_change_interval = Column(Integer, nullable=True)  # Distance oil can go (e.g., 3000 km)
+    next_oil_change_mileage = Column(Integer, nullable=True)  # Next mileage for oil change
+    
     # Metadata
     member_since = Column(DateTime, default=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
@@ -75,3 +80,4 @@ class CustomerPayment(Base):
     
     # Relationships
     customer = relationship("Customer", back_populates="payments")
+    

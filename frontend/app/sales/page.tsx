@@ -91,6 +91,10 @@ export default function SalesTerminal() {
   const [customerId, setCustomerId] = useState(""); // separate customer id field
   const [customerPhone, setCustomerPhone] = useState(""); // separate phone field
   const [customerName, setCustomerName] = useState(""); // optional name
+  const [currentMileage, setCurrentMileage] = useState<number | undefined>(undefined);
+  const [oilChangeInterval, setOilChangeInterval] = useState<number | undefined>(undefined);
+  const [nextOilChangeMileage, setNextOilChangeMileage] = useState<number | undefined>(undefined);
+  const [showVehicleInfo, setShowVehicleInfo] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerSimple | null>(
     null
   );
@@ -539,6 +543,10 @@ export default function SalesTerminal() {
     setCustomerName("");
     setCustomerPhone("");
     setCustomerId("");
+    setCurrentMileage(undefined);
+    setOilChangeInterval(undefined);
+    setNextOilChangeMileage(undefined);
+    setShowVehicleInfo(false);
     setSelectedCustomer(null);
     setDiscount(0);
     setTax(0);
@@ -664,6 +672,9 @@ export default function SalesTerminal() {
             phone: phoneVal || undefined,
             customer_id: effectiveCustomerId || undefined,
             name: customerName.trim() || undefined,
+            current_mileage: currentMileage,
+            oil_change_interval: oilChangeInterval,
+            next_oil_change_mileage: nextOilChangeMileage,
           });
           customerRefId = customer.id;
         } catch (error) {
@@ -1051,7 +1062,7 @@ export default function SalesTerminal() {
 
       {/* Checkout Dialog */}
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Complete Sale</DialogTitle>
             <DialogDescription>
@@ -1059,7 +1070,7 @@ export default function SalesTerminal() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4 relative">
+          <div className="flex-1 overflow-y-auto space-y-4 py-4 px-1 relative">
             {/* ✅ Separate fields */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -1109,13 +1120,13 @@ export default function SalesTerminal() {
 
             {/* Status */}
             {selectedCustomer && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+              <div className="p-2 bg-green-50 border border-green-200 rounded text-sm">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-green-800">
+                    <p className="font-semibold text-green-800">
                       {selectedCustomer.name || "Customer"}
                     </p>
-                    <p className="text-sm text-green-600">
+                    <p className="text-xs text-green-600">
                       {selectedCustomer.customer_id && `ID: ${selectedCustomer.customer_id}`}
                       {selectedCustomer.phone && ` • Phone: ${selectedCustomer.phone}`}
                     </p>
@@ -1132,27 +1143,21 @@ export default function SalesTerminal() {
             {!selectedCustomer &&
               (customerId.trim() || customerPhone.trim()) &&
               !customerSearchLoading && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    New customer will be created with:
-                    <br />
-                    {customerId.trim() && <>ID: <b>{customerId.trim().toUpperCase()}</b></>}
-                    {customerId.trim() && customerPhone.trim() && " • "}
-                    {customerPhone.trim() && <>Phone: <b>{customerPhone.trim()}</b></>}
-                  </p>
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                  <p className="text-blue-800 font-medium mb-1">New customer will be created:</p>
+                  {customerId.trim() && <p>ID: <b>{customerId.trim().toUpperCase()}</b></p>}
+                  {customerPhone.trim() && <p>Phone: <b>{customerPhone.trim()}</b></p>}
                 </div>
               )}
 
             {!customerId.trim() && !customerPhone.trim() && (
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  Walk-in sale (no customer linked)
-                </p>
+              <div className="p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600 font-medium">
+                Walk-in sale (no customer linked)
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="customer">Customer Name (Optional)</Label>
+            <div className="space-y-1">
+              <Label htmlFor="customer" className="text-sm">Customer Name (Optional)</Label>
               <Input
                 id="customer"
                 placeholder="Enter customer name"
@@ -1161,10 +1166,81 @@ export default function SalesTerminal() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="payment">Payment Method</Label>
+            {/* Vehicle Info Section */}
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="vehicle-info-checkout"
+                  checked={showVehicleInfo}
+                  onChange={(e) => setShowVehicleInfo(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300"
+                />
+                <Label htmlFor="vehicle-info-checkout" className="mb-0 cursor-pointer text-sm font-medium">
+                  Add Vehicle Information (Oil Change Tracking)
+                </Label>
+              </div>
+            </div>
+
+            {showVehicleInfo && (
+              <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded space-y-2">
+                <h3 className="font-semibold text-xs">Vehicle Oil Change Details</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="current_mileage_checkout" className="text-xs">Current Mileage (km)</Label>
+                    <Input
+                      id="current_mileage_checkout"
+                      type="number"
+                      placeholder="441221"
+                      value={currentMileage || ""}
+                      onChange={(e) => {
+                        const mileage = e.target.value ? parseInt(e.target.value) : undefined;
+                        const nextMileage = mileage && oilChangeInterval
+                          ? mileage + oilChangeInterval
+                          : undefined;
+                        setCurrentMileage(mileage);
+                        setNextOilChangeMileage(nextMileage);
+                      }}
+                      className="text-xs h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="oil_change_interval_checkout" className="text-xs">Oil Interval (km)</Label>
+                    <Input
+                      id="oil_change_interval_checkout"
+                      type="number"
+                      placeholder="3000"
+                      value={oilChangeInterval || ""}
+                      onChange={(e) => {
+                        const interval = e.target.value ? parseInt(e.target.value) : undefined;
+                        const nextMileage = currentMileage && interval
+                          ? currentMileage + interval
+                          : undefined;
+                        setOilChangeInterval(interval);
+                        setNextOilChangeMileage(nextMileage);
+                      }}
+                      className="text-xs h-8"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="next_oil_change_checkout" className="text-xs">Next Change (km)</Label>
+                    <Input
+                      id="next_oil_change_checkout"
+                      type="number"
+                      placeholder="444221"
+                      value={nextOilChangeMileage || ""}
+                      readOnly
+                      className="text-xs h-8 bg-gray-100"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <Label htmlFor="payment" className="text-sm">Payment Method</Label>
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger id="payment">
+                <SelectTrigger id="payment" className="h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1175,10 +1251,9 @@ export default function SalesTerminal() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="discount">Discount ($)</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="discount" className="text-sm">Discount ($)</Label>
                 <Input
                   id="discount"
                   type="number"
@@ -1186,10 +1261,11 @@ export default function SalesTerminal() {
                   step="0.01"
                   value={discount}
                   onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+                  className="text-xs h-8"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="tax">Tax ($)</Label>
+              <div className="space-y-1">
+                <Label htmlFor="tax" className="text-sm">Tax ($)</Label>
                 <Input
                   id="tax"
                   type="number"
@@ -1197,12 +1273,13 @@ export default function SalesTerminal() {
                   step="0.01"
                   value={tax}
                   onChange={(e) => setTax(parseFloat(e.target.value) || 0)}
+                  className="text-xs h-8"
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="amountPaid">Amount Paid ($)</Label>
+            <div className="space-y-1">
+              <Label htmlFor="amountPaid" className="text-sm">Amount Paid ($)</Label>
               <Input
                 id="amountPaid"
                 type="number"
@@ -1210,41 +1287,41 @@ export default function SalesTerminal() {
                 step="0.01"
                 value={amountPaid}
                 onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
-                className="text-lg font-semibold"
+                className="text-sm font-semibold h-8"
               />
               <p className="text-xs text-muted-foreground">
-                Enter amount received from customer
+                Amount received from customer
               </p>
             </div>
 
-            <div className="border-t pt-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span>Total Amount:</span>
-                <span className="font-semibold">${calculateTotal().toFixed(2)}</span>
+            <div className="border-t pt-2 space-y-1 text-xs">
+              <div className="flex justify-between font-semibold">
+                <span>Total:</span>
+                <span className="text-lg">${calculateTotal().toFixed(2)}</span>
               </div>
               {amountPaid < calculateTotal() && (
-                <div className="flex justify-between text-sm text-red-600 font-semibold">
-                  <span>Amount Due (Udhar):</span>
+                <div className="flex justify-between text-red-600 font-semibold">
+                  <span>Due (Udhar):</span>
                   <span>${(calculateTotal() - amountPaid).toFixed(2)}</span>
                 </div>
               )}
               {amountPaid > calculateTotal() && (
-                <div className="flex justify-between text-sm text-green-600 font-semibold">
-                  <span>Change to Return:</span>
+                <div className="flex justify-between text-green-600 font-semibold">
+                  <span>Change:</span>
                   <span>${(amountPaid - calculateTotal()).toFixed(2)}</span>
                 </div>
               )}
             </div>
 
-            <div className="border-t pt-4">
-              <div className="flex justify-between text-lg font-bold">
-                <span>Amount Paid:</span>
-                <span className="text-2xl text-primary">${amountPaid.toFixed(2)}</span>
+            <div className="bg-primary/10 p-2 rounded border border-primary/20">
+              <div className="flex justify-between items-center">
+                <span className="font-semibold text-sm">Amount Paid:</span>
+                <span className="text-xl font-bold text-primary">${amountPaid.toFixed(2)}</span>
               </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t pt-3">
             <Button
               variant="outline"
               onClick={() => setCheckoutOpen(false)}
