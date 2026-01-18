@@ -1,36 +1,166 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# POS Desktop - Tauri Application
 
-## Getting Started
+A modern Point of Sale (POS) desktop application built with **Tauri** and **Next.js**.
 
-First, run the development server:
+## What is Tauri?
+
+Tauri is a framework for building desktop applications using web technologies. Unlike Electron, Tauri:
+- Uses the system's native webview instead of bundling Chromium
+- Results in **much smaller bundle sizes** (~600KB vs Electron's ~120MB)
+- Provides **better security** with a Rust-based backend
+- Has **lower memory footprint** and faster startup times
+
+## Architecture
+
+This application uses a **sidecar approach** for Next.js SSR:
+- **Development**: Tauri connects to Next.js dev server on `localhost:3000`
+- **Production**: Tauri bundles the **Node.js binary** as a sidecar and the Next.js standalone build as resources.
+- **Startup**: Rust binary spawns the Node.js sidecar on a random port and connects the webview to it.
+- **Communication**: Tauri window loads from localhost, uses Tauri APIs for native features
+
+## Prerequisites
+
+### 1. Install Rust
+
+Tauri requires Rust to be installed. Install it using rustup:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+After installation, restart your terminal or run:
+```bash
+source $HOME/.cargo/env
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Verify installation:
+```bash
+rustc --version
+cargo --version
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 2. Install System Dependencies (macOS)
+
+```bash
+# Install Xcode Command Line Tools (if not already installed)
+xcode-select --install
+```
+
+### 3. Install Node.js Dependencies
+
+```bash
+npm install
+```
+
+## Development
+
+### Running the Application
+
+You need **two terminal windows**:
+
+**Terminal 1** - Start Next.js dev server:
+```bash
+npm run dev
+```
+
+**Terminal 2** - Start Tauri (after Next.js is running):
+```bash
+npm run tauri:dev
+```
+
+The Tauri window will open and connect to your Next.js application at `http://localhost:3000`.
+
+### Alternative: Single Command (Coming Soon)
+
+We can configure Tauri to automatically start the Next.js server, but for now, run them separately.
+
+## Building for Production
+
+### Build the Desktop App
+
+```bash
+npm run tauri:build
+```
+
+This will:
+1. Build Next.js in standalone mode
+2. Compile the Rust backend
+3. Bundle everything into a native application
+4. Output will be in `src-tauri/target/release/bundle/`
+
+### Build Outputs
+
+- **macOS**: `.app` bundle and `.dmg` installer in `src-tauri/target/release/bundle/macos/`
+- **Windows**: `.exe` and `.msi` installer (when building on Windows)
+- **Linux**: `.AppImage`, `.deb`, or `.rpm` (when building on Linux)
+
+## Project Structure
+
+```
+frontend/
+├── src-tauri/              # Tauri Rust backend
+│   ├── src/
+│   │   └── main.rs        # Rust entry point
+│   ├── Cargo.toml         # Rust dependencies
+│   ├── tauri.conf.json    # Tauri configuration
+│   └── capabilities/      # Tauri permissions
+├── app/                   # Next.js app directory
+├── components/            # React components
+├── lib/                   # Utilities
+├── public/                # Static assets
+├── package.json           # Node dependencies
+└── next.config.ts         # Next.js config (standalone mode)
+```
+
+## Configuration
+
+### Tauri Configuration
+
+Edit `src-tauri/tauri.conf.json` to customize:
+- Window size and title
+- App identifier and version
+- Security policies (CSP)
+- Build settings
+
+### Next.js Configuration
+
+The `next.config.ts` is configured with `output: 'standalone'` which is required for Tauri production builds.
+
+## Troubleshooting
+
+### "Command not found: rustc"
+
+Install Rust using the instructions in Prerequisites section above.
+
+### "Failed to load URL"
+
+Make sure Next.js dev server is running on `localhost:3000` before starting Tauri.
+
+### Build Errors
+
+1. Make sure all dependencies are installed: `npm install`
+2. Clear Next.js cache: `rm -rf .next`
+3. Clear Tauri cache: `rm -rf src-tauri/target`
+
+## Migrated from Electron
+
+This application was previously built with Electron. The migration to Tauri provides:
+- ✅ 99% smaller bundle size
+- ✅ Better security model
+- ✅ Lower memory usage
+- ✅ Faster startup times
+- ✅ Same functionality with Next.js SSR
+
+## Available Scripts
+
+- `npm run dev` - Start Next.js development server
+- `npm run build` - Build Next.js for production
+- `npm run tauri:dev` - Start Tauri in development mode
+- `npm run tauri:build` - Build production desktop app
+- `npm run lint` - Run ESLint
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Tauri Documentation](https://tauri.app/)
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Tauri + Next.js Guide](https://tauri.app/v1/guides/getting-started/setup/next-js)

@@ -1,0 +1,35 @@
+{
+    "$schema": "https://tauri.app/v2/schemas/capability.schema.json",
+    "identifier": "default",
+    "description": "Default permissions for the POS application",
+    "windows": [
+        "main"
+    ],
+    "permissions": [
+        "core:default",
+        "core:window:default",
+        "core:window:allow-close",
+        "core:window:allow-minimize",
+        "core:window:allow-maximize",
+        "core:window:allow-toggle-maximize",
+        {
+            "identifier": "shell:allow-open",
+            "allow": [
+                {
+                    "name": "bin/next-server",
+                    "sidecar": true
+                }
+            ]
+        },
+        {
+            "identifier": "shell:allow-execute",
+            "allow": [
+                {
+                    "name": "bin/next-server",
+                    "sidecar": true,
+                    "args": true
+                }
+            ]
+        }
+    ]
+}

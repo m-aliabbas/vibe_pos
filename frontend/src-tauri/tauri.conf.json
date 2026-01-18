@@ -1,0 +1,40 @@
+{
+  "productName": "POS System",
+  "version": "0.1.0",
+  "identifier": "com.pos.desktop",
+  "build": {
+    "beforeBuildCommand": "npm run build && node scripts/package-server.js",
+    "devUrl": "http://localhost:3000",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": [
+      "../.next/standalone/**/*"
+    ],
+    "externalBin": [
+      "bin/next-server"
+    ],
+    "copyright": "",
+    "category": "Business",
+    "shortDescription": "Point of Sale System",
+    "longDescription": "A modern desktop POS system with inventory management, sales tracking, and invoicing"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "POS System",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*; font-src 'self' data:;"
+    }
+  }
+}
