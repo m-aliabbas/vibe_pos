@@ -118,12 +118,12 @@ const PurchaseReports: React.FC = () => {
     { 
       key: 'total_amount', 
       label: 'Total Spent',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     },
     { 
       key: 'avg_purchase_amount', 
       label: 'Avg Order',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     }
   ];
 
@@ -134,17 +134,17 @@ const PurchaseReports: React.FC = () => {
     { 
       key: 'avg_purchase_price', 
       label: 'Avg Cost',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     },
     { 
       key: 'min_purchase_price', 
       label: 'Min Cost',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     },
     { 
       key: 'max_purchase_price', 
       label: 'Max Cost',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     }
   ];
 

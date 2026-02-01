@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import api from '@/lib/api';
 
 interface User {
+    id: number;
     username: string;
     role: string;
     is_active: boolean;

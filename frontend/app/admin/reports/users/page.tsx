@@ -122,12 +122,12 @@ const UserReports: React.FC = () => {
     { 
       key: 'total_revenue', 
       label: 'Revenue',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     },
     { 
       key: 'avg_sale_value', 
       label: 'Avg Sale',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     },
     { 
       key: 'daily_avg_sales', 

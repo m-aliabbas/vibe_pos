@@ -127,7 +127,7 @@ export default function InventoryPage() {
             if (stockFilter === 'low') {
                 filtered = data.filter((p: Product) => p.quantity > 0 && p.quantity <= 10);
             } else if (stockFilter === 'out') {
-                filtered = data.filter((p: Product) => p.quantity === 0);
+                filtered = data.filter((p: Product) => p.quantity <= 0);
             } else if (stockFilter === 'in') {
                 filtered = data.filter((p: Product) => p.quantity > 0);
             }
@@ -387,7 +387,7 @@ export default function InventoryPage() {
                                 </div>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="price">Selling Price ($)</Label>
+                                <Label htmlFor="price">Selling Price (₹)</Label>
                                 <Input id="price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required placeholder="0.00" />
                             </div>
 
@@ -428,7 +428,7 @@ export default function InventoryPage() {
                                 <div className="flex flex-wrap gap-2">
                                     {sellingUnits.map((unit, idx) => (
                                         <Badge key={idx} variant="secondary" className="gap-2">
-                                            {unit.unit} (×{unit.conversion}) ${unit.price}
+                                            {unit.unit} (×{unit.conversion}) ₹{unit.price}
                                             <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
                                         </Badge>
                                     ))}
@@ -553,11 +553,11 @@ export default function InventoryPage() {
                                         <Badge variant="secondary" className="font-normal">{product.category}</Badge>
                                     </TableCell>
                                     <TableCell className="text-right font-medium text-emerald-600">
-                                        ${product.selling_price.toFixed(2)}
+                                        ₹{product.selling_price.toFixed(2)}
                                     </TableCell>
                                     <TableCell className="text-center">
-                                        <Badge variant={product.quantity > 0 ? "outline" : "secondary"} className={product.quantity > 0 ? "text-blue-600 border-blue-200" : "bg-gray-100 text-gray-400"}>
-                                            {product.quantity > 0 ? product.quantity : 'No Stock'}
+                                        <Badge variant={product.quantity > 0 ? "outline" : "secondary"} className={product.quantity > 0 ? "text-blue-600 border-blue-200" : "bg-red-100 text-red-600 border-red-200"}>
+                                            {product.quantity > 0 ? product.quantity : `0 - Out of Stock`}
                                         </Badge>
                                     </TableCell>
                                     {isAdmin && (
@@ -635,7 +635,7 @@ export default function InventoryPage() {
                             </div>
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="edit-price">Selling Price ($)</Label>
+                            <Label htmlFor="edit-price">Selling Price (₹)</Label>
                             <Input id="edit-price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required />
                         </div>
                         <DialogFooter>

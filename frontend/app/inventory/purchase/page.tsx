@@ -341,7 +341,7 @@ function PurchasePageContent() {
                                                 >
                                                     <div className="font-medium">{product.name}</div>
                                                     <div className="text-sm text-muted-foreground">
-                                                        SKU: {product.sku} • Stock: {product.quantity}
+                                                        SKU: {product.sku} • Stock: {product.quantity > 0 ? product.quantity : '0 - Out of Stock'}
                                                     </div>
                                                 </div>
                                             ))}
@@ -436,7 +436,7 @@ function PurchasePageContent() {
                                     </div>
                                     <div className="col-span-2 text-right font-medium">{item.quantity}</div>
                                     <div className="col-span-2 text-right">${item.unit_cost.toFixed(2)}</div>
-                                    <div className="col-span-2 text-right font-bold">${item.total_cost.toFixed(2)}</div>
+                                    <div className="col-span-2 text-right font-bold">₹{item.total_cost.toFixed(2)}</div>
                                     <div className="col-span-2 text-right text-sm text-muted-foreground">
                                         {item.expiry_date
                                             ? new Date(item.expiry_date).toLocaleDateString()
@@ -464,7 +464,7 @@ function PurchasePageContent() {
                     <div className="max-w-md space-y-4">
                         <div className="flex justify-between items-center text-2xl font-bold py-4 border-y">
                             <span>Total Payable:</span>
-                            <span>${totalAmount.toFixed(2)}</span>
+                            <span>₹{totalAmount.toFixed(2)}</span>
                         </div>
 
                         <div>
@@ -545,7 +545,7 @@ function PurchasePageContent() {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="sellingPrice">
-                                    Selling Price ($) <span className="text-red-500">*</span>
+                                    Selling Price (₹) <span className="text-red-500">*</span>
                                 </Label>
                                 <Input
                                     id="sellingPrice"
@@ -557,7 +557,7 @@ function PurchasePageContent() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="costPrice">Cost Price ($)</Label>
+                                <Label htmlFor="costPrice">Cost Price (₹)</Label>
                                 <Input
                                     id="costPrice"
                                     type="number"

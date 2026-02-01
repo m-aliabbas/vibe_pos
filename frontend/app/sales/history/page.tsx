@@ -249,7 +249,7 @@ export default function SalesHistory() {
         <Card className="px-4 py-3">
           <p className="text-sm text-muted-foreground">Total Revenue</p>
           <p className="text-2xl font-bold text-primary">
-            ${sales.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}
+            ₹{sales.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}
           </p>
         </Card>
         {(() => {
@@ -259,19 +259,19 @@ export default function SalesHistory() {
               <Card className="px-4 py-3 bg-green-50">
                 <p className="text-sm text-green-700">Cash</p>
                 <p className="text-xl font-bold text-green-800">
-                  ${breakdown.cash.toFixed(2)}
+                  ₹{breakdown.cash.toFixed(2)}
                 </p>
               </Card>
               <Card className="px-4 py-3 bg-blue-50">
                 <p className="text-sm text-blue-700">Card</p>
                 <p className="text-xl font-bold text-blue-800">
-                  ${breakdown.card.toFixed(2)}
+                  ₹{breakdown.card.toFixed(2)}
                 </p>
               </Card>
               <Card className="px-4 py-3 bg-purple-50">
                 <p className="text-sm text-purple-700">Mobile</p>
                 <p className="text-xl font-bold text-purple-800">
-                  ${breakdown.mobile.toFixed(2)}
+                  ₹{breakdown.mobile.toFixed(2)}
                 </p>
               </Card>
             </>
@@ -388,10 +388,10 @@ export default function SalesHistory() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-bold text-primary">
-                        ${sale.total.toFixed(2)}
+                        ₹{sale.total.toFixed(2)}
                         {sale.amount_due > 0 && (
                           <Badge variant="destructive" className="ml-2">
-                            Udhar: ${sale.amount_due.toFixed(2)}
+                            Udhar: ₹{sale.amount_due.toFixed(2)}
                           </Badge>
                         )}
                       </TableCell>
@@ -504,13 +504,13 @@ export default function SalesHistory() {
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            ${item.unit_price.toFixed(2)}
+                            ₹{item.unit_price.toFixed(2)}
                           </TableCell>
                           <TableCell className="text-center">
                             <Badge variant="outline">{item.quantity}</Badge>
                           </TableCell>
                           <TableCell className="text-right font-semibold">
-                            ${item.total_price.toFixed(2)}
+                            ₹{item.total_price.toFixed(2)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -524,38 +524,38 @@ export default function SalesHistory() {
                 <CardContent className="pt-6 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span>Subtotal:</span>
-                    <span>${selectedSale.subtotal.toFixed(2)}</span>
+                    <span>₹{selectedSale.subtotal.toFixed(2)}</span>
                   </div>
                   {selectedSale.discount > 0 && (
                     <div className="flex justify-between text-sm text-green-600">
                       <span>Discount:</span>
-                      <span>-${selectedSale.discount.toFixed(2)}</span>
+                      <span>-₹{selectedSale.discount.toFixed(2)}</span>
                     </div>
                   )}
                   {selectedSale.tax > 0 && (
                     <div className="flex justify-between text-sm">
                       <span>Tax:</span>
-                      <span>+${selectedSale.tax.toFixed(2)}</span>
+                      <span>+₹{selectedSale.tax.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-xl font-bold border-t pt-2">
                     <span>Total:</span>
                     <span className="text-primary">
-                      ${selectedSale.total.toFixed(2)}
+                      ₹{selectedSale.total.toFixed(2)}
                     </span>
                   </div>
                   <div className="border-t pt-2 space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="font-medium">Amount Paid:</span>
                       <span className="font-semibold text-green-600">
-                        ${selectedSale.amount_paid.toFixed(2)}
+                        ₹{selectedSale.amount_paid.toFixed(2)}
                       </span>
                     </div>
                     {selectedSale.amount_due > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="font-medium text-red-600">Amount Due (Udhar):</span>
                         <span className="font-bold text-red-600">
-                          ${selectedSale.amount_due.toFixed(2)}
+                          ₹{selectedSale.amount_due.toFixed(2)}
                         </span>
                       </div>
                     )}
@@ -563,7 +563,7 @@ export default function SalesHistory() {
                       <div className="flex justify-between text-sm">
                         <span className="font-medium text-blue-600">Change Returned:</span>
                         <span className="font-semibold text-blue-600">
-                          ${selectedSale.change_amount.toFixed(2)}
+                          ₹{selectedSale.change_amount.toFixed(2)}
                         </span>
                       </div>
                     )}

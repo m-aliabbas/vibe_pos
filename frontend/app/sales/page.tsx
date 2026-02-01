@@ -239,9 +239,9 @@ export default function SalesTerminal() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency: "USD",
+      currency: "INR",
     }).format(amount);
   };
 
@@ -282,7 +282,7 @@ export default function SalesTerminal() {
     if (stockFilter === "low") {
       filtered = filtered.filter((p) => p.quantity > 0 && p.quantity <= 10);
     } else if (stockFilter === "out") {
-      filtered = filtered.filter((p) => p.quantity === 0);
+      filtered = filtered.filter((p) => p.quantity <= 0);
     } else if (stockFilter === "in") {
       filtered = filtered.filter((p) => p.quantity > 0);
     }
@@ -349,7 +349,7 @@ export default function SalesTerminal() {
     }
 
     // Check if product has stock
-    if (product.quantity === 0) {
+    if (product.quantity <= 0) {
       alert("Product out of stock!");
       return;
     }
@@ -406,7 +406,7 @@ export default function SalesTerminal() {
     }
 
     // Check if product has stock
-    if (product.quantity === 0) {
+    if (product.quantity <= 0) {
       alert("Product out of stock!");
       return;
     }
@@ -443,7 +443,7 @@ export default function SalesTerminal() {
       return;
     }
 
-    if (selectedVariation.quantity === 0) {
+    if (selectedVariation.quantity <= 0) {
       alert("This variation is out of stock!");
       return;
     }
@@ -515,7 +515,7 @@ export default function SalesTerminal() {
   const addUnitToCart = () => {
     if (!selectedProductForUnit) return;
 
-    if (selectedProductForUnit.quantity === 0) {
+    if (selectedProductForUnit.quantity <= 0) {
       alert("This product is out of stock!");
       return;
     }
@@ -687,6 +687,13 @@ export default function SalesTerminal() {
 
     return () => clearTimeout(t);
   }, [customerPhone, customerId, checkoutOpen]);
+
+  // ✅ Auto-update amount paid when total changes during checkout
+  useEffect(() => {
+    if (checkoutOpen) {
+      setAmountPaid(calculateTotal());
+    }
+  }, [discount, tax, deliveryCharges, checkoutOpen]);
 
   const calculateSubtotal = () => {
     return cart.reduce((sum, item) => {
@@ -922,7 +929,7 @@ export default function SalesTerminal() {
                   </SelectContent>
                 </Select>
 
-                <Tabs value={stockFilter} onValueChange={setStockFilter} className="w-auto">
+                <Tabs value={stockFilter} onValueChange={setStockFilter} defaultValue="all" className="w-auto">
                   <TabsList>
                     <TabsTrigger value="all">All Items</TabsTrigger>
                     <TabsTrigger value="low" className={lowStockCount > 0 ? "text-orange-600" : ""}>
@@ -985,7 +992,7 @@ export default function SalesTerminal() {
                                 </div>
                                 <div className="text-right">
                                   <p className="font-bold text-primary">
-                                    ${product.selling_price.toFixed(2)}
+                                    ₹{product.selling_price.toFixed(2)}
                                   </p>
                                   <Badge
                                     variant={
@@ -997,7 +1004,7 @@ export default function SalesTerminal() {
                                     }
                                     className="text-xs"
                                   >
-                                    {product.quantity} in stock
+                                    {product.quantity > 0 ? product.quantity : '0 - Out of Stock'}
                                   </Badge>
                                 </div>
                               </div>
@@ -1043,7 +1050,7 @@ export default function SalesTerminal() {
                         >
                           <td className="p-3 font-medium">{product.name}</td>
                           <td className="p-3 text-right font-semibold text-primary">
-                            ${product.selling_price.toFixed(2)}
+                            ₹{product.selling_price.toFixed(2)}
                           </td>
                           <td className="p-3 text-center">
                             <Badge
@@ -1055,13 +1062,13 @@ export default function SalesTerminal() {
                                     : "destructive"
                               }
                             >
-                              {product.quantity}
+                              {product.quantity > 0 ? product.quantity : '0 - Out of Stock'}
                             </Badge>
                           </td>
                           <td className="p-3 text-center">
                             <Button
                               size="sm"
-                              disabled={product.quantity === 0}
+                              disabled={product.quantity <= 0}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 addToCart(product);
@@ -1125,7 +1132,7 @@ export default function SalesTerminal() {
                             )}
                             <div className="flex flex-wrap items-center gap-3 mt-2">
                               <div className="text-xs text-muted-foreground bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                                Buy: ${item.product.cost_price?.toFixed(2) || "0.00"}
+                                Buy: ₹{item.product.cost_price?.toFixed(2) || "0.00"}
                               </div>
                               <div className="flex items-center gap-2">
                                 <Label className="text-xs font-medium">Disc:</Label>
@@ -1151,10 +1158,10 @@ export default function SalesTerminal() {
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             <span className="font-semibold">
-                              ${((itemPrice * item.quantity) - (item.item_discount || 0)).toFixed(2)}
+                              ₹{((itemPrice * item.quantity) - (item.item_discount || 0)).toFixed(2)}
                             </span>
                             <span className="text-xs text-muted-foreground">
-                              ${itemPrice.toFixed(2)}/{item.unit}
+                              ₹{itemPrice.toFixed(2)}/{item.unit}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1194,29 +1201,29 @@ export default function SalesTerminal() {
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between font-semibold mt-2 pt-2 border-t">
                       <span>Subtotal</span>
-                      <span>${calculateSubtotal().toFixed(2)}</span>
+                      <span>₹{calculateSubtotal().toFixed(2)}</span>
                     </div>
                     {(discount > 0 || calculateItemDiscounts() > 0) && (
                       <div className="flex justify-between text-red-600">
                         <span>Discount</span>
-                        <span>-${(discount + calculateItemDiscounts()).toFixed(2)}</span>
+                        <span>-₹{(discount + calculateItemDiscounts()).toFixed(2)}</span>
                       </div>
                     )}
                     {tax > 0 && (
                       <div className="flex justify-between">
                         <span>Tax</span>
-                        <span>+${tax.toFixed(2)}</span>
+                        <span>+₹{tax.toFixed(2)}</span>
                       </div>
                     )}
                     {deliveryCharges > 0 && (
                       <div className="flex justify-between">
                         <span>Delivery</span>
-                        <span>+${deliveryCharges.toFixed(2)}</span>
+                        <span>+₹{deliveryCharges.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-lg pt-2 border-t mt-2">
                       <span>Total</span>
-                      <span>${calculateTotal().toFixed(2)}</span>
+                      <span>₹{calculateTotal().toFixed(2)}</span>
                     </div>
                   </div>
 
@@ -1344,7 +1351,7 @@ export default function SalesTerminal() {
 
             {/* Delivery Charges Input */}
             <div className="space-y-1 pt-2">
-              <Label htmlFor="delivery" className="text-sm">Delivery Charges ($)</Label>
+              <Label htmlFor="delivery" className="text-sm">Delivery Charges (₹)</Label>
               <Input
                 id="delivery"
                 type="number"
@@ -1372,7 +1379,7 @@ export default function SalesTerminal() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="discount" className="text-sm">Global Discount ($)</Label>
+                <Label htmlFor="discount" className="text-sm">Global Discount (₹)</Label>
                 <Input
                   id="discount"
                   type="number"
@@ -1384,7 +1391,7 @@ export default function SalesTerminal() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="tax" className="text-sm">Tax ($)</Label>
+                <Label htmlFor="tax" className="text-sm">Tax (₹)</Label>
                 <Input
                   id="tax"
                   type="number"
@@ -1398,7 +1405,7 @@ export default function SalesTerminal() {
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="amountPaid" className="text-sm">Amount Paid ($)</Label>
+              <Label htmlFor="amountPaid" className="text-sm">Amount Paid (₹)</Label>
               <Input
                 id="amountPaid"
                 type="number"
@@ -1417,23 +1424,23 @@ export default function SalesTerminal() {
               {(calculateItemDiscounts() > 0) && (
                 <div className="flex justify-between text-red-600">
                   <span>Total Item Discs:</span>
-                  <span>-${calculateItemDiscounts().toFixed(2)}</span>
+                  <span>-₹{calculateItemDiscounts().toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between font-semibold">
                 <span>Total:</span>
-                <span className="text-lg">${calculateTotal().toFixed(2)}</span>
+                <span className="text-lg">₹{calculateTotal().toFixed(2)}</span>
               </div>
               {amountPaid < calculateTotal() && (
                 <div className="flex justify-between text-red-600 font-semibold">
                   <span>Due (Udhar):</span>
-                  <span>${(calculateTotal() - amountPaid).toFixed(2)}</span>
+                  <span>₹{(calculateTotal() - amountPaid).toFixed(2)}</span>
                 </div>
               )}
               {amountPaid > calculateTotal() && (
                 <div className="flex justify-between text-green-600 font-semibold">
                   <span>Change:</span>
-                  <span>${(amountPaid - calculateTotal()).toFixed(2)}</span>
+                  <span>₹{(amountPaid - calculateTotal()).toFixed(2)}</span>
                 </div>
               )}
             </div>
@@ -1441,7 +1448,7 @@ export default function SalesTerminal() {
             <div className="bg-primary/10 p-2 rounded border border-primary/20">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-sm">Amount Paid:</span>
-                <span className="text-xl font-bold text-primary">${amountPaid.toFixed(2)}</span>
+                <span className="text-xl font-bold text-primary">₹{amountPaid.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -1483,13 +1490,13 @@ export default function SalesTerminal() {
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Total Sale:</span>
                 <span className="text-xl font-bold text-primary">
-                  ${completedSaleTotal.toFixed(2)}
+                  ₹{completedSaleTotal.toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Amount Paid:</span>
                 <span className="text-xl font-semibold text-green-600">
-                  ${completedAmountPaid.toFixed(2)}
+                  ₹{completedAmountPaid.toFixed(2)}
                 </span>
               </div>
               {completedChange > 0 && (
@@ -1498,7 +1505,7 @@ export default function SalesTerminal() {
                     Change to Return:
                   </span>
                   <span className="text-3xl font-bold text-green-700">
-                    ${completedChange.toFixed(2)}
+                    ₹{completedChange.toFixed(2)}
                   </span>
                 </div>
               )}
@@ -1508,7 +1515,7 @@ export default function SalesTerminal() {
                     Amount Due (Udhar):
                   </span>
                   <span className="text-3xl font-bold text-red-700">
-                    ${(completedSaleTotal - completedAmountPaid).toFixed(2)}
+                    ₹{(completedSaleTotal - completedAmountPaid).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -1561,8 +1568,8 @@ export default function SalesTerminal() {
                         className={`p-3 border rounded text-left transition-all ${selectedVariation?.id === variation.id
                           ? "border-blue-500 bg-blue-50"
                           : "hover:border-gray-400"
-                          } ${variation.quantity === 0 ? "opacity-50" : ""}`}
-                        disabled={variation.quantity === 0}
+                          } ${variation.quantity <= 0 ? "opacity-50" : ""}`}
+                        disabled={variation.quantity <= 0}
                       >
                         <div className="font-medium">
                           {Object.entries(variation.attributes)
@@ -1570,9 +1577,9 @@ export default function SalesTerminal() {
                             .join(", ")}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          ${finalPrice.toFixed(2)} • Stock: {variation.quantity}
+                          ₹{finalPrice.toFixed(2)} • Stock: {variation.quantity > 0 ? variation.quantity : '0 - Out of Stock'}
                         </div>
-                        {variation.quantity === 0 && (
+                        {variation.quantity <= 0 && (
                           <div className="text-xs text-red-600">Out of stock</div>
                         )}
                       </button>
@@ -1599,7 +1606,7 @@ export default function SalesTerminal() {
                     </SelectItem>
                     {selectedProductForVariation.selling_units.map((unit) => (
                       <SelectItem key={unit.unit} value={unit.unit}>
-                        {unit.unit} (×{unit.conversion}) - ${unit.price.toFixed(2)}
+                        {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1680,7 +1687,7 @@ export default function SalesTerminal() {
                     </SelectItem>
                     {selectedProductForUnit.selling_units.map((unit) => (
                       <SelectItem key={unit.unit} value={unit.unit}>
-                        {unit.unit} (×{unit.conversion}) - ${unit.price.toFixed(2)}
+                        {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
                       </SelectItem>
                     ))}
                   </SelectContent>

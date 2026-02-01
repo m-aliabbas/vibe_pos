@@ -160,13 +160,13 @@ export default function VendorDetailsPage() {
                                                 <div className="flex justify-between items-center mb-2">
                                                     <span className="text-sm font-medium text-blue-900">Outstanding Balance:</span>
                                                     <span className="text-lg font-bold text-red-600">
-                                                        ${totalBalance.toFixed(2)}
+                                                        ₹{totalBalance.toFixed(2)}
                                                     </span>
                                                 </div>
                                                 {vendor.prepaid_credit > 0 && (
                                                     <div className="flex justify-between items-center mb-2 text-sm">
                                                         <span className="text-blue-900">Existing Credit:</span>
-                                                        <span className="font-bold text-green-600">${vendor.prepaid_credit.toFixed(2)}</span>
+                                                        <span className="font-bold text-green-600">₹{vendor.prepaid_credit.toFixed(2)}</span>
                                                     </div>
                                                 )}
                                                 <p className="text-xs text-blue-700">
@@ -184,7 +184,7 @@ export default function VendorDetailsPage() {
                                                     placeholder="0.00"
                                                 />
                                                 <p className="text-xs text-gray-500">
-                                                    💡 Tip: Pay the full balance (${totalBalance.toFixed(2)}) or any amount
+                                                    💡 Tip: Pay the full balance (₹{totalBalance.toFixed(2)}) or any amount
                                                 </p>
                                             </div>
                                         </div>
@@ -205,17 +205,17 @@ export default function VendorDetailsPage() {
                                                 <div className="space-y-1 text-sm">
                                                     <div className="flex justify-between">
                                                         <span className="text-gray-600">Payment Amount:</span>
-                                                        <span className="font-bold">${paymentResult.total_payment.toFixed(2)}</span>
+                                                        <span className="font-bold">₹{paymentResult.total_payment.toFixed(2)}</span>
                                                     </div>
                                                     {paymentResult.previous_credit > 0 && (
                                                         <div className="flex justify-between">
                                                             <span className="text-gray-600">Previous Credit Used:</span>
-                                                            <span className="font-medium text-blue-600">${paymentResult.previous_credit.toFixed(2)}</span>
+                                                            <span className="font-medium text-blue-600">₹{paymentResult.previous_credit.toFixed(2)}</span>
                                                         </div>
                                                     )}
                                                     <div className="flex justify-between">
                                                         <span className="text-gray-600">Applied to Purchases:</span>
-                                                        <span className="font-medium text-green-600">${paymentResult.applied_amount.toFixed(2)}</span>
+                                                        <span className="font-medium text-green-600">₹{paymentResult.applied_amount.toFixed(2)}</span>
                                                     </div>
                                                     {paymentResult.new_prepaid_credit > 0 && (
                                                         <div className="flex justify-between border-t pt-1 mt-1">

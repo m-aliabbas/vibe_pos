@@ -116,7 +116,7 @@ const SalesReports: React.FC = () => {
       key: 'revenue',
       label: 'Avg Transaction',
       render: (value: number, row: any) =>
-        row.transactions > 0 ? `$${(value / row.transactions).toFixed(2)}` : '$0.00'
+        row.transactions > 0 ? `₹${(value / row.transactions).toFixed(2)}` : '₹0.00'
     }
   ];
 

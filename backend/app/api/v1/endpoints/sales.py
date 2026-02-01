@@ -193,14 +193,14 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
             original_price = item.unit_price * item.quantity
             
             # Show quantity and unit price
-            qty_price = f"{item.quantity} {item.unit} x ${item.unit_price:.2f}"
+            qty_price = f"{item.quantity} {item.unit} x ₹{item.unit_price:.2f}"
             draw.text((mm(4), y), qty_price, fill='black', font=font_small)
             y += mm(4)
             
             # If item has discount, show original price (strikethrough effect) and discount
             if item.item_discount and item.item_discount > 0:
                 # Original price (before discount) - shown with strikethrough
-                original_text = f"${original_price:.2f}"
+                original_text = f"₹{original_price:.2f}"
                 bbox = draw.textbbox((0, 0), original_text, font=font_small)
                 text_width = bbox[2] - bbox[0]
                 x_pos = width - text_width - mm(3)
@@ -210,12 +210,12 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
                 y += mm(4)
                 
                 # Discount amount
-                discount_text = f"Discount: -${item.item_discount:.2f}"
+                discount_text = f"Discount: -₹{item.item_discount:.2f}"
                 draw.text((mm(4), y), discount_text, fill='red', font=font_small)
                 y += mm(4)
             
             # Final price (after discount)
-            final_price = f"${item.total_price:.2f}"
+            final_price = f"₹{item.total_price:.2f}"
             bbox = draw.textbbox((0, 0), final_price, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - mm(3), y), final_price, fill='darkgreen', font=font_bold)
@@ -227,7 +227,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         
         # Totals
         draw.text((mm(3), y), "Subtotal:", fill='black', font=font_normal)
-        subtotal_text = f"${sale.subtotal:.2f}"
+        subtotal_text = f"₹{sale.subtotal:.2f}"
         bbox = draw.textbbox((0, 0), subtotal_text, font=font_normal)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), subtotal_text, fill='black', font=font_normal)
@@ -237,7 +237,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         total_discount = sale.discount + total_item_discount
         if total_discount > 0:
             draw.text((mm(3), y), "Discount:", fill='black', font=font_normal)
-            discount_text = f"-${total_discount:.2f}"
+            discount_text = f"-₹{total_discount:.2f}"
             bbox = draw.textbbox((0, 0), discount_text, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - mm(3), y), discount_text, fill='red', font=font_normal)
@@ -245,14 +245,22 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         
         if sale.tax > 0:
             draw.text((mm(3), y), "Tax:", fill='black', font=font_normal)
-            tax_text = f"${sale.tax:.2f}"
+            tax_text = f"₹{sale.tax:.2f}"
             bbox = draw.textbbox((0, 0), tax_text, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - mm(3), y), tax_text, fill='black', font=font_normal)
             y += mm(5)
         
+        if sale.delivery_charges > 0:
+            draw.text((mm(3), y), "Delivery Charges:", fill='black', font=font_normal)
+            delivery_text = f"₹{sale.delivery_charges:.2f}"
+            bbox = draw.textbbox((0, 0), delivery_text, font=font_normal)
+            text_width = bbox[2] - bbox[0]
+            draw.text((width - text_width - mm(3), y), delivery_text, fill='black', font=font_normal)
+            y += mm(5)
+        
         draw.text((mm(3), y), "TOTAL:", fill='black', font=font_bold)
-        total_text = f"${sale.total:.2f}"
+        total_text = f"₹{sale.total:.2f}"
         bbox = draw.textbbox((0, 0), total_text, font=font_bold)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), total_text, fill='black', font=font_bold)
@@ -264,7 +272,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         
         # Amount paid
         draw.text((mm(3), y), "Amount Paid:", fill='black', font=font_normal)
-        paid_text = f"${sale.amount_paid:.2f}"
+        paid_text = f"₹{sale.amount_paid:.2f}"
         bbox = draw.textbbox((0, 0), paid_text, font=font_normal)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), paid_text, fill='black', font=font_normal)
@@ -273,7 +281,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         # Outstanding balance (Udhar) - only show if there's a balance
         if sale.amount_due > 0:
             draw.text((mm(3), y), "Outstanding (Udhar):", fill='black', font=font_bold)
-            due_text = f"${sale.amount_due:.2f}"
+            due_text = f"₹{sale.amount_due:.2f}"
             bbox = draw.textbbox((0, 0), due_text, font=font_bold)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - mm(3), y), due_text, fill='red', font=font_bold)
@@ -282,7 +290,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         # Change - only show if there's change to return
         if sale.change_amount > 0:
             draw.text((mm(3), y), "Change:", fill='black', font=font_normal)
-            change_text = f"${sale.change_amount:.2f}"
+            change_text = f"₹{sale.change_amount:.2f}"
             bbox = draw.textbbox((0, 0), change_text, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - mm(3), y), change_text, fill='darkgreen', font=font_normal)
@@ -311,7 +319,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         payload = {
             "phone_number": phone_number,
             "image_url": str(file_path.absolute()),
-            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: ${sale.total:.2f}\nThank you for your business!"
+            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: ₹{sale.total:.2f}\nThank you for your business!"
         }
         
         response = requests.post(
@@ -453,8 +461,11 @@ def create_sale(
     # Calculate tax if provided
     tax = sale_in.tax if sale_in.tax is not None else 0.0
     
+    # Calculate delivery charges if provided
+    delivery_charges = sale_in.delivery_charges if sale_in.delivery_charges is not None else 0.0
+    
     # Calculate final total
-    total = subtotal - discount + tax
+    total = subtotal - discount + tax + delivery_charges
     
     # Calculate payment tracking
     amount_paid = sale_in.amount_paid if sale_in.amount_paid is not None else total
@@ -534,6 +545,7 @@ def create_sale(
         subtotal=subtotal,
         discount=discount,
         tax=tax,
+        delivery_charges=delivery_charges,
         total=total,
         amount_paid=amount_paid,
         amount_due=amount_due,
@@ -840,8 +852,8 @@ def send_invoice(
                 draw.text((15, y), attrs[:30], fill='purple', font=font_small)
                 y += 13
             
-            qty_price = f"{item.quantity} {item.unit} x ${item.unit_price:.2f}"
-            total_price = f"${item.total_price:.2f}"
+            qty_price = f"{item.quantity} {item.unit} x ₹{item.unit_price:.2f}"
+            total_price = f"₹{item.total_price:.2f}"
             draw.text((15, y), qty_price, fill='black', font=font_small)
             bbox = draw.textbbox((0, 0), total_price, font=font_small)
             text_width = bbox[2] - bbox[0]
@@ -855,7 +867,7 @@ def send_invoice(
         
         # Totals
         draw.text((10, y), "Subtotal:", fill='black', font=font_normal)
-        subtotal_text = f"${sale.subtotal:.2f}"
+        subtotal_text = f"₹{sale.subtotal:.2f}"
         bbox = draw.textbbox((0, 0), subtotal_text, font=font_normal)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - 10, y), subtotal_text, fill='black', font=font_normal)
@@ -863,7 +875,7 @@ def send_invoice(
         
         if sale.discount > 0:
             draw.text((10, y), "Discount:", fill='black', font=font_normal)
-            discount_text = f"-${sale.discount:.2f}"
+            discount_text = f"-₹{sale.discount:.2f}"
             bbox = draw.textbbox((0, 0), discount_text, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - 10, y), discount_text, fill='red', font=font_normal)
@@ -871,14 +883,14 @@ def send_invoice(
         
         if sale.tax > 0:
             draw.text((10, y), "Tax:", fill='black', font=font_normal)
-            tax_text = f"${sale.tax:.2f}"
+            tax_text = f"₹{sale.tax:.2f}"
             bbox = draw.textbbox((0, 0), tax_text, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - 10, y), tax_text, fill='black', font=font_normal)
             y += 18
         
         draw.text((10, y), "TOTAL:", fill='black', font=font_bold)
-        total_text = f"${sale.total:.2f}"
+        total_text = f"₹{sale.total:.2f}"
         bbox = draw.textbbox((0, 0), total_text, font=font_bold)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - 10, y), total_text, fill='black', font=font_bold)
@@ -910,7 +922,7 @@ def send_invoice(
         payload = {
             "phone_number": normalized_phone,
             "image_url": str(file_path.absolute()),
-            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: ${sale.total:.2f}\nThank you for your business!"
+            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: ₹{sale.total:.2f}\nThank you for your business!"
         }
         
         response = requests.post(

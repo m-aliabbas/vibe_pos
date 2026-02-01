@@ -71,7 +71,7 @@ export default function ReportsPage() {
         }
     };
 
-    const formatCurrency = (val: number) => `$${val.toFixed(2)}`;
+    const formatCurrency = (val: number) => `₹${val.toFixed(2)}`;
 
     if (loading && !summary) {
         return <div className="p-8 flex justify-center">Loading reports...</div>;
@@ -163,11 +163,11 @@ export default function ReportsPage() {
                                     fontSize={12}
                                 />
                                 <YAxis
-                                    tickFormatter={(val) => `$${val}`}
+                                    tickFormatter={(val) => `₹${val}`}
                                     fontSize={12}
                                 />
                                 <Tooltip
-                                    formatter={(value: number) => [`$${value.toFixed(2)}`, 'Revenue']}
+                                    formatter={(value: number | undefined) => value ? [`₹${value.toFixed(2)}`, 'Revenue'] : ['₹0.00', 'Revenue']}
                                     labelFormatter={(label) => format(new Date(label), 'MMM dd, yyyy')}
                                 />
                                 <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
@@ -237,7 +237,7 @@ export default function ReportsPage() {
                                     <tr key={item.product_id} className="border-b last:border-0 hover:bg-slate-50">
                                         <td className="py-3 font-medium">{item.product_name}</td>
                                         <td className="py-3 text-slate-500">{item.sku}</td>
-                                        <td className="py-3 text-right font-bold text-red-600">{item.current_stock}</td>
+                                        <td className="py-3 text-right font-bold text-red-600">{item.current_stock > 0 ? item.current_stock : '0 - Out of Stock'}</td>
                                         <td className="py-3 text-right text-slate-500">{item.threshold}</td>
                                         <td className="py-3 text-right">
                                             <Badge variant="destructive">Low Stock</Badge>

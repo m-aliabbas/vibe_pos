@@ -109,7 +109,7 @@ const FinancialReports: React.FC = () => {
     { 
       key: 'revenue', 
       label: 'Revenue',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     }
   ];
 
@@ -119,7 +119,7 @@ const FinancialReports: React.FC = () => {
     { 
       key: 'revenue', 
       label: 'Revenue',
-      render: (value: number) => `$${value?.toFixed(2)}`
+      render: (value: number) => `₹${value?.toFixed(2)}`
     }
   ];
 
@@ -241,26 +241,26 @@ const FinancialReports: React.FC = () => {
                     <div className="space-y-4 max-w-2xl mx-auto">
                       <div className="flex justify-between py-2 border-b">
                         <span className="font-medium">Total Revenue</span>
-                        <span>${profitLoss.revenue.toFixed(2)}</span>
+                        <span>₹{profitLoss.revenue.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between py-2 border-b text-red-600">
                         <span>Cost of Goods Sold</span>
-                        <span>-${profitLoss.cost_of_goods_sold.toFixed(2)}</span>
+                        <span>-₹{profitLoss.cost_of_goods_sold.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between py-2 border-b font-bold bg-gray-50 px-2">
                         <span>Gross Profit</span>
                         <span className={profitLoss.gross_profit >= 0 ? "text-green-600" : "text-red-600"}>
-                          ${profitLoss.gross_profit.toFixed(2)}
+                          ₹{profitLoss.gross_profit.toFixed(2)}
                         </span>
                       </div>
                       <div className="flex justify-between py-2 border-b text-red-600">
                         <span>Operating Expenses</span>
-                        <span>-${(profitLoss.expenses?.reduce((sum, item) => sum + item.amount, 0) || 0).toFixed(2)}</span>
+                        <span>-₹{(profitLoss.expenses?.reduce((sum, item) => sum + item.amount, 0) || 0).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between py-4 border-b-2 font-bold text-lg bg-gray-100 px-2">
                         <span>Net Profit</span>
                         <span className={profitLoss.net_profit >= 0 ? "text-green-600" : "text-red-600"}>
-                          ${profitLoss.net_profit.toFixed(2)}
+                          ₹{profitLoss.net_profit.toFixed(2)}
                         </span>
                       </div>
                     </div>

@@ -326,7 +326,7 @@ export default function ManageVariationsPage() {
                     <div className="grid grid-cols-12 gap-4 mb-3 pb-3 border-b font-semibold text-sm bg-slate-50 p-4 rounded-t-lg">
                         <div className="col-span-3">Variation</div>
                         <div className="col-span-2">SKU</div>
-                        <div className="col-span-2">Price Adjustment ($)</div>
+                        <div className="col-span-2">Price Adjustment (₹)</div>
                         <div className="col-span-2">Stock Quantity</div>
                         <div className="col-span-3">Barcode</div>
                     </div>
