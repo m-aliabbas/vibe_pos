@@ -38,6 +38,7 @@ interface SaleItem {
   total_price: number;
   variation_id?: number;
   unit: string;
+  item_discount?: number;
   product?: Product;
   variation?: ProductVariation;
 }
@@ -66,6 +67,7 @@ interface Sale {
   subtotal: number;
   discount: number;
   tax: number;
+  delivery_charges: number;
   total: number;
   amount_paid: number;
   amount_due: number;
@@ -95,11 +97,11 @@ export default function InvoicePage() {
     try {
       setLoading(true);
       setError("");
-      
+
       // Fetch sale details
       const saleResponse = await api.get(`/sales/${params.id}`);
       const saleData = saleResponse.data;
-      
+
       // Fetch all users to get cashier info
       let userData = null;
       try {
@@ -109,14 +111,14 @@ export default function InvoicePage() {
       } catch (err) {
         console.error("Failed to fetch users:", err);
       }
-      
+
       // Fetch all products to map to sale items
       const productsResponse = await api.get("/products/");
       const productMap: { [key: number]: any } = {};
       productsResponse.data.forEach((product: any) => {
         productMap[product.id] = product;
       });
-      
+
       // Build variation map for quick lookup
       const variationMap: { [key: number]: ProductVariation } = {};
       for (const product of productsResponse.data) {
@@ -126,7 +128,7 @@ export default function InvoicePage() {
           });
         }
       }
-      
+
       // Fetch customer data if customer_id is present
       let customerData = null;
       if (saleData.customer_id) {
@@ -137,14 +139,14 @@ export default function InvoicePage() {
           console.error("Failed to fetch customer:", err);
         }
       }
-       
+
       // Map products and variations to sale items
       const itemsWithProducts = saleData.items.map((item: SaleItem) => ({
         ...item,
         product: productMap[item.product_id],
         variation: item.variation_id ? variationMap[item.variation_id] : undefined
       }));
-      
+
       setSale({
         ...saleData,
         user: userData,
@@ -186,10 +188,10 @@ export default function InvoicePage() {
     setSending(true);
     try {
       console.log('Sending invoice via backend...');
-      
+
       // Call backend endpoint to generate and send invoice
       const response = await api.post(`/sales/${params.id}/send-invoice?phone_number=${phoneNumber}`);
-      
+
       console.log('Backend response:', response.data);
 
       alert('Invoice sent successfully!');
@@ -252,8 +254,8 @@ export default function InvoicePage() {
 
       {/* Thermal Receipt Content */}
       <div className="invoice-container container mx-auto p-4 flex justify-center">
-        <Card 
-          ref={invoiceRef} 
+        <Card
+          ref={invoiceRef}
           className="thermal-receipt bg-white shadow-lg w-full max-w-[80mm] mx-auto"
         >
           <div className="p-4 text-sm">
@@ -349,6 +351,11 @@ export default function InvoicePage() {
                       ${item.total_price.toFixed(2)}
                     </span>
                   </div>
+                  {item.item_discount && item.item_discount > 0 && (
+                    <div className="text-xs text-red-600 mb-1 text-right">
+                      Disc: -${item.item_discount.toFixed(2)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -376,6 +383,15 @@ export default function InvoicePage() {
                   <span className="text-gray-600">Tax:</span>
                   <span className="font-medium text-gray-900">
                     ${sale.tax.toFixed(2)}
+                  </span>
+                </div>
+              )}
+
+              {sale.delivery_charges > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Delivery:</span>
+                  <span className="font-medium text-gray-900">
+                    ${sale.delivery_charges.toFixed(2)}
                   </span>
                 </div>
               )}

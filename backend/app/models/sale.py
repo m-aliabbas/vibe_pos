@@ -29,7 +29,8 @@ class Sale(Base):
     subtotal = Column(Float, default=0.0)  # Sum of all items
     discount = Column(Float, default=0.0)  # Future: discount amount
     tax = Column(Float, default=0.0)  # Future: tax amount
-    total = Column(Float, default=0.0)  # Final total (subtotal - discount + tax)
+    delivery_charges = Column(Float, default=0.0)  # Delivery charges
+    total = Column(Float, default=0.0)  # Final total (subtotal - discount + tax + delivery)
     
     # Payment tracking for udhar (credit) management
     amount_paid = Column(Float, default=0.0)  # Actual amount received
@@ -54,7 +55,8 @@ class SaleItem(Base):
     quantity = Column(Integer)
     unit = Column(String, default="piece")  # Unit of sale (piece, dozen, kg, etc.)
     unit_price = Column(Float)  # Price at time of sale (snapshot)
-    total_price = Column(Float)  # quantity * unit_price
+    item_discount = Column(Float, default=0.0) # Discount on this specific item
+    total_price = Column(Float)  # (quantity * unit_price) - item_discount
     
     # Relationships
     sale = relationship("Sale", back_populates="items")

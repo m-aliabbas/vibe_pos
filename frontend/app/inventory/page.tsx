@@ -84,6 +84,10 @@ export default function InventoryPage() {
     const [editOpen, setEditOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [bulkOpen, setBulkOpen] = useState(false);
+    const [bulkFile, setBulkFile] = useState<File | null>(null);
+    const [bulkUploading, setBulkUploading] = useState(false);
+    const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('All');
     const [stockFilter, setStockFilter] = useState<string>('all');
@@ -259,6 +263,30 @@ export default function InventoryPage() {
         }
     };
 
+    const handleBulkImport = async () => {
+        if (!bulkFile) {
+            alert("Please select a CSV file");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', bulkFile);
+
+        setBulkUploading(true);
+        try {
+            const { data } = await api.post('/products/bulk-import', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setBulkResult(data);
+            fetchProducts();
+        } catch (error: any) {
+            console.error("Failed to import products", error);
+            alert(error?.response?.data?.detail || "Failed to import products");
+        } finally {
+            setBulkUploading(false);
+        }
+    };
+
     const openVariationBuilder = async (product: Product) => {
         router.push(`/inventory/variations/${product.id}`);
     };
@@ -272,13 +300,71 @@ export default function InventoryPage() {
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Product Catalog</h1>
                     <p className="text-gray-500 mt-1">Define the items you sell. Manage stock via Purchases.</p>
                 </div>
-                <Dialog open={open} onOpenChange={setOpen}>
-                    <DialogTrigger asChild>
-                        <Button className="bg-emerald-600 hover:bg-emerald-700 shadow-sm">
-                            <Plus className="mr-2 h-4 w-4" /> Define New Product
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[500px]">
+                <div className="flex items-center gap-2">
+                    <Dialog open={bulkOpen} onOpenChange={(nextOpen) => {
+                        setBulkOpen(nextOpen);
+                        if (!nextOpen) {
+                            setBulkFile(null);
+                            setBulkResult(null);
+                        }
+                    }}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline">
+                                <Plus className="mr-2 h-4 w-4" /> Bulk Import (CSV)
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[520px]">
+                            <DialogHeader>
+                                <DialogTitle>Bulk Import Products</DialogTitle>
+                                <DialogDescription>
+                                    Upload a CSV file with columns: name, sku, category, description, selling_price, cost_price, quantity, base_unit, has_variations, variation_attributes, selling_units_json
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="products_csv">CSV File</Label>
+                                    <Input
+                                        id="products_csv"
+                                        type="file"
+                                        accept=".csv"
+                                        onChange={e => setBulkFile(e.target.files?.[0] || null)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        {"JSON columns must be valid. Example: [\"Size\", \"Color\"] and [{\"unit\":\"piece\",\"conversion\":1,\"price\":10}]"}
+                                    </p>
+                                </div>
+                                {bulkResult && (
+                                    <div className="rounded-md border p-3 text-sm">
+                                        <div>Created: {bulkResult.created}</div>
+                                        <div>Skipped: {bulkResult.skipped}</div>
+                                        {bulkResult.errors.length > 0 && (
+                                            <div className="mt-2 text-xs text-red-600 space-y-1 max-h-32 overflow-auto">
+                                                {bulkResult.errors.map((err, idx) => (
+                                                    <div key={idx}>{err}</div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setBulkOpen(false)} disabled={bulkUploading}>
+                                    Close
+                                </Button>
+                                <Button onClick={handleBulkImport} disabled={bulkUploading || !bulkFile}>
+                                    {bulkUploading ? "Importing..." : "Import Products"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={open} onOpenChange={setOpen}>
+                        <DialogTrigger asChild>
+                            <Button className="bg-emerald-600 hover:bg-emerald-700 shadow-sm">
+                                <Plus className="mr-2 h-4 w-4" /> Define New Product
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[500px]">
                         <DialogHeader>
                             <DialogTitle>Define New Product</DialogTitle>
                             <DialogDescription>
@@ -396,8 +482,9 @@ export default function InventoryPage() {
                                 <Button type="submit">Save Definition</Button>
                             </DialogFooter>
                         </form>
-                    </DialogContent>
-                </Dialog>
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
 
             <div className="space-y-4">

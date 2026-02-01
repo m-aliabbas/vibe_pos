@@ -15,6 +15,7 @@ class SaleItemBase(BaseModel):
     quantity: int
     variation_id: Optional[int] = None  # Optional variation
     unit: str = "piece"  # Unit of sale (piece, dozen, kg, etc.)
+    item_discount: float = 0.0 # Discount on this specific item
 
 class SaleItemCreate(SaleItemBase):
     pass
@@ -38,6 +39,7 @@ class SaleCreate(SaleBase):
     items: List[SaleItemCreate]
     discount: Optional[float] = 0.0
     tax: Optional[float] = 0.0
+    delivery_charges: Optional[float] = 0.0
     amount_paid: Optional[float] = None  # If None, assumes full payment
     # Customer linking - can provide customer_ref_id or phone to link/create customer
     customer_ref_id: Optional[int] = None  # Direct link to customer by internal ID
@@ -49,6 +51,7 @@ class Sale(SaleBase):
     subtotal: float
     discount: float = 0.0
     tax: float = 0.0
+    delivery_charges: float = 0.0
     total: float
     amount_paid: float = 0.0
     amount_due: float = 0.0

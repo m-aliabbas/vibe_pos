@@ -10,6 +10,7 @@ interface User {
 interface AuthState {
     user: User | null;
     token: string | null;
+    isLoading: boolean;
     login: (credentials: any) => Promise<void>;
     logout: () => void;
     checkAuth: () => Promise<void>;
@@ -18,6 +19,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     token: null,
+    isLoading: true, // Start as loading to prevent premature redirects
 
     login: async (credentials) => {
         try {
@@ -33,8 +35,9 @@ export const useAuthStore = create<AuthState>((set) => ({
             set({ token: access_token });
 
             const meResponse = await api.get('/auth/me');
-            set({ user: meResponse.data });
+            set({ user: meResponse.data, isLoading: false });
         } catch (error) {
+            set({ isLoading: false });
             console.error("Login failed", error);
             throw error;
         }
@@ -51,11 +54,13 @@ export const useAuthStore = create<AuthState>((set) => ({
             set({ token });
             try {
                 const response = await api.get('/auth/me');
-                set({ user: response.data });
+                set({ user: response.data, isLoading: false });
             } catch (error) {
                 localStorage.removeItem('token');
-                set({ token: null, user: null });
+                set({ token: null, user: null, isLoading: false });
             }
+        } else {
+            set({ isLoading: false });
         }
     }
 }));

@@ -87,12 +87,10 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         mm_to_px = dpi / 25.4  # Convert mm to pixels
         width = int(80 * mm_to_px)  # 80mm thermal receipt width
         
-        # Calculate height based on items and vehicle info
+        # Calculate height based on items
         base_height = int(120 * mm_to_px)  # ~120mm base
         item_height = len(sale.items) * int(20 * mm_to_px)  # ~20mm per item
-        # Add extra height for vehicle info if present
-        vehicle_height = int(35 * mm_to_px) if (sale.customer and (sale.customer.current_mileage or sale.customer.oil_change_interval)) else 0
-        total_height = base_height + item_height + vehicle_height
+        total_height = base_height + item_height
         
         # Create white image
         img = Image.new('RGB', (width, total_height), color='white')
@@ -167,34 +165,19 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         draw.text((mm(3), y), customer_name[:35], fill='black', font=font_normal)
         y += mm(6)
         
-        # Oil Change Details (if customer has vehicle info)
-        if sale.customer and (sale.customer.current_mileage or sale.customer.oil_change_interval):
-            draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=1)
-            y += mm(4)
-            draw.text((mm(3), y), "VEHICLE INFO:", fill='black', font=font_bold)
-            y += mm(5)
-            
-            if sale.customer.current_mileage:
-                mileage_text = f"Current KM: {sale.customer.current_mileage}"
-                draw.text((mm(3), y), mileage_text[:35], fill='black', font=font_normal)
-                y += mm(4)
-            
-            if sale.customer.oil_change_interval:
-                interval_text = f"Oil Interval: {sale.customer.oil_change_interval}KM"
-                draw.text((mm(3), y), interval_text[:35], fill='black', font=font_normal)
-                y += mm(4)
-            
-            if sale.customer.next_oil_change_mileage:
-                next_text = f"Next Oil Change: {sale.customer.next_oil_change_mileage}KM"
-                draw.text((mm(3), y), next_text[:35], fill='darkgreen', font=font_bold)
-                y += mm(5)
-        
         draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=1)
         y += mm(4)
         
         # Items
         draw.text((mm(3), y), "ITEMS:", fill='black', font=font_bold)
         y += mm(6)
+        
+        # Calculate total item discounts
+        total_item_discount = 0
+        for item in sale.items:
+            # Assuming item has an item_discount field, otherwise calculate from price difference
+            if hasattr(item, 'item_discount') and item.item_discount:
+                total_item_discount += item.item_discount
         
         for item in sale.items:
             product_name = item.product.name if item.product else f"Product #{item.product_id}"
@@ -206,12 +189,36 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
                 draw.text((mm(4), y), attrs[:30], fill='purple', font=font_small)
                 y += mm(4)
             
+            # Calculate original price (before discount)
+            original_price = item.unit_price * item.quantity
+            
+            # Show quantity and unit price
             qty_price = f"{item.quantity} {item.unit} x ${item.unit_price:.2f}"
-            total_price = f"${item.total_price:.2f}"
             draw.text((mm(4), y), qty_price, fill='black', font=font_small)
-            bbox = draw.textbbox((0, 0), total_price, font=font_small)
+            y += mm(4)
+            
+            # If item has discount, show original price (strikethrough effect) and discount
+            if item.item_discount and item.item_discount > 0:
+                # Original price (before discount) - shown with strikethrough
+                original_text = f"${original_price:.2f}"
+                bbox = draw.textbbox((0, 0), original_text, font=font_small)
+                text_width = bbox[2] - bbox[0]
+                x_pos = width - text_width - mm(3)
+                draw.text((x_pos, y), original_text, fill='gray', font=font_small)
+                # Draw strikethrough line
+                draw.line([(x_pos, y + mm(2)), (x_pos + text_width, y + mm(2))], fill='gray', width=1)
+                y += mm(4)
+                
+                # Discount amount
+                discount_text = f"Discount: -${item.item_discount:.2f}"
+                draw.text((mm(4), y), discount_text, fill='red', font=font_small)
+                y += mm(4)
+            
+            # Final price (after discount)
+            final_price = f"${item.total_price:.2f}"
+            bbox = draw.textbbox((0, 0), final_price, font=font_normal)
             text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - mm(3), y), total_price, fill='black', font=font_normal)
+            draw.text((width - text_width - mm(3), y), final_price, fill='darkgreen', font=font_bold)
             y += mm(6)
         
         y += mm(1.5)
@@ -226,9 +233,11 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         draw.text((width - text_width - mm(3), y), subtotal_text, fill='black', font=font_normal)
         y += mm(5)
         
-        if sale.discount > 0:
+        # Combine global discount with item discounts
+        total_discount = sale.discount + total_item_discount
+        if total_discount > 0:
             draw.text((mm(3), y), "Discount:", fill='black', font=font_normal)
-            discount_text = f"-${sale.discount:.2f}"
+            discount_text = f"-${total_discount:.2f}"
             bbox = draw.textbbox((0, 0), discount_text, font=font_normal)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - mm(3), y), discount_text, fill='red', font=font_normal)
@@ -247,8 +256,39 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         bbox = draw.textbbox((0, 0), total_text, font=font_bold)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), total_text, fill='black', font=font_bold)
-        y += mm(7)
+        y += mm(6)
         
+        # Payment breakdown
+        draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=1)
+        y += mm(4)
+        
+        # Amount paid
+        draw.text((mm(3), y), "Amount Paid:", fill='black', font=font_normal)
+        paid_text = f"${sale.amount_paid:.2f}"
+        bbox = draw.textbbox((0, 0), paid_text, font=font_normal)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), paid_text, fill='black', font=font_normal)
+        y += mm(5)
+        
+        # Outstanding balance (Udhar) - only show if there's a balance
+        if sale.amount_due > 0:
+            draw.text((mm(3), y), "Outstanding (Udhar):", fill='black', font=font_bold)
+            due_text = f"${sale.amount_due:.2f}"
+            bbox = draw.textbbox((0, 0), due_text, font=font_bold)
+            text_width = bbox[2] - bbox[0]
+            draw.text((width - text_width - mm(3), y), due_text, fill='red', font=font_bold)
+            y += mm(5)
+        
+        # Change - only show if there's change to return
+        if sale.change_amount > 0:
+            draw.text((mm(3), y), "Change:", fill='black', font=font_normal)
+            change_text = f"${sale.change_amount:.2f}"
+            bbox = draw.textbbox((0, 0), change_text, font=font_normal)
+            text_width = bbox[2] - bbox[0]
+            draw.text((width - text_width - mm(3), y), change_text, fill='darkgreen', font=font_normal)
+            y += mm(5)
+        
+        y += mm(2)
         payment_text = f"Payment: {sale.payment_method}"
         draw.text((mm(3), y), payment_text, fill='black', font=font_normal)
         y += mm(7)
@@ -403,7 +443,8 @@ def create_sale(
                     unit_price = su['price']
                     break
         
-        item_total = unit_price * item.quantity
+        item_discount = item.item_discount if item.item_discount is not None else 0.0
+        item_total = (unit_price * item.quantity) - item_discount
         subtotal += item_total
     
     # Apply discount if provided
@@ -525,6 +566,7 @@ def create_sale(
                     break
         
         # Create sale item
+        item_discount = item.item_discount if item.item_discount is not None else 0.0
         db_sale_item = SaleItem(
             sale_id=db_sale.id,
             product_id=item.product_id,
@@ -532,7 +574,8 @@ def create_sale(
             quantity=item.quantity,
             unit=item.unit,
             unit_price=unit_price,
-            total_price=unit_price * item.quantity
+            item_discount=item_discount,
+            total_price=(unit_price * item.quantity) - item_discount
         )
         db.add(db_sale_item)
         

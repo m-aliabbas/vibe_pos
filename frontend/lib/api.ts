@@ -36,6 +36,7 @@ export interface CustomerResponse {
     total_purchases: number;
     total_spent: number;
     outstanding_balance: number;
+    opening_balance: number;
     current_mileage?: number;
     oil_change_interval?: number;
     next_oil_change_mileage?: number;
@@ -55,6 +56,7 @@ export interface CustomerCreate {
     current_mileage?: number;
     oil_change_interval?: number;
     next_oil_change_mileage?: number;
+    opening_balance?: number;
 }
 
 export interface CustomerUpdate {
@@ -142,6 +144,14 @@ export const customerApi = {
     // Create new customer
     createCustomer: async (customer: CustomerCreate): Promise<CustomerResponse> => {
         const response = await api.post('/customers/', customer);
+        return response.data;
+    },
+
+    // Bulk import customers via CSV
+    bulkImportCustomers: async (formData: FormData): Promise<{ created: number; skipped: number; errors: string[] }> => {
+        const response = await api.post('/customers/bulk-import', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
         return response.data;
     },
 

@@ -111,10 +111,10 @@ export default function VendorDetailsPage() {
     if (!vendor) return <div>Vendor not found</div>;
 
     const totalBalance = calculateBalance(purchases);
-    
+
     // Filter purchases based on status
-    const filteredPurchases = statusFilter === 'all' 
-        ? purchases 
+    const filteredPurchases = statusFilter === 'all'
+        ? purchases
         : purchases.filter(p => p.status === statusFilter);
 
     return (
@@ -157,29 +157,28 @@ export default function VendorDetailsPage() {
                                     <>
                                         <div className="grid gap-4 py-4">
                                             <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
-                                                <div className="space-y-1 text-sm">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-600">Outstanding Balance:</span>
-                                                        <span className="font-bold text-red-600">${totalBalance.toFixed(2)}</span>
-                                                    </div>
-                                                    {vendor.prepaid_credit > 0 && (
-                                                        <div className="flex justify-between">
-                                                            <span className="text-gray-600">Existing Credit:</span>
-                                                            <span className="font-bold text-blue-600">${vendor.prepaid_credit.toFixed(2)}</span>
-                                                        </div>
-                                                    )}
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-600">Unpaid Purchases:</span>
-                                                        <span className="font-medium">{purchases.filter(p => p.status !== 'paid').length}</span>
-                                                    </div>
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-sm font-medium text-blue-900">Outstanding Balance:</span>
+                                                    <span className="text-lg font-bold text-red-600">
+                                                        ${totalBalance.toFixed(2)}
+                                                    </span>
                                                 </div>
+                                                {vendor.prepaid_credit > 0 && (
+                                                    <div className="flex justify-between items-center mb-2 text-sm">
+                                                        <span className="text-blue-900">Existing Credit:</span>
+                                                        <span className="font-bold text-green-600">${vendor.prepaid_credit.toFixed(2)}</span>
+                                                    </div>
+                                                )}
+                                                <p className="text-xs text-blue-700">
+                                                    ℹ️ This payment will be automatically reconciled against the oldest unpaid purchases first.
+                                                </p>
                                             </div>
                                             <div className="grid gap-2">
                                                 <Label htmlFor="amount">Payment Amount ($)</Label>
-                                                <Input 
-                                                    id="amount" 
-                                                    type="number" 
-                                                    step="0.01" 
+                                                <Input
+                                                    id="amount"
+                                                    type="number"
+                                                    step="0.01"
                                                     value={paymentAmount}
                                                     onChange={e => setPaymentAmount(e.target.value)}
                                                     placeholder="0.00"
@@ -342,7 +341,7 @@ export default function VendorDetailsPage() {
                         </TableHeader>
                         <TableBody>
                             {filteredPurchases.map((purchase) => (
-                                <TableRow 
+                                <TableRow
                                     key={purchase.id}
                                     className="cursor-pointer hover:bg-gray-50 transition-colors"
                                     onClick={() => router.push(`/purchases/${purchase.id}`)}

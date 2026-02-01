@@ -34,6 +34,10 @@ export default function VendorsPage() {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [loading, setLoading] = useState(true);
     const [open, setOpen] = useState(false);
+    const [bulkOpen, setBulkOpen] = useState(false);
+    const [bulkFile, setBulkFile] = useState<File | null>(null);
+    const [bulkUploading, setBulkUploading] = useState(false);
+    const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
 
     // Form State
     const [name, setName] = useState('');
@@ -41,6 +45,7 @@ export default function VendorsPage() {
     const [email, setEmail] = useState('');
     const [phone, setPhone] = useState('');
     const [address, setAddress] = useState('');
+    const [openingBalance, setOpeningBalance] = useState(0);
 
     useEffect(() => {
         fetchVendors();
@@ -59,13 +64,18 @@ export default function VendorsPage() {
 
     const handleCreateVendor = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (openingBalance < 0) {
+            alert("Opening balance must be greater than or equal to 0");
+            return;
+        }
         try {
             await api.post('/vendors/', {
                 name,
                 contact_name: contactName || null,
                 email: email || null,
                 phone: phone || null,
-                address: address || null
+                address: address || null,
+                opening_balance: openingBalance
             });
             setOpen(false);
             resetForm();
@@ -76,12 +86,37 @@ export default function VendorsPage() {
         }
     };
 
+    const handleBulkImport = async () => {
+        if (!bulkFile) {
+            alert("Please select a CSV file");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', bulkFile);
+
+        setBulkUploading(true);
+        try {
+            const { data } = await api.post('/vendors/bulk-import', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setBulkResult(data);
+            fetchVendors();
+        } catch (error: any) {
+            console.error("Failed to import vendors", error);
+            alert(error?.response?.data?.detail || "Failed to import vendors");
+        } finally {
+            setBulkUploading(false);
+        }
+    };
+
     const resetForm = () => {
         setName('');
         setContactName('');
         setEmail('');
         setPhone('');
         setAddress('');
+        setOpeningBalance(0);
     };
 
     return (
@@ -91,13 +126,71 @@ export default function VendorsPage() {
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Vendors</h1>
                     <p className="text-gray-500 mt-1">Manage your suppliers and partners.</p>
                 </div>
-                <Dialog open={open} onOpenChange={setOpen}>
-                    <DialogTrigger asChild>
-                        <Button className="bg-indigo-600 hover:bg-indigo-700 shadow-sm">
-                            <Plus className="mr-2 h-4 w-4" /> Add Vendor
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-[425px]">
+                <div className="flex items-center gap-2">
+                    <Dialog open={bulkOpen} onOpenChange={(nextOpen) => {
+                        setBulkOpen(nextOpen);
+                        if (!nextOpen) {
+                            setBulkFile(null);
+                            setBulkResult(null);
+                        }
+                    }}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline">
+                                <Plus className="mr-2 h-4 w-4" /> Bulk Import (CSV)
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[500px]">
+                            <DialogHeader>
+                                <DialogTitle>Bulk Import Vendors</DialogTitle>
+                                <DialogDescription>
+                                    Upload a CSV file with columns: name, contact_name, email, phone, address, opening_balance
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="vendors_csv">CSV File</Label>
+                                    <Input
+                                        id="vendors_csv"
+                                        type="file"
+                                        accept=".csv"
+                                        onChange={e => setBulkFile(e.target.files?.[0] || null)}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Opening balance must be $\geq 0$.
+                                    </p>
+                                </div>
+                                {bulkResult && (
+                                    <div className="rounded-md border p-3 text-sm">
+                                        <div>Created: {bulkResult.created}</div>
+                                        <div>Skipped: {bulkResult.skipped}</div>
+                                        {bulkResult.errors.length > 0 && (
+                                            <div className="mt-2 text-xs text-red-600 space-y-1 max-h-32 overflow-auto">
+                                                {bulkResult.errors.map((err, idx) => (
+                                                    <div key={idx}>{err}</div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setBulkOpen(false)} disabled={bulkUploading}>
+                                    Close
+                                </Button>
+                                <Button onClick={handleBulkImport} disabled={bulkUploading || !bulkFile}>
+                                    {bulkUploading ? "Importing..." : "Import Vendors"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={open} onOpenChange={setOpen}>
+                        <DialogTrigger asChild>
+                            <Button className="bg-indigo-600 hover:bg-indigo-700 shadow-sm">
+                                <Plus className="mr-2 h-4 w-4" /> Add Vendor
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[425px]">
                         <DialogHeader>
                             <DialogTitle>Add New Vendor</DialogTitle>
                             <DialogDescription>
@@ -127,12 +220,28 @@ export default function VendorsPage() {
                                 <Label htmlFor="address">Address</Label>
                                 <Input id="address" value={address} onChange={e => setAddress(e.target.value)} placeholder="123 Supply Ln, City" />
                             </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="opening_balance">Opening Balance (Legacy Payable)</Label>
+                                <Input
+                                    id="opening_balance"
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={openingBalance}
+                                    onChange={e => setOpeningBalance(Math.max(0, parseFloat(e.target.value) || 0))}
+                                    placeholder="0.00"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Enter existing amount owed from manual system
+                                </p>
+                            </div>
                             <DialogFooter>
                                 <Button type="submit">Save Vendor</Button>
                             </DialogFooter>
                         </form>
-                    </DialogContent>
-                </Dialog>
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

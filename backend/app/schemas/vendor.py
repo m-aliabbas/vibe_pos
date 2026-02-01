@@ -9,7 +9,7 @@ class VendorBase(BaseModel):
     address: Optional[str] = None
 
 class VendorCreate(VendorBase):
-    pass
+    opening_balance: Optional[float] = 0.0
 
 class VendorUpdate(VendorBase):
     pass
@@ -19,6 +19,7 @@ class VendorPayment(BaseModel):
 
 class Vendor(VendorBase):
     id: int
+    opening_balance: float
     prepaid_credit: float = 0.0
 
     class Config:

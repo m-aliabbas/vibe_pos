@@ -19,6 +19,7 @@ export const metadata: Metadata = {
 
 import { AutoBreadcrumb } from "@/components/AutoBreadcrumb";
 import { Navbar } from "@/components/Navbar";
+import { AuthProvider } from "@/components/AuthProvider";
 
 export default function RootLayout({
   children,
@@ -30,9 +31,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <Navbar />
-        <AutoBreadcrumb />
-        {children}
+        <AuthProvider>
+          <Navbar />
+          <AutoBreadcrumb />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

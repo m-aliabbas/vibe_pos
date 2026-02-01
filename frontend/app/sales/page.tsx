@@ -22,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import api, { customerApi, CustomerSimple } from "@/lib/api";
 import {
@@ -59,6 +60,7 @@ interface Product {
   sku: string;
   category: string;
   selling_price: number;
+  cost_price: number; // Added
   quantity: number;
   vendor_id: number;
   has_variations: boolean;
@@ -73,11 +75,19 @@ interface CartItem {
   quantity: number;
   variation?: ProductVariation;
   unit: string;
+  item_discount?: number; // Added for item-level discount
+}
+
+interface SaleSummary {
+  totalRevenue: number;
+  totalUdhar: number;
+  totalCount: number;
+  byPayment: Record<string, number>;
 }
 
 export default function SalesTerminal() {
   const router = useRouter();
-  const { user, token } = useAuthStore();
+  const { user, token, isLoading } = useAuthStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -91,10 +101,8 @@ export default function SalesTerminal() {
   const [customerId, setCustomerId] = useState(""); // separate customer id field
   const [customerPhone, setCustomerPhone] = useState(""); // separate phone field
   const [customerName, setCustomerName] = useState(""); // optional name
-  const [currentMileage, setCurrentMileage] = useState<number | undefined>(undefined);
-  const [oilChangeInterval, setOilChangeInterval] = useState<number | undefined>(undefined);
-  const [nextOilChangeMileage, setNextOilChangeMileage] = useState<number | undefined>(undefined);
-  const [showVehicleInfo, setShowVehicleInfo] = useState(false);
+  // Removed vehicle info state
+
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerSimple | null>(
     null
   );
@@ -103,6 +111,7 @@ export default function SalesTerminal() {
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [discount, setDiscount] = useState<number>(0);
   const [tax, setTax] = useState<number>(0);
+  const [deliveryCharges, setDeliveryCharges] = useState<number>(0); // Added delivery charges
   const [amountPaid, setAmountPaid] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -111,6 +120,19 @@ export default function SalesTerminal() {
   const [completedSaleTotal, setCompletedSaleTotal] = useState<number>(0);
   const [completedAmountPaid, setCompletedAmountPaid] = useState<number>(0);
   const [completedChange, setCompletedChange] = useState<number>(0);
+  const [summaryOpen, setSummaryOpen] = useState<boolean>(false);
+  const [todayStats, setTodayStats] = useState<SaleSummary>({
+    totalRevenue: 0,
+    totalUdhar: 0,
+    totalCount: 0,
+    byPayment: { cash: 0, card: 0, mobile: 0, other: 0 },
+  });
+  const [todayUserStats, setTodayUserStats] = useState<SaleSummary>({
+    totalRevenue: 0,
+    totalUdhar: 0,
+    totalCount: 0,
+    byPayment: { cash: 0, card: 0, mobile: 0, other: 0 },
+  });
 
   // Variation picker state
   const [variationDialogOpen, setVariationDialogOpen] = useState(false);
@@ -161,12 +183,67 @@ export default function SalesTerminal() {
 
   // Fetch products on mount
   useEffect(() => {
+    if (isLoading) return;
+
     if (!token) {
       router.push("/login");
       return;
     }
     fetchProducts();
-  }, [token]);
+    fetchTodayStats();
+  }, [token, isLoading]);
+
+  const buildSummary = (sales: any[]): SaleSummary => {
+    const summary: SaleSummary = {
+      totalRevenue: 0,
+      totalUdhar: 0,
+      totalCount: sales.length,
+      byPayment: { cash: 0, card: 0, mobile: 0, other: 0 },
+    };
+
+    for (const sale of sales) {
+      summary.totalRevenue += sale.total || 0;
+      summary.totalUdhar += sale.amount_due || 0;
+      const method = (sale.payment_method || "other").toLowerCase();
+      if (!summary.byPayment[method]) {
+        summary.byPayment[method] = 0;
+      }
+      summary.byPayment[method] += sale.total || 0;
+    }
+
+    return summary;
+  };
+
+  const fetchTodayStats = async () => {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: allSales } = await api.get("/sales/", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { start_date: today, end_date: today, limit: 2000 },
+      });
+
+      setTodayStats(buildSummary(allSales || []));
+
+      if (user?.id) {
+        const { data: userSales } = await api.get("/sales/", {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { start_date: today, end_date: today, user_id: user.id, limit: 2000 },
+        });
+        setTodayUserStats(buildSummary(userSales || []));
+      } else {
+        setTodayUserStats(buildSummary(allSales || []));
+      }
+    } catch (error) {
+      console.error("Failed to fetch today stats:", error);
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amount);
+  };
 
   // Filter products based on search
   useEffect(() => {
@@ -298,8 +375,8 @@ export default function SalesTerminal() {
       setCart(
         cart.map((item) =>
           item.product.id === product.id &&
-          !item.variation &&
-          item.unit === product.base_unit
+            !item.variation &&
+            item.unit === product.base_unit
             ? { ...item, quantity: newTotalQuantity }
             : item
         )
@@ -349,8 +426,8 @@ export default function SalesTerminal() {
       setCart(
         cart.map((item) =>
           item.product.id === product.id &&
-          !item.variation &&
-          item.unit === product.base_unit
+            !item.variation &&
+            item.unit === product.base_unit
             ? { ...item, quantity: item.quantity + 1 }
             : item
         )
@@ -393,10 +470,10 @@ export default function SalesTerminal() {
     const currentCartQuantity = existingItem ? existingItem.quantity : 0;
     const newTotalQuantityInBase = existingItem
       ? (currentCartQuantity + quantityForVariation) *
-        (unit !== selectedProductForVariation.base_unit
-          ? selectedProductForVariation.selling_units.find((u) => u.unit === unit)
-              ?.conversion || 1
-          : 1)
+      (unit !== selectedProductForVariation.base_unit
+        ? selectedProductForVariation.selling_units.find((u) => u.unit === unit)
+          ?.conversion || 1
+        : 1)
       : quantityInBaseUnits;
 
     if (newTotalQuantityInBase > selectedVariation.quantity) {
@@ -410,8 +487,8 @@ export default function SalesTerminal() {
       setCart(
         cart.map((item) =>
           item.product.id === selectedProductForVariation.id &&
-          item.variation?.id === selectedVariation.id &&
-          item.unit === unit
+            item.variation?.id === selectedVariation.id &&
+            item.unit === unit
             ? { ...item, quantity: item.quantity + quantityForVariation }
             : item
         )
@@ -465,10 +542,10 @@ export default function SalesTerminal() {
     const currentCartQuantity = existingItem ? existingItem.quantity : 0;
     const newTotalQuantityInBase = existingItem
       ? (currentCartQuantity + quantityForUnit) *
-        (unit !== selectedProductForUnit.base_unit
-          ? selectedProductForUnit.selling_units.find((u) => u.unit === unit)
-              ?.conversion || 1
-          : 1)
+      (unit !== selectedProductForUnit.base_unit
+        ? selectedProductForUnit.selling_units.find((u) => u.unit === unit)
+          ?.conversion || 1
+        : 1)
       : quantityInBaseUnits;
 
     if (newTotalQuantityInBase > selectedProductForUnit.quantity) {
@@ -482,8 +559,8 @@ export default function SalesTerminal() {
       setCart(
         cart.map((item) =>
           item.product.id === selectedProductForUnit.id &&
-          !item.variation &&
-          item.unit === unit
+            !item.variation &&
+            item.unit === unit
             ? { ...item, quantity: item.quantity + quantityForUnit }
             : item
         )
@@ -543,13 +620,10 @@ export default function SalesTerminal() {
     setCustomerName("");
     setCustomerPhone("");
     setCustomerId("");
-    setCurrentMileage(undefined);
-    setOilChangeInterval(undefined);
-    setNextOilChangeMileage(undefined);
-    setShowVehicleInfo(false);
     setSelectedCustomer(null);
     setDiscount(0);
     setTax(0);
+    setDeliveryCharges(0);
   };
 
   // ✅ Customer lookup with BOTH fields
@@ -631,13 +705,18 @@ export default function SalesTerminal() {
         }
       }
 
-      return sum + itemPrice * item.quantity;
+      return sum + (itemPrice * item.quantity);
     }, 0);
+  };
+
+  const calculateItemDiscounts = () => {
+    return cart.reduce((sum, item) => sum + (item.item_discount || 0), 0);
   };
 
   const calculateTotal = () => {
     const subtotal = calculateSubtotal();
-    return subtotal - discount + tax;
+    const itemDiscounts = calculateItemDiscounts();
+    return subtotal - itemDiscounts - discount + tax + deliveryCharges;
   };
 
   const handleCheckout = () => {
@@ -672,9 +751,6 @@ export default function SalesTerminal() {
             phone: phoneVal || undefined,
             customer_id: effectiveCustomerId || undefined,
             name: customerName.trim() || undefined,
-            current_mileage: currentMileage,
-            oil_change_interval: oilChangeInterval,
-            next_oil_change_mileage: nextOilChangeMileage,
           });
           customerRefId = customer.id;
         } catch (error) {
@@ -690,12 +766,14 @@ export default function SalesTerminal() {
         payment_method: paymentMethod,
         discount: discount,
         tax: tax,
+        delivery_charges: deliveryCharges,
         amount_paid: amountPaid,
         items: cart.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
           variation_id: item.variation?.id || null,
           unit: item.unit,
+          item_discount: item.item_discount || 0,
         })),
       };
 
@@ -731,6 +809,9 @@ export default function SalesTerminal() {
   // Get unique categories
   const categories = ["All", ...Array.from(new Set(products.map((p) => p.category)))];
 
+  // Calculate low stock count for tab label
+  const lowStockCount = products.filter(p => p.quantity > 0 && p.quantity <= 10).length;
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -739,15 +820,84 @@ export default function SalesTerminal() {
           <h1 className="text-3xl font-bold">Sales Terminal</h1>
           <p className="text-muted-foreground">Cashier: {user?.username}</p>
         </div>
-        <Card className="px-4 py-2">
-          <p className="text-sm text-muted-foreground">Cart Items</p>
-          <p className="text-2xl font-bold">{cart.length}</p>
-        </Card>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => setSummaryOpen((prev) => !prev)}>
+            {summaryOpen ? "Hide Summary" : "Show Summary"}
+          </Button>
+          <Card className="px-4 py-2">
+            <p className="text-sm text-muted-foreground">Cart Items</p>
+            <p className="text-2xl font-bold">{cart.length}</p>
+          </Card>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {summaryOpen && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Today Total Sales</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(todayStats.totalRevenue)}
+              </div>
+              <p className="text-xs text-muted-foreground">{todayStats.totalCount} sales</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Today Sales (You)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(todayUserStats.totalRevenue)}
+              </div>
+              <p className="text-xs text-muted-foreground">{todayUserStats.totalCount} sales</p>
+            </CardContent>
+          </Card>
+
+          <Card className={todayStats.totalUdhar > 0 ? "border-red-200 bg-red-50" : ""}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Today Udhar</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${todayStats.totalUdhar > 0 ? "text-red-600" : ""}`}>
+                {formatCurrency(todayStats.totalUdhar)}
+              </div>
+              <p className="text-xs text-muted-foreground">Outstanding due</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Today Payments</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span>Cash</span>
+                <span className="font-medium">{formatCurrency(todayStats.byPayment.cash || 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Card</span>
+                <span className="font-medium">{formatCurrency(todayStats.byPayment.card || 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Mobile</span>
+                <span className="font-medium">{formatCurrency(todayStats.byPayment.mobile || 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Other</span>
+                <span className="font-medium">{formatCurrency(todayStats.byPayment.other || 0)}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Product Search & List */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -771,18 +921,16 @@ export default function SalesTerminal() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={stockFilter} onValueChange={setStockFilter}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <PackageIcon className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Stock Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Stock</SelectItem>
-                    <SelectItem value="in">In Stock</SelectItem>
-                    <SelectItem value="low">Low Stock (≤10)</SelectItem>
-                    <SelectItem value="out">Out of Stock</SelectItem>
-                  </SelectContent>
-                </Select>
+
+                <Tabs value={stockFilter} onValueChange={setStockFilter} className="w-auto">
+                  <TabsList>
+                    <TabsTrigger value="all">All Items</TabsTrigger>
+                    <TabsTrigger value="low" className={lowStockCount > 0 ? "text-orange-600" : ""}>
+                      Low Stock {lowStockCount > 0 && `(${lowStockCount})`}
+                    </TabsTrigger>
+                    <TabsTrigger value="out">Out of Stock</TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
 
               {/* Search Input */}
@@ -815,11 +963,10 @@ export default function SalesTerminal() {
                           {filteredProducts.slice(0, 10).map((product, index) => (
                             <div
                               key={product.id}
-                              className={`p-3 cursor-pointer border-b last:border-b-0 ${
-                                index === selectedProductIndex
-                                  ? "bg-primary/10 border-l-4 border-l-primary"
-                                  : "hover:bg-muted/50"
-                              }`}
+                              className={`p-3 cursor-pointer border-b last:border-b-0 ${index === selectedProductIndex
+                                ? "bg-primary/10 border-l-4 border-l-primary"
+                                : "hover:bg-muted/50"
+                                }`}
                               onClick={() => {
                                 const { quantity } =
                                   parseQuantityFromSearch(searchQuery);
@@ -845,8 +992,8 @@ export default function SalesTerminal() {
                                       product.quantity > 10
                                         ? "default"
                                         : product.quantity > 0
-                                        ? "secondary"
-                                        : "destructive"
+                                          ? "secondary"
+                                          : "destructive"
                                     }
                                     className="text-xs"
                                   >
@@ -872,8 +1019,6 @@ export default function SalesTerminal() {
                   <thead className="bg-muted sticky top-0">
                     <tr className="border-b">
                       <th className="text-left p-3 font-semibold">Name</th>
-                      <th className="text-left p-3 font-semibold">SKU</th>
-                      <th className="text-left p-3 font-semibold">Category</th>
                       <th className="text-right p-3 font-semibold">Price</th>
                       <th className="text-center p-3 font-semibold">Stock</th>
                       <th className="text-center p-3 font-semibold">Action</th>
@@ -883,7 +1028,7 @@ export default function SalesTerminal() {
                     {filteredProducts.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={4}
                           className="text-center p-8 text-muted-foreground"
                         >
                           No products found
@@ -897,10 +1042,6 @@ export default function SalesTerminal() {
                           onClick={() => addToCart(product)}
                         >
                           <td className="p-3 font-medium">{product.name}</td>
-                          <td className="p-3 text-sm text-muted-foreground">
-                            {product.sku}
-                          </td>
-                          <td className="p-3 text-sm">{product.category}</td>
                           <td className="p-3 text-right font-semibold text-primary">
                             ${product.selling_price.toFixed(2)}
                           </td>
@@ -910,8 +1051,8 @@ export default function SalesTerminal() {
                                 product.quantity > 10
                                   ? "default"
                                   : product.quantity > 0
-                                  ? "secondary"
-                                  : "destructive"
+                                    ? "secondary"
+                                    : "destructive"
                               }
                             >
                               {product.quantity}
@@ -969,9 +1110,8 @@ export default function SalesTerminal() {
 
                       return (
                         <div
-                          key={`${item.product.id}-${item.variation?.id || "base"}-${
-                            item.unit
-                          }`}
+                          key={`${item.product.id}-${item.variation?.id || "base"}-${item.unit
+                            }`}
                           className="flex items-center gap-2 p-2 border rounded"
                         >
                           <div className="flex-1">
@@ -983,9 +1123,39 @@ export default function SalesTerminal() {
                                   .join(", ")}
                               </p>
                             )}
-                            <p className="text-sm text-muted-foreground">
-                              ${itemPrice.toFixed(2)} per {item.unit}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-3 mt-2">
+                              <div className="text-xs text-muted-foreground bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                                Buy: ${item.product.cost_price?.toFixed(2) || "0.00"}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Label className="text-xs font-medium">Disc:</Label>
+                                <div className="relative">
+                                  <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                                  <Input
+                                    type="number"
+                                    className="h-8 w-24 pl-7 text-sm"
+                                    value={item.item_discount || ""}
+                                    placeholder="0.00"
+                                    min="0"
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      const newCart = [...cart];
+                                      newCart[index].item_discount = val;
+                                      setCart(newCart);
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="font-semibold">
+                              ${((itemPrice * item.quantity) - (item.item_discount || 0)).toFixed(2)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              ${itemPrice.toFixed(2)}/{item.unit}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Button
@@ -1022,24 +1192,30 @@ export default function SalesTerminal() {
                   </div>
 
                   <div className="border-t pt-4 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Subtotal:</span>
+                    <div className="flex justify-between font-semibold mt-2 pt-2 border-t">
+                      <span>Subtotal</span>
                       <span>${calculateSubtotal().toFixed(2)}</span>
                     </div>
-                    {discount > 0 && (
-                      <div className="flex justify-between text-sm text-green-600">
-                        <span>Discount:</span>
-                        <span>-${discount.toFixed(2)}</span>
+                    {(discount > 0 || calculateItemDiscounts() > 0) && (
+                      <div className="flex justify-between text-red-600">
+                        <span>Discount</span>
+                        <span>-${(discount + calculateItemDiscounts()).toFixed(2)}</span>
                       </div>
                     )}
                     {tax > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span>Tax:</span>
+                      <div className="flex justify-between">
+                        <span>Tax</span>
                         <span>+${tax.toFixed(2)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-xl font-bold border-t pt-2">
-                      <span>Total:</span>
+                    {deliveryCharges > 0 && (
+                      <div className="flex justify-between">
+                        <span>Delivery</span>
+                        <span>+${deliveryCharges.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold text-lg pt-2 border-t mt-2">
+                      <span>Total</span>
                       <span>${calculateTotal().toFixed(2)}</span>
                     </div>
                   </div>
@@ -1166,76 +1342,19 @@ export default function SalesTerminal() {
               />
             </div>
 
-            {/* Vehicle Info Section */}
-            <div className="border-t pt-4 mt-4">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="vehicle-info-checkout"
-                  checked={showVehicleInfo}
-                  onChange={(e) => setShowVehicleInfo(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300"
-                />
-                <Label htmlFor="vehicle-info-checkout" className="mb-0 cursor-pointer text-sm font-medium">
-                  Add Vehicle Information (Oil Change Tracking)
-                </Label>
-              </div>
+            {/* Delivery Charges Input */}
+            <div className="space-y-1 pt-2">
+              <Label htmlFor="delivery" className="text-sm">Delivery Charges ($)</Label>
+              <Input
+                id="delivery"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={deliveryCharges || ""}
+                onChange={(e) => setDeliveryCharges(parseFloat(e.target.value) || 0)}
+              />
             </div>
-
-            {showVehicleInfo && (
-              <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded space-y-2">
-                <h3 className="font-semibold text-xs">Vehicle Oil Change Details</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="current_mileage_checkout" className="text-xs">Current Mileage (km)</Label>
-                    <Input
-                      id="current_mileage_checkout"
-                      type="number"
-                      placeholder="441221"
-                      value={currentMileage || ""}
-                      onChange={(e) => {
-                        const mileage = e.target.value ? parseInt(e.target.value) : undefined;
-                        const nextMileage = mileage && oilChangeInterval
-                          ? mileage + oilChangeInterval
-                          : undefined;
-                        setCurrentMileage(mileage);
-                        setNextOilChangeMileage(nextMileage);
-                      }}
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="oil_change_interval_checkout" className="text-xs">Oil Interval (km)</Label>
-                    <Input
-                      id="oil_change_interval_checkout"
-                      type="number"
-                      placeholder="3000"
-                      value={oilChangeInterval || ""}
-                      onChange={(e) => {
-                        const interval = e.target.value ? parseInt(e.target.value) : undefined;
-                        const nextMileage = currentMileage && interval
-                          ? currentMileage + interval
-                          : undefined;
-                        setOilChangeInterval(interval);
-                        setNextOilChangeMileage(nextMileage);
-                      }}
-                      className="text-xs h-8"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="next_oil_change_checkout" className="text-xs">Next Change (km)</Label>
-                    <Input
-                      id="next_oil_change_checkout"
-                      type="number"
-                      placeholder="444221"
-                      value={nextOilChangeMileage || ""}
-                      readOnly
-                      className="text-xs h-8 bg-gray-100"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
 
             <div className="space-y-1">
               <Label htmlFor="payment" className="text-sm">Payment Method</Label>
@@ -1253,7 +1372,7 @@ export default function SalesTerminal() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="discount" className="text-sm">Discount ($)</Label>
+                <Label htmlFor="discount" className="text-sm">Global Discount ($)</Label>
                 <Input
                   id="discount"
                   type="number"
@@ -1295,6 +1414,12 @@ export default function SalesTerminal() {
             </div>
 
             <div className="border-t pt-2 space-y-1 text-xs">
+              {(calculateItemDiscounts() > 0) && (
+                <div className="flex justify-between text-red-600">
+                  <span>Total Item Discs:</span>
+                  <span>-${calculateItemDiscounts().toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold">
                 <span>Total:</span>
                 <span className="text-lg">${calculateTotal().toFixed(2)}</span>
@@ -1421,7 +1546,7 @@ export default function SalesTerminal() {
 
           <div className="space-y-4">
             {selectedProductForVariation?.variations &&
-            selectedProductForVariation.variations.length > 0 ? (
+              selectedProductForVariation.variations.length > 0 ? (
               <div className="grid gap-2">
                 <Label>Select Variation</Label>
                 <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
@@ -1433,11 +1558,10 @@ export default function SalesTerminal() {
                       <button
                         key={variation.id}
                         onClick={() => setSelectedVariation(variation)}
-                        className={`p-3 border rounded text-left transition-all ${
-                          selectedVariation?.id === variation.id
-                            ? "border-blue-500 bg-blue-50"
-                            : "hover:border-gray-400"
-                        } ${variation.quantity === 0 ? "opacity-50" : ""}`}
+                        className={`p-3 border rounded text-left transition-all ${selectedVariation?.id === variation.id
+                          ? "border-blue-500 bg-blue-50"
+                          : "hover:border-gray-400"
+                          } ${variation.quantity === 0 ? "opacity-50" : ""}`}
                         disabled={variation.quantity === 0}
                       >
                         <div className="font-medium">
@@ -1623,6 +1747,6 @@ export default function SalesTerminal() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }

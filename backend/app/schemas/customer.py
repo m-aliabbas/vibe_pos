@@ -61,7 +61,7 @@ class CustomerBase(BaseModel):
 
 class CustomerCreate(CustomerBase):
     """At least one of phone or customer_id must be provided"""
-    pass
+    opening_balance: Optional[float] = 0.0
 
 
 class CustomerUpdate(BaseModel):
@@ -84,6 +84,7 @@ class CustomerResponse(CustomerBase):
     total_purchases: int
     total_spent: float
     outstanding_balance: float
+    opening_balance: float
     member_since: datetime
     created_at: datetime
     updated_at: datetime

@@ -1,5 +1,8 @@
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+import csv
+import io
+import requests
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from datetime import datetime
@@ -103,6 +106,18 @@ def create_customer(
             status_code=400,
             detail="At least phone or customer_id must be provided"
         )
+
+    if customer_in.opening_balance is not None and customer_in.opening_balance < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Opening balance must be greater than or equal to 0"
+        )
+
+    if customer_in.opening_balance is not None and customer_in.opening_balance < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Opening balance must be greater than or equal to 0"
+        )
     
     # Check for duplicate phone
     if customer_in.phone:
@@ -137,6 +152,8 @@ def create_customer(
         current_mileage=customer_in.current_mileage,
         oil_change_interval=customer_in.oil_change_interval,
         next_oil_change_mileage=customer_in.next_oil_change_mileage,
+        opening_balance=customer_in.opening_balance or 0.0,
+        outstanding_balance=customer_in.opening_balance or 0.0,
         member_since=datetime.utcnow(),
     )
     
@@ -144,6 +161,90 @@ def create_customer(
     db.commit()
     db.refresh(customer)
     return customer
+
+
+@router.post("/bulk-import")
+async def bulk_import_customers(
+    *,
+    db: Session = Depends(deps.get_db),
+    file: UploadFile = File(...),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Bulk import customers from CSV."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a CSV file")
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to read CSV file")
+
+    reader = csv.DictReader(io.StringIO(text))
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    for row_index, row in enumerate(reader, start=2):
+        try:
+            phone_raw = (row.get("phone") or "").strip()
+            customer_id_raw = (row.get("customer_id") or "").strip().upper()
+            email = (row.get("email") or "").strip() or None
+            name = (row.get("name") or "").strip() or None
+            address = (row.get("address") or "").strip() or None
+
+            if not phone_raw and not customer_id_raw:
+                skipped += 1
+                errors.append(f"Row {row_index}: phone or customer_id is required")
+                continue
+
+            opening_balance_value = row.get("opening_balance")
+            opening_balance = float(opening_balance_value) if opening_balance_value not in (None, "") else 0.0
+            if opening_balance < 0:
+                skipped += 1
+                errors.append(f"Row {row_index}: opening_balance must be >= 0")
+                continue
+
+            clean_phone = phone_raw.replace(" ", "").replace("-", "") if phone_raw else None
+
+            if clean_phone:
+                existing = db.query(Customer).filter(Customer.phone == clean_phone).first()
+                if existing:
+                    skipped += 1
+                    continue
+
+            if customer_id_raw:
+                existing = db.query(Customer).filter(Customer.customer_id == customer_id_raw).first()
+                if existing:
+                    skipped += 1
+                    continue
+
+            final_customer_id = customer_id_raw if customer_id_raw else generate_customer_id(db)
+
+            customer = Customer(
+                customer_id=final_customer_id,
+                phone=clean_phone,
+                email=email,
+                name=name,
+                address=address,
+                opening_balance=opening_balance,
+                outstanding_balance=opening_balance,
+                member_since=datetime.utcnow(),
+            )
+
+            db.add(customer)
+            db.commit()
+            created += 1
+        except Exception as e:
+            db.rollback()
+            skipped += 1
+            errors.append(f"Row {row_index}: {str(e)}")
+
+    return {
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+    }
 
 
 @router.post("/find-or-create", response_model=customer_schema.CustomerSimple)
@@ -189,6 +290,8 @@ def find_or_create_customer(
         current_mileage=customer_in.current_mileage,
         oil_change_interval=customer_in.oil_change_interval,
         next_oil_change_mileage=customer_in.next_oil_change_mileage,
+        opening_balance=customer_in.opening_balance or 0.0,
+        outstanding_balance=customer_in.opening_balance or 0.0,
         member_since=datetime.utcnow(),
     )
     
@@ -391,6 +494,7 @@ def record_customer_payment(
     db: Session = Depends(deps.get_db),
     id: int,
     payment_in: customer_schema.CustomerPaymentCreate,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """Record a payment against customer's outstanding balance (udhar)"""
@@ -411,13 +515,69 @@ def record_customer_payment(
     
     # Update outstanding balance
     customer.outstanding_balance = max(0, customer.outstanding_balance - payment_in.amount)
+    
+    # --- RECONCILIATION LOGIC ---
+    # Find unpaid sales and distribute payment
+    remaining_payment = payment_in.amount
+    
+    # Get unpaid/partial sales ordered by date (oldest first)
+    unpaid_sales = db.query(Sale).filter(
+        Sale.customer_ref_id == id,
+        Sale.amount_due > 0
+    ).order_by(Sale.created_at.asc()).all()
+    
+    for sale in unpaid_sales:
+        if remaining_payment <= 0:
+            break
+            
+        due = sale.amount_due
+        pay_amount = min(remaining_payment, due)
+        
+        sale.amount_paid += pay_amount
+        sale.amount_due -= pay_amount
+        remaining_payment -= pay_amount
+        
+        # If fully paid, we could potentially update a status flag if you had one,
+        # currently logic depends on amount_due which is sufficient.
+    
     customer.updated_at = datetime.utcnow()
     
     db.add(payment)
     db.add(customer)
     db.commit()
     db.refresh(payment)
+    
+    # Send WhatsApp notification
+    if customer.phone:
+        background_tasks.add_task(send_payment_notification, customer.phone, payment.amount, customer.outstanding_balance, payment.id)
+
     return payment
+
+def send_payment_notification(phone: str, amount: float, balance: float, payment_id: int):
+    """Send WhatsApp notification for payment"""
+    try:
+        # Normalize phone if needed (reusing logic from sales)
+        if phone.startswith('0'):
+            phone = '92' + phone[1:]
+        elif len(phone) == 10:
+            phone = '92' + phone
+            
+        message = f"✅ *Payment Received*\n\n" \
+                  f"Amount: ${amount:,.2f}\n" \
+                  f"Remaining Balance: ${balance:,.2f}\n" \
+                  f"Payment ID: #{payment_id}\n\n" \
+                  f"Thank you for your business!"
+                  
+        requests.post(
+            "http://127.0.0.1:8000/api/v1/whatsapp/send",
+            json={
+                "phone_number": phone,
+                "message": message
+            },
+            timeout=5
+        )
+    except Exception as e:
+        print(f"Failed to send payment notification: {e}")
 
 
 # ============ CUSTOMER PURCHASE HISTORY ============

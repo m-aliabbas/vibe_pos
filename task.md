@@ -138,9 +138,9 @@ This document tracks the implementation status of all tasks defined in `feature_
 
 | Priority | Task | Status | Notes |
 |----------|------|--------|-------|
-| (H) | Create reporting endpoints: /reports/sales, /reports/inventory | ❌ TODO | No reporting endpoints |
-| (M) | Use database aggregations for efficient queries | ❌ TODO | No aggregations implemented |
-| (L) | Add user-specific filters (sales by cashier) | ❌ TODO | No filtering |
+| (H) | Create reporting endpoints: /reports/sales/summary, /reports/inventory/low-stock | 🔄 IN PROGRESS | Starting implementation |
+| (M) | Use database aggregations for efficient queries | 🔄 IN PROGRESS | Will use SQL count/sum |
+| (L) | Add user-specific filters (sales by cashier) | 🔄 IN PROGRESS | Will add cashier_id param |
 
 **Backend Status**: 0/3 tasks completed (0%)
 
@@ -148,14 +148,14 @@ This document tracks the implementation status of all tasks defined in `feature_
 
 | Priority | Task | Status | Notes |
 |----------|------|--------|-------|
-| (H) | Build reports dashboard: Charts for sales trends (Chart.js) | ❌ TODO | No reports page |
-| (M) | Implement date range selectors for filtering | ❌ TODO | No date filters |
-| (M) | Fancy visuals: Interactive graphs with animations | ❌ TODO | No charts |
-| (L) | Export reports as CSV | ❌ TODO | No export functionality |
+| (H) | Build reports dashboard: Charts for sales trends (Recharts) | 🔄 IN PROGRESS | Starting `app/reports/page.tsx` |
+| (M) | Implement date range selectors for filtering | 🔄 IN PROGRESS | Will use existing DatePicker |
+| (M) | Fancy visuals: Interactive graphs with animations | 🔄 IN PROGRESS | Using Recharts |
+| (L) | Export reports as CSV | ❌ TODO | |
 
 **Frontend Status**: 0/4 tasks completed (0%)
 
-**Feature 5 Overall**: ❌ 0/7 tasks (0%) - **NOT STARTED**
+**Feature 5 Overall**: 🔄 0/7 tasks (0%) - **STARTED**
 
 ---
 
@@ -245,6 +245,19 @@ This document tracks the implementation status of all tasks defined in `feature_
 - ✅ Frontend: Complete invoice details (items, totals, payment info, customer)
 - ✅ Frontend: Browser print-to-PDF functionality
 - ✅ Backend: Invoice data from existing Sale model (no new endpoints needed)
+
+### Grocery Store Adaptation & POS Enhancements
+- ✅ Backend: Added `delivery_charges` to Sale model and `item_discount` to SaleItem model
+- ✅ Backend: Updated sales calculation logic to support delivery and item discounts
+- ✅ Frontend: Removed Vehicle Info/Oil Change tracking from Sales Terminal
+- ✅ Frontend: Added "Delivery Charges" input field to checkout
+- ✅ Frontend: Added "Buying Price" (Cost Price) display in Cart
+- ✅ Frontend: Added "Item Discount" input field in Cart
+- ✅ Frontend: Updated Invoice/Receipt to show Delivery Charges and Item Discounts
+- ✅ Database: Migrated schema to include new columns (`migrate_grocery_updates.py`)
+- ✅ Backend: Implemented FIFO payment reconciliation for customers (`customers.py`)
+- ✅ Frontend: Removed obsolete Vehicle Info fields from Customer pages
+- ✅ Frontend: Enhanced Record Payment dialog with balance display
 
 ---
 

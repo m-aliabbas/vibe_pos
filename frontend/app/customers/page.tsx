@@ -42,13 +42,17 @@ import {
 
 export default function CustomersPage() {
   const router = useRouter();
-  const { user, token } = useAuthStore();
+  const { user, token, isLoading } = useAuthStore();
   const [customers, setCustomers] = useState<CustomerListResponse[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<CustomerListResponse[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
 
   // Form state for creating customer
   const [newCustomer, setNewCustomer] = useState<CustomerCreate>({
@@ -57,19 +61,20 @@ export default function CustomersPage() {
     name: "",
     email: "",
     address: "",
-    current_mileage: undefined,
-    oil_change_interval: undefined,
-    next_oil_change_mileage: undefined,
+    opening_balance: 0,
   });
-  const [showVehicleInfo, setShowVehicleInfo] = useState(false);
+
 
   useEffect(() => {
+    // Wait for auth to finish loading before checking token
+    if (isLoading) return;
+
     if (!token) {
       router.push("/login");
       return;
     }
     fetchCustomers();
-  }, [token]);
+  }, [token, isLoading]);
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -106,6 +111,11 @@ export default function CustomersPage() {
       return;
     }
 
+    if ((newCustomer.opening_balance ?? 0) < 0) {
+      alert("Opening balance must be greater than or equal to 0");
+      return;
+    }
+
     setCreating(true);
     try {
       await customerApi.createCustomer(newCustomer);
@@ -116,17 +126,37 @@ export default function CustomersPage() {
         name: "",
         email: "",
         address: "",
-        current_mileage: undefined,
-        oil_change_interval: undefined,
-        next_oil_change_mileage: undefined,
+        opening_balance: 0,
       });
-      setShowVehicleInfo(false);
+
       fetchCustomers();
     } catch (error: any) {
       console.error("Failed to create customer:", error);
       alert(error.response?.data?.detail || "Failed to create customer");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleBulkImport = async () => {
+    if (!bulkFile) {
+      alert("Please select a CSV file");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", bulkFile);
+
+    setBulkUploading(true);
+    try {
+      const result = await customerApi.bulkImportCustomers(formData);
+      setBulkResult(result);
+      fetchCustomers();
+    } catch (error: any) {
+      console.error("Failed to import customers:", error);
+      alert(error.response?.data?.detail || "Failed to import customers");
+    } finally {
+      setBulkUploading(false);
     }
   };
 
@@ -149,6 +179,18 @@ export default function CustomersPage() {
     });
   };
 
+  // Show loading while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="p-6">
@@ -169,14 +211,77 @@ export default function CustomersPage() {
             Manage customer information and purchase history
           </p>
         </div>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Customer
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
+        <div className="flex items-center gap-2">
+          <Dialog open={bulkDialogOpen} onOpenChange={(open) => {
+            setBulkDialogOpen(open);
+            if (!open) {
+              setBulkFile(null);
+              setBulkResult(null);
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Plus className="h-4 w-4 mr-2" />
+                Bulk Import (CSV)
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Bulk Import Customers</DialogTitle>
+                <DialogDescription>
+                  Upload a CSV file with columns: phone, customer_id, name, email, address, opening_balance
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="customers_csv">CSV File</Label>
+                  <Input
+                    id="customers_csv"
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Opening balance must be $\geq 0$.
+                  </p>
+                </div>
+                {bulkResult && (
+                  <div className="rounded-md border p-3 text-sm">
+                    <div>Created: {bulkResult.created}</div>
+                    <div>Skipped: {bulkResult.skipped}</div>
+                    {bulkResult.errors.length > 0 && (
+                      <div className="mt-2 text-xs text-red-600 space-y-1 max-h-32 overflow-auto">
+                        {bulkResult.errors.map((err, idx) => (
+                          <div key={idx}>{err}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setBulkDialogOpen(false)}
+                  disabled={bulkUploading}
+                >
+                  Close
+                </Button>
+                <Button onClick={handleBulkImport} disabled={bulkUploading || !bulkFile}>
+                  {bulkUploading ? "Importing..." : "Import Customers"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Customer
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Customer</DialogTitle>
               <DialogDescription>
@@ -234,100 +339,44 @@ export default function CustomersPage() {
                   />
                 </div>
               </div>
-              
-              {/* Vehicle Info Section */}
-              <div className="border-t pt-4 mt-4">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="vehicle-info"
-                    checked={showVehicleInfo}
-                    onChange={(e) => setShowVehicleInfo(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300"
-                  />
-                  <Label htmlFor="vehicle-info" className="mb-0 cursor-pointer">
-                    Add Vehicle Information (Oil Change Tracking)
-                  </Label>
-                </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="opening_balance">Opening Balance (Legacy Udhar)</Label>
+                <Input
+                  id="opening_balance"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={newCustomer.opening_balance ?? 0}
+                  onChange={(e) =>
+                    setNewCustomer({
+                      ...newCustomer,
+                      opening_balance: Math.max(0, parseFloat(e.target.value) || 0),
+                    })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter existing credit from manual system
+                </p>
               </div>
-              
-              {showVehicleInfo && (
-                <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg space-y-4">
-                  <h3 className="font-semibold text-sm">Vehicle Oil Change Details</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="current_mileage">Current Mileage (km)</Label>
-                      <Input
-                        id="current_mileage"
-                        type="number"
-                        placeholder="e.g., 441221"
-                        value={newCustomer.current_mileage || ""}
-                        onChange={(e) => {
-                          const mileage = e.target.value ? parseInt(e.target.value) : undefined;
-                          const nextMileage = mileage && newCustomer.oil_change_interval
-                            ? mileage + newCustomer.oil_change_interval
-                            : undefined;
-                          setNewCustomer({ 
-                            ...newCustomer, 
-                            current_mileage: mileage,
-                            next_oil_change_mileage: nextMileage
-                          });
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="oil_change_interval">Oil Change Interval (km)</Label>
-                      <Input
-                        id="oil_change_interval"
-                        type="number"
-                        placeholder="e.g., 3000"
-                        value={newCustomer.oil_change_interval || ""}
-                        onChange={(e) => {
-                          const interval = e.target.value ? parseInt(e.target.value) : undefined;
-                          const nextMileage = newCustomer.current_mileage && interval 
-                            ? newCustomer.current_mileage + interval 
-                            : undefined;
-                          setNewCustomer({ 
-                            ...newCustomer, 
-                            oil_change_interval: interval,
-                            next_oil_change_mileage: nextMileage
-                          });
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="next_oil_change_mileage">Next Oil Change (km)</Label>
-                      <Input
-                        id="next_oil_change_mileage"
-                        type="number"
-                        placeholder="e.g., 444221"
-                        value={newCustomer.next_oil_change_mileage || ""}
-                        readOnly
-                        className="bg-gray-100"
-                        onChange={(e) => setNewCustomer({ 
-                          ...newCustomer, 
-                          next_oil_change_mileage: e.target.value ? parseInt(e.target.value) : undefined
-                        })}
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+
             </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setCreateDialogOpen(false)}
-                disabled={creating}
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleCreateCustomer} disabled={creating}>
-                {creating ? "Creating..." : "Create Customer"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateDialogOpen(false)}
+                  disabled={creating}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleCreateCustomer} disabled={creating}>
+                  {creating ? "Creating..." : "Create Customer"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Search */}
@@ -435,6 +484,6 @@ export default function CustomersPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </div >
   );
 }

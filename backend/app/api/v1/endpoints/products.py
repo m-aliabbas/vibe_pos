@@ -1,6 +1,8 @@
 from typing import Any, List, Optional
+import csv
+import io
 import json
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.models.product import Product, ProductVariation
@@ -98,6 +100,94 @@ def delete_product(
     db.delete(product)
     db.commit()
     return {"message": "Product deleted successfully"}
+
+
+@router.post("/bulk-import")
+async def bulk_import_products(
+    *,
+    db: Session = Depends(deps.get_db),
+    file: UploadFile = File(...),
+) -> Any:
+    """Bulk import products from CSV."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a CSV file")
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to read CSV file")
+
+    reader = csv.DictReader(io.StringIO(text))
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    for row_index, row in enumerate(reader, start=2):
+        try:
+            name = (row.get("name") or "").strip()
+            if not name:
+                skipped += 1
+                errors.append(f"Row {row_index}: name is required")
+                continue
+
+            sku = (row.get("sku") or "").strip() or None
+            if sku:
+                existing = db.query(Product).filter(Product.sku == sku).first()
+                if existing:
+                    skipped += 1
+                    continue
+
+            category = (row.get("category") or "").strip() or "Uncategorized"
+            description = (row.get("description") or "").strip() or None
+            base_unit = (row.get("base_unit") or "").strip() or "piece"
+
+            selling_price_value = row.get("selling_price")
+            selling_price = float(selling_price_value) if selling_price_value not in (None, "") else 0.0
+
+            cost_price_value = row.get("cost_price")
+            cost_price = float(cost_price_value) if cost_price_value not in (None, "") else 0.0
+
+            quantity_value = row.get("quantity")
+            quantity = int(float(quantity_value)) if quantity_value not in (None, "") else 0
+
+            has_variations_raw = (row.get("has_variations") or "").strip().lower()
+            has_variations = has_variations_raw in ("true", "1", "yes", "y")
+
+            variation_attributes_raw = row.get("variation_attributes")
+            variation_attributes = json.loads(variation_attributes_raw) if variation_attributes_raw else []
+
+            selling_units_raw = row.get("selling_units_json") or row.get("selling_units")
+            selling_units = json.loads(selling_units_raw) if selling_units_raw else []
+
+            product_data = serialize_json_fields({
+                "name": name,
+                "sku": sku,
+                "category": category,
+                "description": description,
+                "selling_price": selling_price,
+                "cost_price": cost_price,
+                "quantity": quantity,
+                "base_unit": base_unit,
+                "has_variations": has_variations,
+                "variation_attributes": variation_attributes,
+                "selling_units": selling_units,
+            })
+
+            product = Product(**product_data)
+            db.add(product)
+            db.commit()
+            created += 1
+        except Exception as e:
+            db.rollback()
+            skipped += 1
+            errors.append(f"Row {row_index}: {str(e)}")
+
+    return {
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+    }
 
 
 # ========== Product Variation Endpoints ==========
