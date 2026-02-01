@@ -1,5 +1,6 @@
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel, field_validator
+import json
 
 # Product Variation Schemas
 class SellingUnit(BaseModel):
@@ -13,6 +14,16 @@ class ProductVariationBase(BaseModel):
     price_adjustment: float = 0.0
     quantity: int = 0
     barcode: Optional[str] = None
+    
+    @field_validator('attributes', mode='before')
+    @classmethod
+    def parse_attributes(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v) if v else {}
+            except:
+                return {}
+        return v or {}
 
 class ProductVariationCreate(ProductVariationBase):
     pass
@@ -23,12 +34,22 @@ class ProductVariationUpdate(BaseModel):
     price_adjustment: Optional[float] = None
     quantity: Optional[int] = None
     barcode: Optional[str] = None
+    
+    @field_validator('attributes', mode='before')
+    @classmethod
+    def parse_attributes(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v) if v else {}
+            except:
+                return {}
+        return v or {}
 
 class ProductVariation(ProductVariationBase):
     id: int
     product_id: int
-    created_at: str
-    updated_at: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -50,6 +71,27 @@ class ProductBase(BaseModel):
     # Unit of measure fields
     base_unit: str = "piece"
     selling_units: List[SellingUnit] = []
+    
+    @field_validator('variation_attributes', mode='before')
+    @classmethod
+    def parse_variation_attributes(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v) if v else []
+            except:
+                return []
+        return v or []
+    
+    @field_validator('selling_units', mode='before')
+    @classmethod
+    def parse_selling_units(cls, v):
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v) if v else []
+                return [SellingUnit(**unit) if isinstance(unit, dict) else unit for unit in parsed]
+            except:
+                return []
+        return v or []
 
 class ProductCreate(ProductBase):
     pass # Initial quantity is always 0

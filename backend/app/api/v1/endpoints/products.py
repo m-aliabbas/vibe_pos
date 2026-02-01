@@ -1,4 +1,5 @@
 from typing import Any, List, Optional
+import json
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.api import deps
@@ -6,6 +7,15 @@ from app.models.product import Product, ProductVariation
 from app.schemas import product as product_schema
 
 router = APIRouter()
+
+def serialize_json_fields(data: dict):
+    """Convert list fields to JSON strings for database storage"""
+    if 'selling_units' in data and isinstance(data['selling_units'], list):
+        data['selling_units'] = json.dumps(data['selling_units'])
+    if 'variation_attributes' in data and isinstance(data['variation_attributes'], list):
+        data['variation_attributes'] = json.dumps(data['variation_attributes'])
+    return data
+
 
 @router.get("/", response_model=List[product_schema.Product])
 def read_products(
@@ -33,8 +43,10 @@ def create_product(
         product = db.query(Product).filter(Product.sku == product_in.sku).first()
         if product:
             raise HTTPException(status_code=400, detail="Product with this SKU already exists")
-            
-    product = Product(**product_in.dict())
+    
+    # Convert list fields to JSON strings
+    product_data = serialize_json_fields(product_in.dict())
+    product = Product(**product_data)
     db.add(product)
     db.commit()
     db.refresh(product)
@@ -61,8 +73,10 @@ def update_product(
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-        
-    for field, value in product_in.dict(exclude_unset=True).items():
+    
+    # Convert list fields to JSON strings
+    update_data = serialize_json_fields(product_in.dict(exclude_unset=True))
+    for field, value in update_data.items():
         setattr(product, field, value)
         
     db.add(product)
@@ -135,9 +149,14 @@ def create_product_variation(
         if existing.attributes == variation_in.attributes:
             raise HTTPException(status_code=400, detail="Variation with these attributes already exists")
     
+    # Convert dict fields to JSON strings if needed
+    variation_data = variation_in.dict()
+    if isinstance(variation_data.get('attributes'), dict):
+        variation_data['attributes'] = json.dumps(variation_data['attributes'])
+    
     variation = ProductVariation(
         product_id=product_id,
-        **variation_in.dict()
+        **variation_data
     )
     db.add(variation)
     db.commit()
@@ -175,6 +194,9 @@ def update_product_variation(
             raise HTTPException(status_code=400, detail="Variation with this barcode already exists")
     
     for field, value in variation_in.dict(exclude_unset=True).items():
+        # Convert dict to JSON string if it's attributes
+        if field == 'attributes' and isinstance(value, dict):
+            value = json.dumps(value)
         setattr(variation, field, value)
     
     db.add(variation)

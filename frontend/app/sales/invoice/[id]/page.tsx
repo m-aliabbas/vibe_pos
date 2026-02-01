@@ -48,9 +48,19 @@ interface User {
   full_name?: string;
 }
 
+interface Customer {
+  id: number;
+  name: string;
+  phone?: string;
+  current_mileage?: number;
+  oil_change_interval?: number;
+  next_oil_change_mileage?: number;
+}
+
 interface Sale {
   id: number;
   user_id: number;
+  customer_id?: number;
   customer_name?: string;
   payment_method: string;
   subtotal: number;
@@ -63,6 +73,7 @@ interface Sale {
   created_at: string;
   items: SaleItem[];
   user?: User;
+  customer?: Customer;
 }
 
 export default function InvoicePage() {
@@ -116,6 +127,17 @@ export default function InvoicePage() {
         }
       }
       
+      // Fetch customer data if customer_id is present
+      let customerData = null;
+      if (saleData.customer_id) {
+        try {
+          const customerResponse = await api.get(`/customers/${saleData.customer_id}`);
+          customerData = customerResponse.data;
+        } catch (err) {
+          console.error("Failed to fetch customer:", err);
+        }
+      }
+       
       // Map products and variations to sale items
       const itemsWithProducts = saleData.items.map((item: SaleItem) => ({
         ...item,
@@ -126,6 +148,7 @@ export default function InvoicePage() {
       setSale({
         ...saleData,
         user: userData,
+        customer: customerData,
         items: itemsWithProducts
       });
     } catch (err: any) {
@@ -269,6 +292,31 @@ export default function InvoicePage() {
                 {sale.customer_name || "Walk-in Customer"}
               </p>
             </div>
+
+            {/* Vehicle Info (Oil Change Details) */}
+            {sale.customer && (sale.customer.current_mileage || sale.customer.oil_change_interval) && (
+              <div className="mb-3 pb-3 border-b border-dashed border-gray-300">
+                <p className="text-xs font-semibold text-gray-600 mb-1">VEHICLE INFO:</p>
+                {sale.customer.current_mileage && (
+                  <div className="flex justify-between text-xs text-gray-700">
+                    <span>Current KM:</span>
+                    <span className="font-medium">{sale.customer.current_mileage.toLocaleString()}</span>
+                  </div>
+                )}
+                {sale.customer.oil_change_interval && (
+                  <div className="flex justify-between text-xs text-gray-700">
+                    <span>Oil Interval:</span>
+                    <span className="font-medium">{sale.customer.oil_change_interval.toLocaleString()} KM</span>
+                  </div>
+                )}
+                {sale.customer.next_oil_change_mileage && (
+                  <div className="flex justify-between text-xs text-green-700 font-semibold mt-1">
+                    <span>Next Oil Change:</span>
+                    <span>{sale.customer.next_oil_change_mileage.toLocaleString()} KM</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Items */}
             <div className="mb-3 pb-3 border-b-2 border-dashed border-gray-400">
