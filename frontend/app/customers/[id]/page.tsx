@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, use } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,7 +46,10 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-export default function CustomerDetailsPage({ params }: { params: { id: string } }) {
+export default function CustomerDetailsPage({ params }: { params: Promise<{ id: string }> }) {
+  // Unwrap params Promise using React.use()
+  const unwrappedParams = use(params);
+  
   const router = useRouter();
   const { token, isLoading } = useAuthStore();
   const [customer, setCustomer] = useState<CustomerResponse | null>(null);
@@ -67,7 +70,9 @@ export default function CustomerDetailsPage({ params }: { params: { id: string }
     address: "",
   });
 
-  const customerId = parseInt(params.id as string);
+  // Parse customerId with validation
+  const customerId = parseInt(unwrappedParams.id);
+  const isValidId = !isNaN(customerId) && customerId > 0;
 
   useEffect(() => {
     if (isLoading) return;
@@ -76,10 +81,24 @@ export default function CustomerDetailsPage({ params }: { params: { id: string }
       router.push("/login");
       return;
     }
+
+    // Validate customer ID before fetching data
+    if (!isValidId) {
+      console.error("Invalid customer ID:", unwrappedParams.id);
+      router.push("/customers");
+      return;
+    }
+
     fetchCustomerData();
-  }, [token, isLoading, customerId]);
+  }, [token, isLoading, unwrappedParams.id]);
 
   const fetchCustomerData = async () => {
+    // Double check customerId is valid
+    if (!isValidId) {
+      router.push("/customers");
+      return;
+    }
+
     try {
       setLoading(true);
       const [customerData, summaryData] = await Promise.all([
@@ -102,7 +121,7 @@ export default function CustomerDetailsPage({ params }: { params: { id: string }
   };
 
   const handleAddNote = async () => {
-    if (!newNote.note_text.trim()) return;
+    if (!newNote.note_text.trim() || !isValidId) return;
 
     try {
       await customerApi.addCustomerNote(customerId, newNote);
@@ -121,6 +140,8 @@ export default function CustomerDetailsPage({ params }: { params: { id: string }
       return;
     }
 
+    if (!isValidId) return;
+
     try {
       await customerApi.recordCustomerPayment(customerId, newPayment);
       setPaymentDialogOpen(false);
@@ -133,6 +154,8 @@ export default function CustomerDetailsPage({ params }: { params: { id: string }
   };
 
   const handleUpdateCustomer = async () => {
+    if (!isValidId) return;
+    
     try {
       await customerApi.updateCustomer(customerId, editCustomer);
       setEditDialogOpen(false);
@@ -145,6 +168,7 @@ export default function CustomerDetailsPage({ params }: { params: { id: string }
 
   const handleDeleteNote = async (noteId: number) => {
     if (!confirm("Are you sure you want to delete this note?")) return;
+    if (!isValidId) return;
 
     try {
       await customerApi.deleteCustomerNote(customerId, noteId);
@@ -171,6 +195,11 @@ export default function CustomerDetailsPage({ params }: { params: { id: string }
       minute: '2-digit',
     });
   };
+
+  // Show loading only when we have a valid ID
+  if (!isValidId) {
+    return null; // Will redirect in useEffect
+  }
 
   if (loading) {
     return (

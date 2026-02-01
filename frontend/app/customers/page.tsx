@@ -161,6 +161,10 @@ export default function CustomersPage() {
   };
 
   const handleViewCustomer = (customerId: number) => {
+    if (!customerId || isNaN(customerId)) {
+      console.error("Invalid customer ID:", customerId);
+      return;
+    }
     router.push(`/customers/${customerId}`);
   };
 
@@ -421,64 +425,72 @@ export default function CustomersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCustomers.map((customer) => (
-                  <TableRow key={customer.id} className="hover:bg-muted/50">
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">
-                          {customer.name || "Unnamed Customer"}
-                        </p>
-                        {customer.customer_id && (
-                          <p className="text-sm text-muted-foreground">
-                            ID: {customer.customer_id}
+                {filteredCustomers.map((customer) => {
+                  // Ensure customer has valid ID before rendering
+                  if (!customer?.id) {
+                    console.error("Customer missing ID:", customer);
+                    return null;
+                  }
+                  
+                  return (
+                    <TableRow key={customer.id} className="hover:bg-muted/50">
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">
+                            {customer.name || "Unnamed Customer"}
                           </p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {customer.phone && (
-                          <div className="flex items-center gap-1 text-sm">
-                            <Phone className="h-3 w-3" />
-                            {customer.phone}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    {/* <TableCell>
-                      <Badge variant="secondary">
-                        {customer.total_purchases} sales
-                      </Badge>
-                    </TableCell> */}
-                    <TableCell className="font-medium">
-                      {formatCurrency(customer.total_spent)}
-                    </TableCell>
-                    <TableCell>
-                      {customer.outstanding_balance > 0 ? (
-                        <Badge variant="destructive">
-                          {formatCurrency(customer.outstanding_balance)}
+                          {customer.customer_id && (
+                            <p className="text-sm text-muted-foreground">
+                              ID: {customer.customer_id}
+                            </p>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          {customer.phone && (
+                            <div className="flex items-center gap-1 text-sm">
+                              <Phone className="h-3 w-3" />
+                              {customer.phone}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      {/* <TableCell>
+                        <Badge variant="secondary">
+                          {customer.total_purchases} sales
                         </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        {formatDate(customer.created_at)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleViewCustomer(customer.id)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell> */}
+                      <TableCell className="font-medium">
+                        {formatCurrency(customer.total_spent)}
+                      </TableCell>
+                      <TableCell>
+                        {customer.outstanding_balance > 0 ? (
+                          <Badge variant="destructive">
+                            {formatCurrency(customer.outstanding_balance)}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(customer.created_at)}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleViewCustomer(customer.id)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
