@@ -142,6 +142,7 @@ export default function SalesTerminal() {
     useState<ProductVariation | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>("piece");
   const [quantityForVariation, setQuantityForVariation] = useState<number>(1);
+  const [variationDiscount, setVariationDiscount] = useState<number>(0);
 
   // Unit picker state (for products without variations but with multiple units)
   const [unitDialogOpen, setUnitDialogOpen] = useState(false);
@@ -150,6 +151,7 @@ export default function SalesTerminal() {
   const [selectedUnitForRegular, setSelectedUnitForRegular] =
     useState<string>("piece");
   const [quantityForUnit, setQuantityForUnit] = useState<number>(1);
+  const [unitDiscount, setUnitDiscount] = useState<number>(0);
 
   // Parse quantity from search query (e.g., "milk x 3", "milk 3", "3 milk")
   const parseQuantityFromSearch = (
@@ -489,7 +491,7 @@ export default function SalesTerminal() {
           item.product.id === selectedProductForVariation.id &&
             item.variation?.id === selectedVariation.id &&
             item.unit === unit
-            ? { ...item, quantity: item.quantity + quantityForVariation }
+            ? { ...item, quantity: item.quantity + quantityForVariation, item_discount: (item.item_discount || 0) + variationDiscount }
             : item
         )
       );
@@ -501,6 +503,7 @@ export default function SalesTerminal() {
           quantity: quantityForVariation,
           variation: selectedVariation,
           unit: unit,
+          item_discount: variationDiscount,
         },
       ]);
     }
@@ -510,6 +513,7 @@ export default function SalesTerminal() {
     setSelectedVariation(null);
     setQuantityForVariation(1);
     setSelectedUnit("piece");
+    setVariationDiscount(0);
   };
 
   const addUnitToCart = () => {
@@ -561,14 +565,14 @@ export default function SalesTerminal() {
           item.product.id === selectedProductForUnit.id &&
             !item.variation &&
             item.unit === unit
-            ? { ...item, quantity: item.quantity + quantityForUnit }
+            ? { ...item, quantity: item.quantity + quantityForUnit, item_discount: (item.item_discount || 0) + unitDiscount }
             : item
         )
       );
     } else {
       setCart([
         ...cart,
-        { product: selectedProductForUnit, quantity: quantityForUnit, unit: unit },
+        { product: selectedProductForUnit, quantity: quantityForUnit, unit: unit, item_discount: unitDiscount },
       ]);
     }
 
@@ -576,6 +580,7 @@ export default function SalesTerminal() {
     setSelectedProductForUnit(null);
     setQuantityForUnit(1);
     setSelectedUnitForRegular("piece");
+    setUnitDiscount(0);
   };
 
   const updateQuantity = (index: number, newQuantity: number) => {
@@ -1594,24 +1599,42 @@ export default function SalesTerminal() {
             )}
 
             {selectedProductForVariation && (
-              <div className="grid gap-2">
-                <Label>Selling Unit</Label>
-                <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={selectedProductForVariation.base_unit}>
-                      {selectedProductForVariation.base_unit} (Base unit)
-                    </SelectItem>
-                    {selectedProductForVariation.selling_units.map((unit) => (
-                      <SelectItem key={unit.unit} value={unit.unit}>
-                        {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
+              <>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Buying Price:</span>
+                    <span className="font-semibold">₹{selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}</span>
+                  </div>
+                  {selectedVariation && (
+                    <div className="flex justify-between items-center text-sm mt-1">
+                      <span className="text-muted-foreground">Selling Price:</span>
+                      <span className="font-semibold text-primary">
+                        ₹{(selectedProductForVariation.selling_price + selectedVariation.price_adjustment).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Selling Unit</Label>
+                  <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={selectedProductForVariation.base_unit}>
+                        {selectedProductForVariation.base_unit} (Base unit)
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                      {selectedProductForVariation.selling_units.map((unit) => (
+                        <SelectItem key={unit.unit} value={unit.unit}>
+                          {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
 
             <div className="grid gap-2">
@@ -1648,6 +1671,22 @@ export default function SalesTerminal() {
                 </Button>
               </div>
             </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="variationDiscount">Item Discount (₹)</Label>
+              <Input
+                id="variationDiscount"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={variationDiscount || ""}
+                onChange={(e) => setVariationDiscount(parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Discount to apply on this item
+              </p>
+            </div>
           </div>
 
           <DialogFooter>
@@ -1671,28 +1710,42 @@ export default function SalesTerminal() {
 
           <div className="space-y-4">
             {selectedProductForUnit && (
-              <div className="grid gap-2">
-                <Label>Selling Unit</Label>
-                <Select
-                  value={selectedUnitForRegular}
-                  onValueChange={setSelectedUnitForRegular}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={selectedProductForUnit.base_unit}>
-                      {selectedProductForUnit.base_unit} (Base unit) - $
-                      {selectedProductForUnit.selling_price.toFixed(2)}
-                    </SelectItem>
-                    {selectedProductForUnit.selling_units.map((unit) => (
-                      <SelectItem key={unit.unit} value={unit.unit}>
-                        {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
+              <>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="text-muted-foreground">Buying Price:</span>
+                    <span className="font-semibold">₹{selectedProductForUnit.cost_price?.toFixed(2) || "0.00"}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm mt-1">
+                    <span className="text-muted-foreground">Selling Price:</span>
+                    <span className="font-semibold text-primary">₹{selectedProductForUnit.selling_price.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Selling Unit</Label>
+                  <Select
+                    value={selectedUnitForRegular}
+                    onValueChange={setSelectedUnitForRegular}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={selectedProductForUnit.base_unit}>
+                        {selectedProductForUnit.base_unit} (Base unit) - ₹
+                        {selectedProductForUnit.selling_price.toFixed(2)}
                       </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                      {selectedProductForUnit.selling_units.map((unit) => (
+                        <SelectItem key={unit.unit} value={unit.unit}>
+                          {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
 
             <div className="grid gap-2">
@@ -1724,6 +1777,22 @@ export default function SalesTerminal() {
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="unitDiscount">Item Discount (₹)</Label>
+              <Input
+                id="unitDiscount"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={unitDiscount || ""}
+                onChange={(e) => setUnitDiscount(parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Discount to apply on this item
+              </p>
             </div>
 
             {selectedProductForUnit && (
