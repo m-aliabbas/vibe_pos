@@ -109,7 +109,7 @@ def on_message(client: NewClient, message: MessageEv):
         
         if message.Message.extendedTextMessage:
             text = message.Message.extendedTextMessage.text
-            print(f"💬 Message content: {text} from sender: {sender}")
+            # print(f"💬 Message content: {text} from sender: {sender}")
             if sender in ["923171585452"]:
                 x = random.uniform(0.1, 5.2)
                 if 'day' in text.lower() and 'daily' not in text.lower() or 'today' in text.lower():
