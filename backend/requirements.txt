@@ -13,3 +13,4 @@ pillow==12.1.0
 requests
 neonize==0.3.12
 python-dotenv
+firebase-admin

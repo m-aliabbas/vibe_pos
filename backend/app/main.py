@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.api import api_router
 from app.db.session import engine, Base
+from app.services.license import check_license_or_exit, LicenseError
 
 # Import WhatsApp client initializer
 from app.api.v1.endpoints.whatsapp import init_whatsapp
@@ -36,6 +37,13 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.on_event("startup")
 async def startup_event():
     """Initialize WhatsApp client and backup scheduler on application startup"""
+    try:
+        fingerprint = check_license_or_exit()
+        print(f"✅ License approved for device: {fingerprint}")
+    except LicenseError as exc:
+        print(f"❌ License check failed: {exc}")
+        raise RuntimeError("License check failed") from exc
+
     print("🚀 Initializing WhatsApp client...")
     init_whatsapp()
     print("✅ WhatsApp client initialized")
