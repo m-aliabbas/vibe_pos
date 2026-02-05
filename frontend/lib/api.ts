@@ -207,6 +207,16 @@ export const customerApi = {
         return response.data;
     },
 
+    // Add advance payment (buy on behalf of customer)
+    addCustomerAdvance: async (id: number, advance: {
+        amount: number;
+        description: string;
+        payment_method?: string;
+    }): Promise<any> => {
+        const response = await api.post(`/customers/${id}/add-advance`, advance);
+        return response.data;
+    },
+
     // Get customer purchase history
     getCustomerPurchases: async (id: number, params?: {
         skip?: number;

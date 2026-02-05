@@ -350,12 +350,7 @@ export default function SalesTerminal() {
       return;
     }
 
-    // Check if product has stock
-    if (product.quantity <= 0) {
-      alert("Product out of stock!");
-      return;
-    }
-
+    // Warn if product is out of stock, but allow adding
     const existingItem = cart.find(
       (item) =>
         item.product.id === product.id &&
@@ -365,12 +360,14 @@ export default function SalesTerminal() {
     const currentCartQuantity = existingItem ? existingItem.quantity : 0;
     const newTotalQuantity = currentCartQuantity + quantity;
 
-    // Check if we can add the requested quantity
+    // Warn if exceeding available stock but allow the sale
     if (newTotalQuantity > product.quantity) {
-      alert(
-        `Only ${product.quantity} units available in stock! Currently ${currentCartQuantity} in cart.`
-      );
-      return;
+      const willGoNegative = newTotalQuantity - product.quantity;
+      if (!confirm(
+        `⚠️ Warning: Only ${product.quantity} units in stock!\nAdding ${quantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+      )) {
+        return;
+      }
     }
 
     if (existingItem) {
@@ -407,12 +404,7 @@ export default function SalesTerminal() {
       return;
     }
 
-    // Check if product has stock
-    if (product.quantity <= 0) {
-      alert("Product out of stock!");
-      return;
-    }
-
+    // Warn if product is out of stock, but allow adding
     const existingItem = cart.find(
       (item) =>
         item.product.id === product.id &&
@@ -421,9 +413,13 @@ export default function SalesTerminal() {
     );
 
     if (existingItem) {
+      // Warn if exceeding stock but allow
       if (existingItem.quantity >= product.quantity) {
-        alert(`Only ${product.quantity} units available in stock!`);
-        return;
+        if (!confirm(
+          `⚠️ Warning: Only ${product.quantity} units in stock!\nContinuing will result in negative stock.\n\nContinue anyway?`
+        )) {
+          return;
+        }
       }
       setCart(
         cart.map((item) =>
@@ -445,11 +441,7 @@ export default function SalesTerminal() {
       return;
     }
 
-    if (selectedVariation.quantity <= 0) {
-      alert("This variation is out of stock!");
-      return;
-    }
-
+    // Warn if variation is out of stock, but allow adding
     const unit = selectedUnit;
     let quantityInBaseUnits = quantityForVariation;
 
@@ -478,11 +470,14 @@ export default function SalesTerminal() {
         : 1)
       : quantityInBaseUnits;
 
+    // Warn if exceeding available stock but allow the sale
     if (newTotalQuantityInBase > selectedVariation.quantity) {
-      alert(
-        `Only ${selectedVariation.quantity} ${selectedProductForVariation.base_unit} available for this variation!`
-      );
-      return;
+      const willGoNegative = newTotalQuantityInBase - selectedVariation.quantity;
+      if (!confirm(
+        `⚠️ Warning: Only ${selectedVariation.quantity} ${selectedProductForVariation.base_unit} in stock for this variation!\nAdding this will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+      )) {
+        return;
+      }
     }
 
     if (existingItem) {
@@ -519,11 +514,7 @@ export default function SalesTerminal() {
   const addUnitToCart = () => {
     if (!selectedProductForUnit) return;
 
-    if (selectedProductForUnit.quantity <= 0) {
-      alert("This product is out of stock!");
-      return;
-    }
-
+    // Warn if product is out of stock, but allow adding
     const unit = selectedUnitForRegular;
     let quantityInBaseUnits = quantityForUnit;
 
@@ -552,11 +543,14 @@ export default function SalesTerminal() {
         : 1)
       : quantityInBaseUnits;
 
+    // Warn if exceeding available stock but allow the sale
     if (newTotalQuantityInBase > selectedProductForUnit.quantity) {
-      alert(
-        `Only ${selectedProductForUnit.quantity} ${selectedProductForUnit.base_unit} available!`
-      );
-      return;
+      const willGoNegative = newTotalQuantityInBase - selectedProductForUnit.quantity;
+      if (!confirm(
+        `⚠️ Warning: Only ${selectedProductForUnit.quantity} ${selectedProductForUnit.base_unit} in stock!\nAdding this will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+      )) {
+        return;
+      }
     }
 
     if (existingItem) {
@@ -604,9 +598,14 @@ export default function SalesTerminal() {
       }
     }
 
+    // Warn if exceeding available stock but allow the update
     if (quantityInBaseUnits > availableStock) {
-      alert(`Only ${availableStock} ${item.product.base_unit} available in stock!`);
-      return;
+      const willGoNegative = quantityInBaseUnits - availableStock;
+      if (!confirm(
+        `⚠️ Warning: Only ${availableStock} ${item.product.base_unit} in stock!\nSetting quantity to ${newQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+      )) {
+        return;
+      }
     }
 
     setCart(
@@ -1600,11 +1599,11 @@ export default function SalesTerminal() {
 
             {selectedProductForVariation && (
               <>
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md group">
                   <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Buying Price:</span>
-                    <span className="font-semibold">₹{selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}</span>
+                    <span className="font-medium text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">₹{selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}</span>
                   </div>
                   {selectedVariation && (
                     <div className="flex justify-between items-center text-sm mt-1">
@@ -1711,11 +1710,11 @@ export default function SalesTerminal() {
           <div className="space-y-4">
             {selectedProductForUnit && (
               <>
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md group">
                   <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Buying Price:</span>
-                    <span className="font-semibold">₹{selectedProductForUnit.cost_price?.toFixed(2) || "0.00"}</span>
+                    <span className="font-medium text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">₹{selectedProductForUnit.cost_price?.toFixed(2) || "0.00"}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm mt-1">
                     <span className="text-muted-foreground">Selling Price:</span>

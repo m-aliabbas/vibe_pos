@@ -28,6 +28,7 @@ import {
   X,
   Home,
   UserCheck,
+  RotateCcw,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -59,6 +60,7 @@ export function Navbar() {
     { href: '/inventory', label: 'Inventory', icon: Package, show: true },
     { href: '/customers', label: 'Customers', icon: UserCheck, show: true },
     { href: '/vendors', label: 'Vendors', icon: Truck, show: true },
+    { href: '/returns', label: 'Returns', icon: RotateCcw, show: true },
     { href: '/sales/history', label: 'History', icon: Receipt, show: true },
     // { href: '/admin', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
     { href: '/users', label: 'Users', icon: Users, show: user?.role === 'admin' },

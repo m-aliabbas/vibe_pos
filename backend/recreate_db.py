@@ -33,6 +33,8 @@ REQUIRED_TABLES = {
     "purchase_items",
     "sale_items",
     "product_variations",
+    "returns",
+    "return_items",
 }
 
 def get_sqlite_tables(db_path: str) -> set[str]:

@@ -553,6 +553,60 @@ def record_customer_payment(
 
     return payment
 
+
+@router.post("/{id}/add-advance")
+def add_customer_advance(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    advance_in: dict,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """
+    Record amount paid on behalf of customer (advance payment / buy on behalf)
+    This increases the customer's outstanding balance
+    """
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    amount = advance_in.get('amount', 0)
+    description = advance_in.get('description', '')
+    payment_method = advance_in.get('payment_method', 'cash')
+    
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    
+    if not description:
+        raise HTTPException(status_code=400, detail="Description is required")
+    
+    # Increase customer's outstanding balance
+    customer.outstanding_balance += amount
+    customer.updated_at = datetime.utcnow()
+    
+    # Create a note to track this advance
+    note = CustomerNote(
+        customer_id=id,
+        note_type="advance_payment",
+        note_text=f"Paid ${amount:.2f} on behalf via {payment_method}: {description}"
+    )
+    
+    db.add(note)
+    db.add(customer)
+    db.commit()
+    db.refresh(customer)
+    db.refresh(note)
+    
+    return {
+        "success": True,
+        "customer_id": id,
+        "amount": amount,
+        "new_balance": customer.outstanding_balance,
+        "description": description,
+        "note_id": note.id
+    }
+
+
 def send_payment_notification(phone: str, amount: float, balance: float, payment_id: int):
     """Send WhatsApp notification for payment"""
     try:

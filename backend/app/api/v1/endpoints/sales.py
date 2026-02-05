@@ -415,20 +415,20 @@ def create_sale(
             quantity_in_base_units = item.quantity * selling_unit['conversion']
             unit_price = selling_unit['price']
         
-        # Check stock availability
-        if item.variation_id:
-            variation = variations_dict[item.variation_id]
-            if variation.quantity < quantity_in_base_units:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Insufficient stock for {product.name} (variation). Available: {variation.quantity}, Requested: {quantity_in_base_units} {product.base_unit}"
-                )
-        else:
-            if product.quantity < quantity_in_base_units:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Insufficient stock for {product.name}. Available: {product.quantity}, Requested: {quantity_in_base_units} {product.base_unit}"
-                )
+        # # Check stock availability
+        # if item.variation_id:
+        #     variation = variations_dict[item.variation_id]
+        #     if variation.quantity < quantity_in_base_units:
+        #         raise HTTPException(
+        #             status_code=400,
+        #             detail=f"Insufficient stock for {product.name} (variation). Available: {variation.quantity}, Requested: {quantity_in_base_units} {product.base_unit}"
+        #         )
+        # else:
+        #     if product.quantity < quantity_in_base_units:
+        #         raise HTTPException(
+        #             status_code=400,
+        #             detail=f"Insufficient stock for {product.name}. Available: {product.quantity}, Requested: {quantity_in_base_units} {product.base_unit}"
+        #         )
     
     # Calculate totals
     subtotal = 0.0
