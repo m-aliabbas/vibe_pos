@@ -29,6 +29,7 @@ import {
   Home,
   UserCheck,
   RotateCcw,
+  Database,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -64,22 +65,23 @@ export function Navbar() {
     { href: '/sales/history', label: 'History', icon: Receipt, show: true },
     // { href: '/admin', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
     { href: '/users', label: 'Users', icon: Users, show: user?.role === 'admin' },
+    { href: '/backup', label: 'Backup', icon: Database, show: user?.role === 'admin' },
   ];
 
   const visibleNavItems = navItems.filter(item => item.show);
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+      <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-20">
           {/* Logo & Brand */}
-          <div className="flex items-center">
-            <Link href={user?.role === 'admin' ? '/admin' : '/sales'} className="flex items-center space-x-2 group">
-              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2 rounded-lg group-hover:from-blue-700 group-hover:to-indigo-700 transition-all">
-                <Store className="h-6 w-6 text-white" />
+          <div className="flex items-center min-w-[200px]">
+            <Link href={user?.role === 'admin' ? '/admin' : '/sales'} className="flex items-center space-x-3 group">
+              <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-lg group-hover:from-blue-700 group-hover:to-indigo-700 transition-all">
+                <Store className="h-7 w-7 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                   POS System
                 </h1>
                 <p className="text-xs text-gray-500">Point of Sale</p>

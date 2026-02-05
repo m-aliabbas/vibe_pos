@@ -107,6 +107,13 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       icon: FileText,
       description: 'Performance and activity'
     },
+    // Settings Section
+    {
+      href: '/backup',
+      label: 'Backup & Restore',
+      icon: Settings,
+      description: 'Database backup management'
+    },
   ];
 
   const isActive = (href: string) => {
@@ -151,11 +158,10 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               return (
                 <Link key={item.href} href={item.href}>
                   <div
-                    className={`flex items-center p-3 rounded-lg transition-colors ${
-                      isActive(item.href)
-                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
+                    className={`flex items-center p-3 rounded-lg transition-colors ${isActive(item.href)
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-gray-700 hover:bg-gray-50'
+                      }`}
                   >
                     <Icon className="h-5 w-5 mr-3" />
                     <div>

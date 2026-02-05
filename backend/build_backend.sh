@@ -44,6 +44,7 @@ pyinstaller --name "$NAME" \
   --collect-all bcrypt \
   --collect-all cryptography \
   --collect-all neonize \
+  --collect-all apscheduler \
   \
   --hidden-import=uvicorn.logging \
   --hidden-import=uvicorn.loops \
@@ -61,6 +62,7 @@ pyinstaller --name "$NAME" \
   --hidden-import=PIL \
   --hidden-import=neonize \
   --hidden-import=dotenv \
+  --hidden-import=apscheduler \
   \
   "$ENTRY"
 

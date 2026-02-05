@@ -5,15 +5,53 @@ use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandEvent;
 use std::time::Duration;
+use std::path::PathBuf;
 
 #[derive(Clone, serde::Serialize)]
 struct Payload {
     message: String,
 }
 
+// Tauri commands for backup/restore operations
+#[tauri::command]
+async fn save_backup_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+    
+    let file_path = app.dialog()
+        .file()
+        .add_filter("ZIP Archive", &["zip"])
+        .set_file_name(&format!("pos_backup_{}.zip", chrono::Local::now().format("%Y%m%d_%H%M%S")))
+        .blocking_save_file();
+    
+    match file_path {
+        Some(FilePath::Path(path)) => Ok(Some(path.to_string_lossy().to_string())),
+        Some(FilePath::Url(_)) => Err("URL paths not supported".to_string()),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+async fn open_backup_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::{DialogExt, FilePath};
+    
+    let file_path = app.dialog()
+        .file()
+        .add_filter("ZIP Archive", &["zip"])
+        .blocking_pick_file();
+    
+    match file_path {
+        Some(FilePath::Path(path)) => Ok(Some(path.to_string_lossy().to_string())),
+        Some(FilePath::Url(_)) => Err("URL paths not supported".to_string()),
+        None => Ok(None),
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_http::init())
+        .invoke_handler(tauri::generate_handler![save_backup_dialog, open_backup_dialog])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 

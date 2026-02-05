@@ -846,6 +846,11 @@
     postcss "^8.4.41"
     tailwindcss "4.1.18"
 
+"@tauri-apps/api@^2.10.1":
+  version "2.10.1"
+  resolved "https://registry.npmjs.org/@tauri-apps/api/-/api-2.10.1.tgz"
+  integrity sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==
+
 "@tauri-apps/cli-darwin-arm64@2.9.6":
   version "2.9.6"
   resolved "https://registry.npmjs.org/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.9.6.tgz"

@@ -105,7 +105,7 @@ def on_message(client: NewClient, message: MessageEv):
         sender = str(message.Info.MessageSource.Sender.User)
         
             
-        print(f"📩 New message from {sender}")
+        # print(f"📩 New message from {sender}")
         
         if message.Message.extendedTextMessage:
             text = message.Message.extendedTextMessage.text
