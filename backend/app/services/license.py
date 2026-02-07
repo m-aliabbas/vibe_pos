@@ -1,21 +1,27 @@
+# app/services/license.py
 import hashlib
 import json
 import os
 import platform
+import sys
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Tuple, List
 
 import firebase_admin
+from cryptography.fernet import Fernet
 from firebase_admin import credentials, firestore, initialize_app
 from firebase_admin.exceptions import FirebaseError
-from cryptography.fernet import Fernet
 
 from app.core.config import settings
 
 
 class LicenseError(RuntimeError):
     pass
+
+
+DEFAULT_ENC_FILENAME = "k1.json.enc"
 
 
 def _normalize_fingerprint_payload() -> dict:
@@ -37,20 +43,132 @@ def get_device_fingerprint() -> str:
     return hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
 
 
-def _load_firebase_credentials() -> dict:
-    if settings.FIREBASE_CREDENTIALS_ENC_PATH and settings.FIREBASE_CREDENTIALS_KEY:
-        with open(settings.FIREBASE_CREDENTIALS_ENC_PATH, "rb") as handle:
-            encrypted = handle.read()
-        fernet = Fernet(settings.FIREBASE_CREDENTIALS_KEY.encode("utf-8"))
-        decrypted = fernet.decrypt(encrypted)
-        return json.loads(decrypted.decode("utf-8"))
+def _project_root_dir() -> Path:
+    """
+    Resolve backend project root (folder containing `app/`, `run_server.py`, `k1.json.enc`, etc.)
+    Works in dev; in frozen builds, it won't be used unless needed as a fallback.
+    """
+    try:
+        # .../backend/app/services/license.py -> parents[2] == .../backend
+        return Path(__file__).resolve().parents[2]
+    except Exception:
+        return Path.cwd()
 
-    if settings.FIREBASE_CREDENTIALS_PATH and os.path.exists(settings.FIREBASE_CREDENTIALS_PATH):
-        with open(settings.FIREBASE_CREDENTIALS_PATH, "r", encoding="utf-8") as handle:
-            return json.load(handle)
+
+def _resolve_resource_path(path_or_name: Optional[str]) -> Tuple[Path, List[Path]]:
+    """
+    Resolve a file path that may be:
+    - absolute on disk
+    - relative (filename) in dev
+    - bundled with PyInstaller onefile (sys._MEIPASS)
+    - placed next to the sidecar exe (Tauri bin folder)
+
+    Returns: (resolved_path, candidates_tried)
+    """
+    candidates: List[Path] = []
+
+    # Decide the filename to look for (default if None/empty)
+    raw = (path_or_name or "").strip()
+    filename = Path(raw).name if raw else DEFAULT_ENC_FILENAME
+
+    # 1) If user provided an absolute path, try it first
+    if raw:
+        p = Path(raw)
+        if p.is_absolute():
+            candidates.append(p)
+
+    # 2) Frozen build: prefer "next to exe" then _MEIPASS
+    if getattr(sys, "frozen", False):
+        try:
+            exe_dir = Path(sys.executable).resolve().parent
+            candidates.append(exe_dir / filename)
+        except Exception:
+            pass
+
+        try:
+            meipass = Path(getattr(sys, "_MEIPASS"))
+            candidates.append(meipass / filename)
+        except Exception:
+            pass
+
+    # 3) Dev / fallback: project root, then cwd
+    root = _project_root_dir()
+    candidates.append(root / filename)
+    candidates.append(Path.cwd() / filename)
+
+    # Pick the first one that exists
+    for c in candidates:
+        try:
+            if c.exists() and c.is_file():
+                return c, candidates
+        except Exception:
+            continue
+
+    # Nothing found
+    return Path(filename), candidates
+
+
+def _load_firebase_credentials() -> dict:
+    """
+    Loads Firebase service account credentials.
+    Supports:
+    - Encrypted file (FIREBASE_CREDENTIALS_ENC_PATH + FIREBASE_CREDENTIALS_KEY)
+    - Plain JSON file (FIREBASE_CREDENTIALS_PATH)
+    """
+
+    # --- Encrypted credentials path (preferred) ---
+    enc_path_cfg = (settings.FIREBASE_CREDENTIALS_ENC_PATH or "").strip()
+    key_cfg = (settings.FIREBASE_CREDENTIALS_KEY or "").strip()
+
+    # If ENC_PATH is set OR if user provided a key, we attempt encrypted load.
+    if enc_path_cfg or key_cfg:
+        if not key_cfg:
+            raise LicenseError("FIREBASE_CREDENTIALS_KEY is missing for encrypted credentials")
+
+        # If ENC path not explicitly set, default to k1.json.enc
+        enc_path_value = enc_path_cfg or DEFAULT_ENC_FILENAME
+        enc_path, tried = _resolve_resource_path(enc_path_value)
+
+        try:
+            encrypted = enc_path.read_bytes()
+        except FileNotFoundError:
+            tried_str = "\n".join(f"- {p}" for p in tried)
+            raise LicenseError(
+                "Encrypted Firebase credentials file not found. Tried:\n" + tried_str
+            )
+        except Exception as exc:
+            raise LicenseError(f"Failed to read encrypted credentials: {exc}") from exc
+
+        try:
+            fernet = Fernet(key_cfg.encode("utf-8"))
+            decrypted = fernet.decrypt(encrypted)
+            return json.loads(decrypted.decode("utf-8"))
+        except Exception as exc:
+            raise LicenseError(f"Failed to decrypt Firebase credentials: {exc}") from exc
+
+    # --- Plain JSON credentials path (fallback) ---
+    plain_path = (settings.FIREBASE_CREDENTIALS_PATH or "").strip()
+    if plain_path:
+        p = Path(plain_path)
+        if not p.is_absolute():
+            # treat as filename and try same resolution strategy
+            p, tried = _resolve_resource_path(plain_path)
+        else:
+            tried = [p]
+
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as handle:
+                    return json.load(handle)
+            except Exception as exc:
+                raise LicenseError(f"Failed to read plain Firebase credentials: {exc}") from exc
+
+        tried_str = "\n".join(f"- {pp}" for pp in tried)
+        raise LicenseError("Firebase credentials file not found. Tried:\n" + tried_str)
 
     raise LicenseError(
-        "Set FIREBASE_CREDENTIALS_PATH or FIREBASE_CREDENTIALS_ENC_PATH with FIREBASE_CREDENTIALS_KEY"
+        "Set FIREBASE_CREDENTIALS_ENC_PATH with FIREBASE_CREDENTIALS_KEY "
+        "or set FIREBASE_CREDENTIALS_PATH"
     )
 
 
@@ -129,3 +247,4 @@ def check_license_or_exit() -> str:
         raise LicenseError("License expired for this device")
 
     return fingerprint
+
