@@ -26,10 +26,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # License / Firebase
-    LICENSE_ENFORCEMENT: bool = False
+    LICENSE_ENFORCEMENT: bool = True
     FIREBASE_CREDENTIALS_PATH: Optional[str] = './k1.json'
-    FIREBASE_PROJECT_ID: Optional[str] = 'posapplication-742cd'
-    FIREBASE_LICENSE_COLLECTION: str = "licenses"
+    FIREBASE_CREDENTIALS_ENC_PATH: Optional[str] = './k1.json.enc'
+    FIREBASE_CREDENTIALS_KEY: Optional[str] = 'EhKGefoVJZoKmg1ikyTppKbmryLi5DcvJcjIUx3zw40='
+    FIREBASE_PROJECT_ID: Optional[str] = 'vibepos-4d412'
+    FIREBASE_LICENSE_COLLECTION: str = "lisence_pos"
     LICENSE_AUTO_REGISTER: bool = True
     
     class Config:

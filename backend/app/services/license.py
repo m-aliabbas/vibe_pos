@@ -9,6 +9,7 @@ from typing import Optional
 import firebase_admin
 from firebase_admin import credentials, firestore, initialize_app
 from firebase_admin.exceptions import FirebaseError
+from cryptography.fernet import Fernet
 
 from app.core.config import settings
 
@@ -36,14 +37,29 @@ def get_device_fingerprint() -> str:
     return hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
 
 
-def _ensure_firebase_initialized() -> None:
-    if not settings.FIREBASE_CREDENTIALS_PATH:
-        raise LicenseError("FIREBASE_CREDENTIALS_PATH is not set")
+def _load_firebase_credentials() -> dict:
+    if settings.FIREBASE_CREDENTIALS_ENC_PATH and settings.FIREBASE_CREDENTIALS_KEY:
+        with open(settings.FIREBASE_CREDENTIALS_ENC_PATH, "rb") as handle:
+            encrypted = handle.read()
+        fernet = Fernet(settings.FIREBASE_CREDENTIALS_KEY.encode("utf-8"))
+        decrypted = fernet.decrypt(encrypted)
+        return json.loads(decrypted.decode("utf-8"))
 
+    if settings.FIREBASE_CREDENTIALS_PATH and os.path.exists(settings.FIREBASE_CREDENTIALS_PATH):
+        with open(settings.FIREBASE_CREDENTIALS_PATH, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    raise LicenseError(
+        "Set FIREBASE_CREDENTIALS_PATH or FIREBASE_CREDENTIALS_ENC_PATH with FIREBASE_CREDENTIALS_KEY"
+    )
+
+
+def _ensure_firebase_initialized() -> None:
     if len(firebase_admin._apps) > 0:
         return
 
-    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+    credentials_payload = _load_firebase_credentials()
+    cred = credentials.Certificate(credentials_payload)
     initialize_app(cred, {"projectId": settings.FIREBASE_PROJECT_ID})
 
 

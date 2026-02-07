@@ -16,3 +16,4 @@ python-dotenv
 firebase-admin
 passlib[argon2]
 argon2-cffi
+cryptography

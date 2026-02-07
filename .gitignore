@@ -38,6 +38,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Firebase credentials
+backend/k1.json
+
 # Database
 *.db
 *.sqlite
