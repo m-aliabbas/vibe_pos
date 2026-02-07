@@ -2,6 +2,9 @@ from typing import Any, List, Optional
 import csv
 import io
 import requests
+import asyncio
+import re
+from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, File, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -11,6 +14,7 @@ from app.api import deps
 from app.models.user import User
 from app.models.customer import Customer, CustomerNote, CustomerPayment
 from app.models.sale import Sale
+from app.models.pos_return import PosReturn
 from app.schemas import customer as customer_schema
 from app.services import accounting as accounting_service
 
@@ -413,6 +417,17 @@ def update_customer(
         customer.name = customer_in.name
     if customer_in.address is not None:
         customer.address = customer_in.address
+    if customer_in.opening_balance is not None:
+        if customer_in.opening_balance < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Opening balance must be greater than or equal to 0",
+            )
+        previous_opening = customer.opening_balance or 0.0
+        new_opening = float(customer_in.opening_balance)
+        delta = new_opening - previous_opening
+        customer.opening_balance = new_opening
+        customer.outstanding_balance = max(0.0, (customer.outstanding_balance or 0.0) + delta)
     if customer_in.current_mileage is not None:
         customer.current_mileage = customer_in.current_mileage
     if customer_in.oil_change_interval is not None:
@@ -607,7 +622,15 @@ def record_customer_payment(
     
     # Send WhatsApp notification
     if customer.phone:
-        background_tasks.add_task(send_payment_notification, customer.phone, payment.amount, customer.outstanding_balance, payment.id)
+        background_tasks.add_task(
+            asyncio.run,
+            send_payment_notification_async(
+                customer.phone,
+                payment.amount,
+                customer.outstanding_balance,
+                payment.id,
+            ),
+        )
 
     return payment
 
@@ -672,6 +695,73 @@ def add_customer_advance(
     }
 
 
+@router.post("/{id}/send-reminder")
+def send_customer_due_reminder(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Send WhatsApp reminder for customer's due amount."""
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    if not customer.phone:
+        raise HTTPException(status_code=400, detail="Customer phone is missing")
+
+    if (customer.outstanding_balance or 0) <= 0:
+        raise HTTPException(status_code=400, detail="Customer has no due amount")
+
+    background_tasks.add_task(
+        asyncio.run,
+        send_due_reminder_notification_async(
+            customer.phone,
+            customer.name or "Customer",
+            customer.outstanding_balance,
+            id,
+        ),
+    )
+
+    return {"success": True, "message": "Reminder sent"}
+
+
+@router.post("/send-reminders")
+def send_all_due_reminders(
+    *,
+    db: Session = Depends(deps.get_db),
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Send reminders to all customers with due balance and phone."""
+    due_customers = db.query(Customer).filter(
+        Customer.outstanding_balance > 0,
+        Customer.phone.isnot(None)
+    ).all()
+
+    if not due_customers:
+        return {"success": True, "sent": 0, "skipped": 0}
+
+    payload = [
+        {
+            "phone": customer.phone,
+            "name": customer.name or "Customer",
+            "balance": customer.outstanding_balance,
+            "id": customer.id,
+        }
+        for customer in due_customers
+        if customer.phone
+    ]
+
+    background_tasks.add_task(
+        asyncio.run,
+        send_due_reminders_batch_async(payload),
+    )
+
+    return {"success": True, "sent": len(payload), "skipped": 0}
+
+
 def send_payment_notification(phone: str, amount: float, balance: float, payment_id: int):
     """Send WhatsApp notification for payment"""
     try:
@@ -685,7 +775,8 @@ def send_payment_notification(phone: str, amount: float, balance: float, payment
                   f"Amount: ${amount:,.2f}\n" \
                   f"Remaining Balance: ${balance:,.2f}\n" \
                   f"Payment ID: #{payment_id}\n\n" \
-                  f"Thank you for your business!"
+                  f"Thank you.!"\
+                  f"vibeexe.com"
                   
         requests.post(
             "http://127.0.0.1:8000/api/v1/whatsapp/send",
@@ -693,10 +784,215 @@ def send_payment_notification(phone: str, amount: float, balance: float, payment
                 "phone_number": phone,
                 "message": message
             },
-            timeout=5
+            timeout=2
         )
     except Exception as e:
         print(f"Failed to send payment notification: {e}")
+
+
+async def send_payment_notification_async(phone: str, amount: float, balance: float, payment_id: int):
+    await asyncio.to_thread(send_payment_notification, phone, amount, balance, payment_id)
+
+
+def send_due_reminder_notification(phone: str, name: str, balance: float, customer_id: int):
+    """Send WhatsApp reminder for due amount"""
+    try:
+        # Normalize phone if needed (reusing logic from sales)
+        if phone.startswith('0'):
+            phone = '92' + phone[1:]
+        elif len(phone) == 10:
+            phone = '92' + phone
+
+        message = (
+            f"🔔 *Payment Reminder*\n\n"
+            f"Malik D Store.\n"
+            f"Customer: {name}\n"
+            f"Due Amount: ${balance:,.2f}\n\n"
+            f"Please clear your outstanding balance at your earliest convenience.\n"
+            f"Customer ID: #{customer_id}"
+            f"Malik D Store.\n"
+        )
+
+        requests.post(
+            "http://127.0.0.1:8000/api/v1/whatsapp/send",
+            json={
+                "phone_number": phone,
+                "message": message
+            },
+            timeout=2
+        )
+    except Exception as e:
+        print(f"Failed to send due reminder: {e}")
+
+
+def _extract_amount_from_note(note_text: str) -> float:
+    if not note_text:
+        return 0.0
+    match = re.search(r"\$([0-9.,]+)", note_text)
+    if not match:
+        return 0.0
+    try:
+        return float(match.group(1).replace(",", ""))
+    except Exception:
+        return 0.0
+
+
+@router.get("/{id}/report")
+def export_customer_report(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Export customer sales/returns/payments/advances summary as CSV."""
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    sales = db.query(Sale).filter(Sale.customer_ref_id == id).all()
+    payments = db.query(CustomerPayment).filter(CustomerPayment.customer_id == id).all()
+    advances = db.query(CustomerNote).filter(
+        CustomerNote.customer_id == id,
+        CustomerNote.note_type == "advance_payment",
+    ).all()
+    returns = db.query(PosReturn).join(Sale, PosReturn.sale_id == Sale.id).filter(
+        Sale.customer_ref_id == id
+    ).all()
+
+    rows: List[Dict[str, Any]] = []
+
+    for sale in sales:
+        rows.append({
+            "Type": "Sale",
+            "Date": sale.created_at.isoformat(),
+            "Reference": f"Sale #{sale.id}",
+            "Amount": f"{sale.total:.2f}",
+            "Details": f"Paid: {sale.amount_paid:.2f}, Due: {sale.amount_due:.2f}, Method: {sale.payment_method}",
+        })
+
+    for ret in returns:
+        rows.append({
+            "Type": "Return",
+            "Date": ret.created_at.isoformat(),
+            "Reference": f"Return #{ret.id}",
+            "Amount": f"{ret.refund_amount:.2f}",
+            "Details": f"Sale #{ret.sale_id or 'N/A'} - {ret.reason}",
+        })
+
+    for payment in payments:
+        rows.append({
+            "Type": "Payment",
+            "Date": payment.payment_date.isoformat(),
+            "Reference": f"Payment #{payment.id}",
+            "Amount": f"{payment.amount:.2f}",
+            "Details": f"Method: {payment.payment_method}",
+        })
+
+    for note in advances:
+        amount = _extract_amount_from_note(note.note_text)
+        rows.append({
+            "Type": "Buy on Behalf",
+            "Date": note.created_at.isoformat(),
+            "Reference": f"Advance #{note.id}",
+            "Amount": f"{amount:.2f}",
+            "Details": note.note_text,
+        })
+
+    rows.sort(key=lambda r: r.get("Date", ""))
+
+    if not rows:
+        rows = [{"Type": "", "Date": "", "Reference": "", "Amount": "", "Details": "No data"}]
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["Type", "Date", "Reference", "Amount", "Details"])
+    writer.writeheader()
+    writer.writerows(rows)
+    output.seek(0)
+
+    filename = f"customer_report_{id}.csv"
+    return StreamingResponse(
+        io.StringIO(output.getvalue()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+def normalize_phone_for_sales(phone: Optional[str]) -> Optional[str]:
+    if not phone:
+        return None
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if digits.startswith("0"):
+        digits = digits[1:]
+    if len(digits) == 10:
+        digits = "92" + digits
+    return digits if digits else None
+
+
+@router.post("/{id}/ledger/backfill")
+def backfill_customer_ledger(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Backfill customer_ref_id on sales and customer_id on journal lines."""
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    normalized_phone = normalize_phone_for_sales(customer.phone)
+
+    sales_query = db.query(Sale).filter(Sale.customer_ref_id.is_(None))
+    if normalized_phone:
+        sales_query = sales_query.filter(Sale.customer_phone == normalized_phone)
+    else:
+        sales_query = sales_query.filter(Sale.customer_phone.is_(None))
+
+    sales_to_update = sales_query.all()
+    updated_sales = 0
+    for sale in sales_to_update:
+        sale.customer_ref_id = customer.id
+        sale.is_walkin = False
+        updated_sales += 1
+        db.add(sale)
+
+    # Backfill journal lines for all customer sales
+    from app.models.accounting import JournalLine
+    linked_sales = db.query(Sale.id).filter(Sale.customer_ref_id == customer.id).all()
+    linked_sale_ids = [row[0] for row in linked_sales]
+    journal_lines = db.query(JournalLine).filter(
+        JournalLine.sale_id.in_(linked_sale_ids),
+        JournalLine.customer_id.is_(None)
+    ).all() if linked_sale_ids else []
+
+    updated_lines = 0
+    for line in journal_lines:
+        line.customer_id = customer.id
+        updated_lines += 1
+        db.add(line)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "updated_sales": updated_sales,
+        "updated_journal_lines": updated_lines,
+    }
+
+
+async def send_due_reminder_notification_async(phone: str, name: str, balance: float, customer_id: int):
+    await asyncio.to_thread(send_due_reminder_notification, phone, name, balance, customer_id)
+
+
+async def send_due_reminders_batch_async(customers: List[dict]):
+    for customer in customers:
+        await send_due_reminder_notification_async(
+            customer["phone"],
+            customer["name"],
+            customer["balance"],
+            customer["id"],
+        )
+        await asyncio.sleep(2)
 
 
 # ============ CUSTOMER PURCHASE HISTORY ============

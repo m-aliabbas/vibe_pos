@@ -70,6 +70,7 @@ class CustomerUpdate(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
     address: Optional[str] = None
+    opening_balance: Optional[float] = None
     # Vehicle Oil Change Tracking (optional)
     current_mileage: Optional[int] = None
     oil_change_interval: Optional[int] = None

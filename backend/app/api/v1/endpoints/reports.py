@@ -12,7 +12,10 @@ from app.models.sale import Sale, SaleItem
 from app.models.product import Product, ProductVariation
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.vendor import Vendor
+from app.models.customer import Customer
+from app.models.accounting import JournalEntry, JournalLine, Account
 from app.models.user import User, UserRole
+from app.services import accounting as accounting_service
 from app.schemas.report import (
     SalesSummaryReport, TopProductsReport, PaymentMethodReport,
     CashierPerformanceReport, CustomerSalesReport, SalesTrendReport,
@@ -23,7 +26,8 @@ from app.schemas.report import (
     VendorPurchaseReport, ProductCostReport, PurchaseTimelineReport,
     PurchaseTrendReport, ProductPurchaseReport, PurchasePaymentStatusReport,
     CashierPerformanceReport as UserCashierPerformanceReport,
-    UserActivityReport, UserPerformanceReport, AdminAuditReport, UserLoginHistory
+    UserActivityReport, UserPerformanceReport, AdminAuditReport, UserLoginHistory,
+    LedgerReport, LedgerEntry
 )
 
 router = APIRouter()
@@ -1133,6 +1137,200 @@ def get_user_login_history(
     # This would require a login history table in the database
     # For now, return empty list as placeholder
     return []
+
+@router.get("/customers/{customer_id}/ledger", response_model=LedgerReport)
+def get_customer_ledger(
+    customer_id: int,
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    export: bool = Query(False),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Customer ledger based on Accounts Receivable journal lines."""
+    customer = db.query(Customer).filter(Customer.id == customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    start, end = validate_date_range(start_date, end_date)
+
+    accounting_service.ensure_system_accounts(db)
+    ar_code = accounting_service.SYSTEM_ACCOUNTS["ACCOUNTS_RECEIVABLE"]["code"]
+    ar_account = db.query(Account).filter(Account.code == ar_code).first()
+    if not ar_account:
+        raise HTTPException(status_code=500, detail="Accounts Receivable not configured")
+
+    customer_sales = db.query(Sale.id).filter(Sale.customer_ref_id == customer_id).subquery()
+
+    base_query = db.query(JournalLine, JournalEntry).join(
+        JournalEntry, JournalEntry.id == JournalLine.entry_id
+    ).filter(
+        JournalLine.account_id == ar_account.id,
+        or_(
+            JournalLine.customer_id == customer_id,
+            JournalLine.sale_id.in_(customer_sales),
+        )
+    )
+
+    pre_debit, pre_credit = base_query.filter(
+        JournalEntry.entry_date < start
+    ).with_entities(
+        func.coalesce(func.sum(JournalLine.debit), 0.0),
+        func.coalesce(func.sum(JournalLine.credit), 0.0)
+    ).first()
+
+    opening_balance = (customer.opening_balance or 0.0) + (pre_debit - pre_credit)
+
+    rows = base_query.filter(
+        JournalEntry.entry_date >= start,
+        JournalEntry.entry_date <= end,
+    ).order_by(
+        JournalEntry.entry_date.asc(),
+        JournalEntry.id.asc(),
+        JournalLine.id.asc(),
+    ).all()
+
+    running_balance = opening_balance
+    entries: List[LedgerEntry] = []
+
+    if opening_balance != 0:
+        entries.append(LedgerEntry(
+            date=start,
+            description="Opening Balance",
+            debit=opening_balance if opening_balance > 0 else 0.0,
+            credit=abs(opening_balance) if opening_balance < 0 else 0.0,
+            balance=running_balance,
+        ))
+
+    for line, entry in rows:
+        debit = line.debit or 0.0
+        credit = line.credit or 0.0
+        running_balance += debit - credit
+        entries.append(LedgerEntry(
+            date=entry.entry_date,
+            description=entry.description,
+            source_type=entry.source_type,
+            source_id=entry.source_id,
+            debit=debit,
+            credit=credit,
+            balance=running_balance,
+        ))
+
+    if export:
+        csv_data = [
+            {
+                "Date": e.date.isoformat(),
+                "Description": e.description,
+                "Source Type": e.source_type or "",
+                "Source ID": e.source_id or "",
+                "Debit": f"{e.debit:.2f}",
+                "Credit": f"{e.credit:.2f}",
+                "Balance": f"{e.balance:.2f}",
+            }
+            for e in entries
+        ]
+        return export_to_csv(csv_data, f"customer_ledger_{customer_id}_{start.date()}_{end.date()}.csv")
+
+    return {
+        "opening_balance": opening_balance,
+        "closing_balance": running_balance,
+        "entries": entries,
+    }
+
+
+@router.get("/vendors/{vendor_id}/ledger", response_model=LedgerReport)
+def get_vendor_ledger(
+    vendor_id: int,
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    export: bool = Query(False),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Vendor ledger based on Accounts Payable journal lines."""
+    vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    start, end = validate_date_range(start_date, end_date)
+
+    accounting_service.ensure_system_accounts(db)
+    ap_code = accounting_service.SYSTEM_ACCOUNTS["ACCOUNTS_PAYABLE"]["code"]
+    ap_account = db.query(Account).filter(Account.code == ap_code).first()
+    if not ap_account:
+        raise HTTPException(status_code=500, detail="Accounts Payable not configured")
+
+    base_query = db.query(JournalLine, JournalEntry).join(
+        JournalEntry, JournalEntry.id == JournalLine.entry_id
+    ).filter(
+        JournalLine.account_id == ap_account.id,
+        JournalLine.vendor_id == vendor_id,
+    )
+
+    pre_debit, pre_credit = base_query.filter(
+        JournalEntry.entry_date < start
+    ).with_entities(
+        func.coalesce(func.sum(JournalLine.debit), 0.0),
+        func.coalesce(func.sum(JournalLine.credit), 0.0)
+    ).first()
+
+    opening_balance = (vendor.opening_balance or 0.0) + (pre_credit - pre_debit)
+
+    rows = base_query.filter(
+        JournalEntry.entry_date >= start,
+        JournalEntry.entry_date <= end,
+    ).order_by(
+        JournalEntry.entry_date.asc(),
+        JournalEntry.id.asc(),
+        JournalLine.id.asc(),
+    ).all()
+
+    running_balance = opening_balance
+    entries: List[LedgerEntry] = []
+
+    if opening_balance != 0:
+        entries.append(LedgerEntry(
+            date=start,
+            description="Opening Balance",
+            debit=abs(opening_balance) if opening_balance < 0 else 0.0,
+            credit=opening_balance if opening_balance > 0 else 0.0,
+            balance=running_balance,
+        ))
+
+    for line, entry in rows:
+        debit = line.debit or 0.0
+        credit = line.credit or 0.0
+        running_balance += credit - debit
+        entries.append(LedgerEntry(
+            date=entry.entry_date,
+            description=entry.description,
+            source_type=entry.source_type,
+            source_id=entry.source_id,
+            debit=debit,
+            credit=credit,
+            balance=running_balance,
+        ))
+
+    if export:
+        csv_data = [
+            {
+                "Date": e.date.isoformat(),
+                "Description": e.description,
+                "Source Type": e.source_type or "",
+                "Source ID": e.source_id or "",
+                "Debit": f"{e.debit:.2f}",
+                "Credit": f"{e.credit:.2f}",
+                "Balance": f"{e.balance:.2f}",
+            }
+            for e in entries
+        ]
+        return export_to_csv(csv_data, f"vendor_ledger_{vendor_id}_{start.date()}_{end.date()}.csv")
+
+    return {
+        "opening_balance": opening_balance,
+        "closing_balance": running_balance,
+        "entries": entries,
+    }
 
 
 @router.get("/daily-summary-text")

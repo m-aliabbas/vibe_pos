@@ -2,12 +2,15 @@ from typing import Any, List, Optional
 import csv
 import io
 import requests
+import asyncio
+from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, File, UploadFile, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from app.api import deps
 from app.models.vendor import Vendor
 from app.models.purchase import Purchase, PurchaseStatus
+from app.models.accounting import JournalEntry, JournalLine, Account
 from app.schemas import vendor as vendor_schema
 from app.services import accounting as accounting_service
 
@@ -204,16 +207,131 @@ def update_vendor(
     vendor = db.query(Vendor).filter(Vendor.id == id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
-    
-    for field, value in vendor_in.dict(exclude_unset=True).items():
+
+    update_data = vendor_in.dict(exclude_unset=True)
+    opening_balance = update_data.pop("opening_balance", None)
+
+    for field, value in update_data.items():
         if field == "phone" and value:
             value = normalize_phone(value)
         setattr(vendor, field, value)
+
+    if opening_balance is not None:
+        if opening_balance < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Opening balance must be greater than or equal to 0",
+            )
+
+        legacy_purchase = db.query(Purchase)
+        legacy_purchase = legacy_purchase.filter(
+            Purchase.vendor_id == id,
+            ~Purchase.items.any(),
+        ).order_by(Purchase.created_at.asc()).first()
+
+
+        if legacy_purchase and legacy_purchase.amount_paid > opening_balance:
+            raise HTTPException(
+                status_code=400,
+                detail="Opening balance cannot be less than already paid amount",
+            )
+
+        vendor.opening_balance = float(opening_balance)
+
+        if opening_balance <= 0:
+            if legacy_purchase:
+                db.delete(legacy_purchase)
+        else:
+            if not legacy_purchase:
+                legacy_purchase = Purchase(
+                    vendor_id=vendor.id,
+                    total_amount=float(opening_balance),
+                    amount_paid=0.0,
+                    status=PurchaseStatus.UNPAID,
+                )
+                db.add(legacy_purchase)
+            else:
+                legacy_purchase.total_amount = float(opening_balance)
+                if legacy_purchase.amount_paid >= legacy_purchase.total_amount:
+                    legacy_purchase.amount_paid = legacy_purchase.total_amount
+                    legacy_purchase.status = PurchaseStatus.PAID
+                elif legacy_purchase.amount_paid > 0:
+                    legacy_purchase.status = PurchaseStatus.PARTIAL
+                else:
+                    legacy_purchase.status = PurchaseStatus.UNPAID
     
     db.add(vendor)
     db.commit()
     db.refresh(vendor)
     return vendor
+
+
+@router.get("/{id}/report")
+def export_vendor_report(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    current_user = Depends(deps.get_current_user),
+) -> Any:
+    """Export vendor purchases and payments summary as CSV."""
+    vendor = db.query(Vendor).filter(Vendor.id == id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    purchases = db.query(Purchase).filter(Purchase.vendor_id == id).all()
+
+    accounting_service.ensure_system_accounts(db)
+    ap_code = accounting_service.SYSTEM_ACCOUNTS["ACCOUNTS_PAYABLE"]["code"]
+    ap_account = db.query(Account).filter(Account.code == ap_code).first()
+
+    payments: List[JournalLine] = []
+    if ap_account:
+        payments = db.query(JournalLine).join(
+            JournalEntry, JournalEntry.id == JournalLine.entry_id
+        ).filter(
+            JournalLine.vendor_id == id,
+            JournalLine.account_id == ap_account.id,
+            JournalLine.debit > 0
+        ).all()
+
+    rows: List[dict] = []
+
+    for purchase in purchases:
+        rows.append({
+            "Type": "Purchase",
+            "Date": purchase.created_at.isoformat(),
+            "Reference": f"Purchase #{purchase.id}",
+            "Amount": f"{purchase.total_amount:.2f}",
+            "Details": f"Paid: {purchase.amount_paid:.2f}, Status: {purchase.status}",
+        })
+
+    for line in payments:
+        entry = line.entry
+        rows.append({
+            "Type": "Payment",
+            "Date": entry.entry_date.isoformat() if entry else "",
+            "Reference": entry.description if entry else "Payment",
+            "Amount": f"{(line.debit or 0.0):.2f}",
+            "Details": f"Source: {entry.source_type if entry else ''}",
+        })
+
+    rows.sort(key=lambda r: r.get("Date", ""))
+
+    if not rows:
+        rows = [{"Type": "", "Date": "", "Reference": "", "Amount": "", "Details": "No data"}]
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["Type", "Date", "Reference", "Amount", "Details"])
+    writer.writeheader()
+    writer.writerows(rows)
+    output.seek(0)
+
+    filename = f"vendor_report_{id}.csv"
+    return StreamingResponse(
+        io.StringIO(output.getvalue()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 @router.post("/{id}/payment")
 def make_vendor_payment(
@@ -314,7 +432,15 @@ def make_vendor_payment(
     
     # Send WhatsApp notification if vendor has phone
     if vendor.phone:
-        background_tasks.add_task(send_vendor_payment_notification, vendor.phone, payment_in.amount, remaining_balance, vendor.name)
+        background_tasks.add_task(
+            asyncio.run,
+            send_vendor_payment_notification_async(
+                vendor.phone,
+                payment_in.amount,
+                remaining_balance,
+                vendor.name,
+            ),
+        )
     
     return {
         "message": "Payment applied successfully",
@@ -346,7 +472,11 @@ def send_vendor_payment_notification(phone: str, amount: float, balance: float, 
                 "phone_number": phone,
                 "message": message
             },
-            timeout=5
+            timeout=2
         )
     except Exception as e:
         print(f"Failed to send vendor payment notification: {e}")
+
+
+async def send_vendor_payment_notification_async(phone: str, amount: float, balance: float, vendor_name: str):
+    await asyncio.to_thread(send_vendor_payment_notification, phone, amount, balance, vendor_name)

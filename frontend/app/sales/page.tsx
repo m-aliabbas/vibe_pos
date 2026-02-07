@@ -112,7 +112,7 @@ export default function SalesTerminal() {
   const [discount, setDiscount] = useState<number>(0);
   const [tax, setTax] = useState<number>(0);
   const [deliveryCharges, setDeliveryCharges] = useState<number>(0); // Added delivery charges
-  const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [amountPaid, setAmountPaid] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
@@ -719,13 +719,6 @@ export default function SalesTerminal() {
     return () => clearTimeout(t);
   }, [customerPhone, customerId, checkoutOpen]);
 
-  // ✅ Auto-update amount paid when total changes during checkout
-  useEffect(() => {
-    if (checkoutOpen) {
-      setAmountPaid(calculateTotal());
-    }
-  }, [discount, tax, deliveryCharges, checkoutOpen]);
-
   const calculateSubtotal = () => {
     return cart.reduce((sum, item) => {
       let itemPrice = item.product.selling_price;
@@ -757,12 +750,13 @@ export default function SalesTerminal() {
     return subtotal - itemDiscounts - discount + tax + deliveryCharges;
   };
 
+  const amountPaidValue = amountPaid.trim() === "" ? 0 : parseFloat(amountPaid);
+
   const handleCheckout = () => {
     if (cart.length === 0) {
       alert("Cart is empty!");
       return;
     }
-    setAmountPaid(calculateTotal());
     setCheckoutOpen(true);
   };
 
@@ -805,7 +799,7 @@ export default function SalesTerminal() {
         discount: discount,
         tax: tax,
         delivery_charges: deliveryCharges,
-        amount_paid: amountPaid,
+        amount_paid: amountPaidValue,
         items: cart.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
@@ -1285,45 +1279,14 @@ export default function SalesTerminal() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 py-4 px-1 relative">
-            {/* ✅ Separate fields */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="customerId">Customer ID</Label>
-                <Input
-                  id="customerId"
-                  placeholder="e.g., CUST001"
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  If empty, we can use phone as ID
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="customerPhone">Phone Number</Label>
-                <Input
-                  id="customerPhone"
-                  placeholder="e.g., 0300xxxxxxx"
-                  value={customerPhone}
-                  onChange={(e) => {
-                    const nextPhone = e.target.value;
-                    const prevPhone = customerPhone;
-
-                    setCustomerPhone(nextPhone);
-
-                    // ✅ CASE 3: if ID is empty, auto use phone as customer ID
-                    if (!customerId.trim()) {
-                      setCustomerId(nextPhone);
-                    } else {
-                      // If user didn't manually set ID and it was just mirroring phone, keep it in sync
-                      if (customerId.trim() === prevPhone.trim()) {
-                        setCustomerId(nextPhone);
-                      }
-                    }
-                  }}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="customerPhone">Phone Number</Label>
+              <Input
+                id="customerPhone"
+                placeholder="e.g., 0300xxxxxxx"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+              />
             </div>
 
             {customerSearchLoading && (
@@ -1443,7 +1406,7 @@ export default function SalesTerminal() {
                 min="0"
                 step="0.01"
                 value={amountPaid}
-                onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setAmountPaid(e.target.value)}
                 className="text-sm font-semibold h-8"
               />
               <p className="text-xs text-muted-foreground">
@@ -1462,16 +1425,16 @@ export default function SalesTerminal() {
                 <span>Total:</span>
                 <span className="text-lg">rs {calculateTotal().toFixed(2)}</span>
               </div>
-              {amountPaid < calculateTotal() && (
+              {amountPaidValue < calculateTotal() && (
                 <div className="flex justify-between text-red-600 font-semibold">
                   <span>Due (Udhar):</span>
-                  <span>rs {(calculateTotal() - amountPaid).toFixed(2)}</span>
+                  <span>rs {(calculateTotal() - amountPaidValue).toFixed(2)}</span>
                 </div>
               )}
-              {amountPaid > calculateTotal() && (
+              {amountPaidValue > calculateTotal() && (
                 <div className="flex justify-between text-green-600 font-semibold">
                   <span>Change:</span>
-                  <span>rs {(amountPaid - calculateTotal()).toFixed(2)}</span>
+                  <span>rs {(amountPaidValue - calculateTotal()).toFixed(2)}</span>
                 </div>
               )}
             </div>
@@ -1479,7 +1442,7 @@ export default function SalesTerminal() {
             <div className="bg-primary/10 p-2 rounded border border-primary/20">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-sm">Amount Paid:</span>
-                <span className="text-xl font-bold text-primary">rs {amountPaid.toFixed(2)}</span>
+                <span className="text-xl font-bold text-primary">rs {amountPaidValue.toFixed(2)}</span>
               </div>
             </div>
           </div>

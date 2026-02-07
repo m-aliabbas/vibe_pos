@@ -16,7 +16,8 @@ class PurchaseItemBase(BaseModel):
     variation_id: Optional[int] = None  # For products with variations
 
 class PurchaseItemCreate(PurchaseItemBase):
-    pass
+    selling_price: Optional[float] = None
+    update_selling_price: Optional[bool] = False
 
 class PurchaseItem(PurchaseItemBase):
     id: int

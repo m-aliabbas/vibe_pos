@@ -134,6 +134,25 @@ def delete_product(
     db.delete(product)
     db.commit()
     return {"message": "Product deleted successfully"}
+
+
+@router.post("/bulk-import")
+async def bulk_import_products(
+    *,
+    db: Session = Depends(deps.get_db),
+    file: UploadFile = File(...),
+) -> Any:
+    """Bulk import products from CSV."""
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a CSV file")
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to read CSV file")
+
+    reader = csv.DictReader(io.StringIO(text))
     created = 0
     skipped = 0
     errors: List[str] = []

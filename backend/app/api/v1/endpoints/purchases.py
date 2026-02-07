@@ -78,6 +78,13 @@ def create_purchase(
             # Update product stock (for products without variations)
             product.quantity += item.quantity
             product.cost_price = item.unit_cost 
+            if item.update_selling_price and item.selling_price is not None:
+                if item.selling_price < 0:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Selling price must be greater than or equal to 0",
+                    )
+                product.selling_price = item.selling_price
             db.add(product)
 
     # Determine Status

@@ -68,6 +68,7 @@ export interface CustomerUpdate {
     email?: string;
     name?: string;
     address?: string;
+    opening_balance?: number;
 }
 
 export interface CustomerListResponse {
@@ -111,6 +112,22 @@ export interface CustomerPaymentCreate {
     amount: number;
     payment_method?: string;
     reference_note?: string;
+}
+
+export interface LedgerEntry {
+    date: string;
+    description: string;
+    source_type?: string;
+    source_id?: number;
+    debit: number;
+    credit: number;
+    balance: number;
+}
+
+export interface LedgerReport {
+    opening_balance: number;
+    closing_balance: number;
+    entries: LedgerEntry[];
 }
 
 // Customer API functions
@@ -225,6 +242,44 @@ export const customerApi = {
         return response.data;
     },
 
+    // Customer ledger
+    getCustomerLedger: async (id: number, params?: { start_date?: string; end_date?: string }): Promise<LedgerReport> => {
+        const response = await api.get(`/reports/customers/${id}/ledger`, { params });
+        return response.data;
+    },
+    exportCustomerLedger: async (id: number, params?: { start_date?: string; end_date?: string }): Promise<Blob> => {
+        const response = await api.get(`/reports/customers/${id}/ledger`, {
+            params: { ...params, export: true },
+            responseType: 'blob',
+        });
+        return response.data;
+    },
+
+    // Send due reminder
+    sendCustomerReminder: async (id: number): Promise<{ success: boolean; message?: string }> => {
+        const response = await api.post(`/customers/${id}/send-reminder`);
+        return response.data;
+    },
+
+    // Backfill ledger links
+    backfillCustomerLedger: async (id: number): Promise<{ success: boolean; updated_sales: number; updated_journal_lines: number }> => {
+        const response = await api.post(`/customers/${id}/ledger/backfill`);
+        return response.data;
+    },
+
+    // Export customer report
+    exportCustomerReport: async (id: number): Promise<Blob> => {
+        const response = await api.get(`/customers/${id}/report`, {
+            responseType: 'blob',
+        });
+        return response.data;
+    },
+
+    // Send reminders to all due customers
+    sendAllDueReminders: async (): Promise<{ success: boolean; sent: number; skipped: number }> => {
+        const response = await api.post('/customers/send-reminders');
+        return response.data;
+    },
     // Get customer purchase history
     getCustomerPurchases: async (id: number, params?: {
         skip?: number;
@@ -260,6 +315,29 @@ export const customerApi = {
         member_since: string;
     }> => {
         const response = await api.get(`/customers/${id}/financial-summary`);
+        return response.data;
+    },
+};
+
+export const reportsApi = {
+    getVendorLedger: async (id: number, params?: { start_date?: string; end_date?: string }): Promise<LedgerReport> => {
+        const response = await api.get(`/reports/vendors/${id}/ledger`, { params });
+        return response.data;
+    },
+    exportVendorLedger: async (id: number, params?: { start_date?: string; end_date?: string }): Promise<Blob> => {
+        const response = await api.get(`/reports/vendors/${id}/ledger`, {
+            params: { ...params, export: true },
+            responseType: 'blob',
+        });
+        return response.data;
+    },
+};
+
+export const vendorReportsApi = {
+    exportVendorReport: async (id: number): Promise<Blob> => {
+        const response = await api.get(`/vendors/${id}/report`, {
+            responseType: 'blob',
+        });
         return response.data;
     },
 };

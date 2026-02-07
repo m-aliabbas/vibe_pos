@@ -54,9 +54,18 @@ export default function PurchaseDetailPage() {
             const vendorData = vendorsRes.data.find((v: any) => v.id === purchaseRes.data.vendor_id);
             setVendor(vendorData);
 
-            // Fetch all products to get names
-            const productsRes = await api.get('/products/');
-            setProducts(productsRes.data);
+            // Fetch product details for items
+            const productIds: number[] = Array.from(
+                new Set((purchaseRes.data.items || []).map((item: any) => item.product_id as number))
+            );
+            if (productIds.length > 0) {
+                const productResponses = await Promise.all(
+                    productIds.map((productId) => api.get(`/products/${productId}`))
+                );
+                setProducts(productResponses.map((res) => res.data));
+            } else {
+                setProducts([]);
+            }
         } catch (error) {
             console.error("Failed to fetch purchase details", error);
         } finally {

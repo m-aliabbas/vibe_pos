@@ -55,6 +55,7 @@ export default function CustomersPage() {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+  const [sendingReminders, setSendingReminders] = useState(false);
   const showInitialLoading = loading && customers.length === 0;
   const fetchRequestIdRef = useRef(0);
 
@@ -116,6 +117,19 @@ export default function CustomersPage() {
       if (requestId === fetchRequestIdRef.current) {
         setLoading(false);
       }
+    }
+  };
+
+  const handleSendAllReminders = async () => {
+    try {
+      setSendingReminders(true);
+      const result = await customerApi.sendAllDueReminders();
+      alert(`Reminders queued: ${result.sent} (Skipped: ${result.skipped})`);
+    } catch (error: any) {
+      console.error("Failed to send reminders:", error);
+      alert(error?.response?.data?.detail || "Failed to send reminders");
+    } finally {
+      setSendingReminders(false);
     }
   };
 
@@ -231,6 +245,14 @@ export default function CustomersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={handleSendAllReminders}
+            disabled={sendingReminders}
+          >
+            <DollarSign className="h-4 w-4 mr-2" />
+            {sendingReminders ? "Sending..." : "Send Due Reminders"}
+          </Button>
           <Dialog open={bulkDialogOpen} onOpenChange={(open) => {
             setBulkDialogOpen(open);
             if (!open) {

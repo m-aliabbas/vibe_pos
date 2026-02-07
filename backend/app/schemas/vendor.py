@@ -12,7 +12,7 @@ class VendorCreate(VendorBase):
     opening_balance: Optional[float] = 0.0
 
 class VendorUpdate(VendorBase):
-    pass
+    opening_balance: Optional[float] = None
 
 class VendorPayment(BaseModel):
     amount: float

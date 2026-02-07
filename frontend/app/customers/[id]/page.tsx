@@ -43,6 +43,7 @@ import {
   Receipt,
   MessageSquare,
   TrendingUp,
+  FileText,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
@@ -68,8 +69,10 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   const [newAdvance, setNewAdvance] = useState({ amount: 0, description: "", payment_method: "cash" });
   const [editCustomer, setEditCustomer] = useState({
     name: "",
+    phone: "",
     email: "",
     address: "",
+    opening_balance: 0,
   });
 
   // Parse customerId with validation
@@ -111,8 +114,10 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       setFinancialSummary(summaryData);
       setEditCustomer({
         name: customerData.name || "",
+        phone: customerData.phone || "",
         email: customerData.email || "",
         address: customerData.address || "",
+        opening_balance: customerData.opening_balance || 0,
       });
     } catch (error) {
       console.error("Failed to fetch customer:", error);
@@ -155,6 +160,24 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     }
   };
 
+  const handleCustomerReportExport = async () => {
+    if (!customer) return;
+    try {
+      const blob = await customerApi.exportCustomerReport(customer.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `customer_report_${customer.id}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error("Failed to export customer report", error);
+      alert(error?.response?.data?.detail || "Failed to export report");
+    }
+  };
+
   const handleAddAdvance = async () => {
     if (newAdvance.amount <= 0) {
       alert("Amount must be greater than 0");
@@ -181,6 +204,10 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
   const handleUpdateCustomer = async () => {
     if (!isValidId) return;
+    if (editCustomer.opening_balance < 0) {
+      alert("Opening balance must be greater than or equal to 0");
+      return;
+    }
     
     try {
       await customerApi.updateCustomer(customerId, editCustomer);
@@ -189,6 +216,17 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     } catch (error) {
       console.error("Failed to update customer:", error);
       alert("Failed to update customer");
+    }
+  };
+
+  const handleSendReminder = async () => {
+    if (!customer) return;
+    try {
+      await customerApi.sendCustomerReminder(customer.id);
+      alert("Reminder sent successfully");
+    } catch (error: any) {
+      console.error("Failed to send reminder", error);
+      alert(error?.response?.data?.detail || "Failed to send reminder");
     }
   };
 
@@ -333,12 +371,41 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="edit-phone">Phone</Label>
+                  <Input
+                    id="edit-phone"
+                    value={editCustomer.phone}
+                    onChange={(e) => setEditCustomer({ ...editCustomer, phone: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="edit-address">Address</Label>
                   <Input
                     id="edit-address"
                     value={editCustomer.address}
                     onChange={(e) => setEditCustomer({ ...editCustomer, address: e.target.value })}
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-opening-balance">Opening Balance (Legacy Udhar)</Label>
+                  <Input
+                    id="edit-opening-balance"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editCustomer.opening_balance ?? 0}
+                    onChange={(e) =>
+                      setEditCustomer({
+                        ...editCustomer,
+                        opening_balance: Math.max(0, parseFloat(e.target.value) || 0),
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This will adjust the customer outstanding balance.
+                  </p>
                 </div>
 
               </div>
@@ -589,6 +656,23 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
             >
               <ShoppingBag className="h-4 w-4 mr-2" />
               New Sale
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleCustomerReportExport}
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Make Report (CSV)
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleSendReminder}
+              disabled={!customer.phone || customer.outstanding_balance <= 0}
+            >
+              <DollarSign className="h-4 w-4 mr-2" />
+              Send Due Reminder
             </Button>
             <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
               <DialogTrigger asChild>

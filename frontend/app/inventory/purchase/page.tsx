@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Dialog,
     DialogContent,
@@ -46,6 +47,8 @@ function PurchasePageContent() {
     const [qty, setQty] = useState('');
     const [cost, setCost] = useState('');
     const [expiry, setExpiry] = useState('');
+    const [retailPrice, setRetailPrice] = useState('');
+    const [updateRetailPrice, setUpdateRetailPrice] = useState(false);
     
     // New Product Dialog
     const [showNewProductDialog, setShowNewProductDialog] = useState(false);
@@ -135,6 +138,12 @@ function PurchasePageContent() {
         setSelectedProduct(product);
         setProductSearch(product.name);
         setCost(product.cost_price?.toString() || '');
+        setRetailPrice(
+            product.selling_price !== null && product.selling_price !== undefined
+                ? product.selling_price.toString()
+                : ''
+        );
+        setUpdateRetailPrice(false);
         setShowProductDropdown(false);
         // Focus on quantity input
         setTimeout(() => quantityInputRef.current?.focus(), 0);
@@ -228,6 +237,10 @@ function PurchasePageContent() {
 
     const addItem = () => {
         if (!selectedProduct || !qty || !cost) return;
+        if (updateRetailPrice && (!retailPrice || parseFloat(retailPrice) < 0)) {
+            alert('Please enter a valid retail price (>= 0)');
+            return;
+        }
 
         const newItem = {
             product_id: selectedProduct.id,
@@ -236,7 +249,9 @@ function PurchasePageContent() {
             quantity: parseInt(qty),
             unit_cost: parseFloat(cost),
             total_cost: parseInt(qty) * parseFloat(cost),
-            expiry_date: expiry ? new Date(expiry).toISOString() : null
+            expiry_date: expiry ? new Date(expiry).toISOString() : null,
+            selling_price: updateRetailPrice ? parseFloat(retailPrice) : null,
+            update_selling_price: updateRetailPrice
         };
 
         setItems([...items, newItem]);
@@ -247,6 +262,8 @@ function PurchasePageContent() {
         setQty('');
         setCost('');
         setExpiry('');
+        setRetailPrice('');
+        setUpdateRetailPrice(false);
         
         // Focus back on product input
         setTimeout(() => productInputRef.current?.focus(), 0);
@@ -272,7 +289,9 @@ function PurchasePageContent() {
                     product_id: i.product_id,
                     quantity: i.quantity,
                     unit_cost: i.unit_cost,
-                    expiry_date: i.expiry_date
+                    expiry_date: i.expiry_date,
+                    selling_price: i.update_selling_price ? i.selling_price : undefined,
+                    update_selling_price: i.update_selling_price
                 }))
             });
             router.push(`/vendors/${vendorId}`);
@@ -430,6 +449,36 @@ function PurchasePageContent() {
                         </div>
                     </div>
 
+                    {selectedProduct && (
+                        <div className="mb-6 flex flex-wrap items-center gap-4 text-sm">
+                            <div className="text-muted-foreground">
+                                Current Retail: <span className="font-semibold">rs {selectedProduct.selling_price?.toFixed(2) ?? "0.00"}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Checkbox
+                                    id="updateRetailPrice"
+                                    checked={updateRetailPrice}
+                                    onCheckedChange={(checked) => setUpdateRetailPrice(!!checked)}
+                                />
+                                <Label htmlFor="updateRetailPrice">Update retail price</Label>
+                            </div>
+                            {updateRetailPrice && (
+                                <div className="flex items-center gap-2">
+                                    <Label htmlFor="retailPrice">New Retail (rs)</Label>
+                                    <Input
+                                        id="retailPrice"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={retailPrice}
+                                        onChange={(e) => setRetailPrice(e.target.value)}
+                                        className="w-40"
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Items Table */}
                     {items.length > 0 && (
                         <div className="border rounded-lg overflow-hidden">
@@ -449,6 +498,11 @@ function PurchasePageContent() {
                                     <div className="col-span-3">
                                         <div className="font-medium">{item.product_name}</div>
                                         <div className="text-sm text-muted-foreground">SKU: {item.product_sku}</div>
+                                        {item.update_selling_price && (
+                                            <div className="text-xs text-green-700">
+                                                Retail update: rs {item.selling_price?.toFixed(2)}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="col-span-2 text-right font-medium">{item.quantity}</div>
                                     <div className="col-span-2 text-right">${item.unit_cost.toFixed(2)}</div>

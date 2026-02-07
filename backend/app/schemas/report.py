@@ -391,3 +391,19 @@ class AdminAction(BaseModel):
 class AdminAuditReport(BaseModel):
     actions: List[AdminAction]
     total_actions: int
+
+
+class LedgerEntry(BaseModel):
+    date: datetime
+    description: str
+    source_type: Optional[str] = None
+    source_id: Optional[int] = None
+    debit: float
+    credit: float
+    balance: float
+
+
+class LedgerReport(BaseModel):
+    opening_balance: float
+    closing_balance: float
+    entries: List[LedgerEntry]

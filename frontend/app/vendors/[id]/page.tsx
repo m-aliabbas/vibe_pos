@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import api from '@/lib/api';
+import api, { vendorReportsApi } from '@/lib/api';
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter } from "lucide-react";
+import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
     Select,
@@ -51,10 +51,19 @@ export default function VendorDetailsPage() {
     const [vendor, setVendor] = useState<any>(null);
     const [purchases, setPurchases] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentResult, setPaymentResult] = useState<any>(null);
     const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [editVendor, setEditVendor] = useState({
+        name: '',
+        contact_name: '',
+        email: '',
+        phone: '',
+        address: '',
+        opening_balance: 0,
+    });
 
     useEffect(() => {
         if (id) {
@@ -68,6 +77,16 @@ export default function VendorDetailsPage() {
             const vendorsRes = await api.get('/vendors/');
             const v = vendorsRes.data.find((v: any) => v.id === parseInt(id as string));
             setVendor(v);
+            if (v) {
+                setEditVendor({
+                    name: v.name || '',
+                    contact_name: v.contact_name || '',
+                    email: v.email || '',
+                    phone: v.phone || '',
+                    address: v.address || '',
+                    opening_balance: v.opening_balance || 0,
+                });
+            }
 
             const purchasesRes = await api.get(`/purchases/vendor/${id}`);
             setPurchases(purchasesRes.data);
@@ -107,6 +126,47 @@ export default function VendorDetailsPage() {
         setPaymentAmount('');
     };
 
+    const handleVendorReportExport = async () => {
+        if (!id) return;
+        try {
+            const blob = await vendorReportsApi.exportVendorReport(parseInt(id as string));
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `vendor_report_${id}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (error: any) {
+            console.error("Failed to export vendor report", error);
+            alert(error?.response?.data?.detail || "Failed to export report");
+        }
+    };
+
+
+    const handleUpdateVendor = async () => {
+        if (editVendor.opening_balance < 0) {
+            alert("Opening balance must be greater than or equal to 0");
+            return;
+        }
+        try {
+            const { data } = await api.put(`/vendors/${id}`, {
+                name: editVendor.name,
+                contact_name: editVendor.contact_name || null,
+                email: editVendor.email || null,
+                phone: editVendor.phone || null,
+                address: editVendor.address || null,
+                opening_balance: editVendor.opening_balance,
+            });
+            setVendor(data);
+            setEditDialogOpen(false);
+        } catch (error: any) {
+            console.error("Failed to update vendor", error);
+            alert(error?.response?.data?.detail || "Failed to update vendor");
+        }
+    };
+
     if (loading) return <div>Loading...</div>;
     if (!vendor) return <div>Vendor not found</div>;
 
@@ -136,6 +196,94 @@ export default function VendorDetailsPage() {
                     <p className="text-sm text-gray-400 mt-1">{vendor.address}</p>
                 </div>
                 <div className="flex gap-2">
+                    <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline">
+                                <Edit className="mr-2 h-4 w-4" /> Edit Vendor
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[500px]">
+                            <DialogHeader>
+                                <DialogTitle>Edit Vendor</DialogTitle>
+                                <DialogDescription>
+                                    Update vendor details and opening balance.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit-name">Company Name</Label>
+                                    <Input
+                                        id="edit-name"
+                                        value={editVendor.name}
+                                        onChange={(e) => setEditVendor({ ...editVendor, name: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit-contact">Contact Person</Label>
+                                    <Input
+                                        id="edit-contact"
+                                        value={editVendor.contact_name}
+                                        onChange={(e) => setEditVendor({ ...editVendor, contact_name: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="edit-email">Email</Label>
+                                        <Input
+                                            id="edit-email"
+                                            type="email"
+                                            value={editVendor.email}
+                                            onChange={(e) => setEditVendor({ ...editVendor, email: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="edit-phone">Phone</Label>
+                                        <Input
+                                            id="edit-phone"
+                                            value={editVendor.phone}
+                                            onChange={(e) => setEditVendor({ ...editVendor, phone: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit-address">Address</Label>
+                                    <Input
+                                        id="edit-address"
+                                        value={editVendor.address}
+                                        onChange={(e) => setEditVendor({ ...editVendor, address: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="edit-opening-balance">Opening Balance (Legacy Payable)</Label>
+                                    <Input
+                                        id="edit-opening-balance"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={editVendor.opening_balance}
+                                        onChange={(e) =>
+                                            setEditVendor({
+                                                ...editVendor,
+                                                opening_balance: Math.max(0, parseFloat(e.target.value) || 0),
+                                            })
+                                        }
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        This will update the legacy payable purchase.
+                                    </p>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleUpdateVendor}>Save Changes</Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                    <Button variant="outline" onClick={handleVendorReportExport}>
+                        <FileText className="mr-2 h-4 w-4" /> Make Report (CSV)
+                    </Button>
                     <Button variant="outline" onClick={() => router.push(`/inventory/purchase?vendorId=${vendor.id}`)}>
                         <ShoppingCart className="mr-2 h-4 w-4" /> New Purchase
                     </Button>
