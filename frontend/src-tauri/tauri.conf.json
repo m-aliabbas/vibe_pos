@@ -1,15 +1,16 @@
 {
-  "productName": "VibePOS",
+  "productName": "POS System",
   "version": "0.1.0",
   "identifier": "com.pos.desktop",
   "build": {
     "beforeBuildCommand": "npm run build && node scripts/package-server.js",
     "devUrl": "http://localhost:3000",
-    "frontendDist": "../dist"
+    "frontendDist": "static"
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": ["icons/icon.ico"],
     "resources": [
       "../.next/standalone/**/*",
       "bin/.env",
@@ -21,13 +22,13 @@
     ],
     "copyright": "",
     "category": "Business",
-    "shortDescription": "VibePOS by vibe.exe",
-    "longDescription": "vibe.exe team"
+    "shortDescription": "Point of Sale System",
+    "longDescription": "A modern desktop POS system with inventory management, sales tracking, and invoicing"
   },
   "app": {
     "windows": [
       {
-        "title": "VibePOS",
+        "title": "POS System",
         "width": 1280,
         "height": 800,
         "resizable": true,

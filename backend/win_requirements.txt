@@ -1,0 +1,17 @@
+fastapi==0.109.0
+uvicorn
+sqlalchemy
+alembic
+pydantic
+pydantic-settings
+python-jose[cryptography]
+passlib[argon2]
+argon2-cffi
+python-multipart
+apscheduler
+reportlab==4.0.9
+pillow==12.1.0
+requests
+neonize==0.3.12
+python-dotenv
+firebase-admin
