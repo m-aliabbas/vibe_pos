@@ -9,6 +9,7 @@ from app.api import deps
 from app.models.vendor import Vendor
 from app.models.purchase import Purchase, PurchaseStatus
 from app.schemas import vendor as vendor_schema
+from app.services import accounting as accounting_service
 
 router = APIRouter()
 
@@ -290,6 +291,19 @@ def make_vendor_payment(
     # Store any remaining amount as prepaid credit
     vendor.prepaid_credit = remaining_payment
     db.add(vendor)
+    applied_amount = total_available - remaining_payment
+    prepaid_used = max(0.0, applied_amount - payment_in.amount)
+    cash_applied = min(payment_in.amount, applied_amount)
+    new_prepaid_from_cash = max(0.0, payment_in.amount - cash_applied)
+    accounting_service.post_vendor_payment(
+        db=db,
+        vendor_id=id,
+        payment_amount=payment_in.amount,
+        applied_amount=applied_amount,
+        prepaid_used=prepaid_used,
+        new_prepaid_from_cash=new_prepaid_from_cash,
+        created_by=current_user.id,
+    )
     db.commit()
 
     # Calculate remaining balance

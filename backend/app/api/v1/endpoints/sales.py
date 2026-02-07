@@ -20,6 +20,7 @@ from app.models.product import Product, ProductVariation
 from app.models.user import User, UserRole
 from app.models.customer import Customer
 from app.schemas.sale import SaleCreate, Sale as SaleSchema, SaleStats
+from app.services import accounting as accounting_service
 
 router = APIRouter()
 
@@ -610,6 +611,12 @@ def create_sale(
     
     # Commit transaction
     try:
+        accounting_service.post_sale_entry(
+            db=db,
+            sale=db_sale,
+            payment_method=sale_in.payment_method,
+            created_by=current_user.id,
+        )
         db.commit()
         db.refresh(db_sale)
         

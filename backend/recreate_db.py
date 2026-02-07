@@ -29,6 +29,9 @@ REQUIRED_TABLES = {
     "products",
     "purchases",
     "sales",
+    "accounts",
+    "journal_entries",
+    "journal_lines",
     # common extras in POS schemas; keep if you have these models
     "purchase_items",
     "sale_items",

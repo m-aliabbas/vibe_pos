@@ -7,6 +7,7 @@ from app.models.purchase import Purchase, PurchaseItem, PurchaseStatus
 from app.models.product import Product, ProductVariation
 from app.models.vendor import Vendor
 from app.schemas import purchase as purchase_schema
+from app.services import accounting as accounting_service
 
 router = APIRouter()
 
@@ -96,6 +97,13 @@ def create_purchase(
     )
     
     db.add(purchase)
+    db.flush()
+    accounting_service.post_purchase_entry(
+        db=db,
+        purchase=purchase,
+        amount_paid=purchase_in.amount_paid,
+        created_by=current_user.id,
+    )
     db.commit()
     db.refresh(purchase)
     return purchase
@@ -140,6 +148,7 @@ def update_purchase_payment(
         raise HTTPException(status_code=404, detail="Purchase not found")
     
     # Update amount paid
+    previous_paid = purchase.amount_paid or 0.0
     purchase.amount_paid = payment_in.amount_paid
     
     # Update status based on payment
@@ -151,6 +160,13 @@ def update_purchase_payment(
         purchase.status = PurchaseStatus.UNPAID
     
     db.add(purchase)
+    delta_paid = purchase.amount_paid - previous_paid
+    accounting_service.post_purchase_payment_delta(
+        db=db,
+        purchase=purchase,
+        delta_amount=delta_paid,
+        created_by=current_user.id,
+    )
     db.commit()
     db.refresh(purchase)
     return purchase

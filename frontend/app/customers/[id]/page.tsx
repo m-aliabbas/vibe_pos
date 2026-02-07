@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { customerApi, CustomerResponse, CustomerNote, CustomerPayment } from "@/lib/api";
+import api, { customerApi, CustomerResponse, CustomerNote, CustomerPayment } from "@/lib/api";
 import {
   User,
   Phone,
@@ -651,6 +651,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       <Tabs defaultValue="purchases" className="space-y-4">
         <TabsList>
           <TabsTrigger value="purchases">Purchase History</TabsTrigger>
+          <TabsTrigger value="returns">Return History</TabsTrigger>
           <TabsTrigger value="advances">Journel Entries ({customer.notes.filter((n: CustomerNote) => n.note_type === 'advance_payment').length})</TabsTrigger>
           <TabsTrigger value="payments">Payment History ({customer.payments.length})</TabsTrigger>
           <TabsTrigger value="notes">Notes ({customer.notes.filter((n: CustomerNote) => n.note_type !== 'advance_payment').length})</TabsTrigger>
@@ -658,6 +659,10 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
         <TabsContent value="purchases">
           <PurchaseHistoryTab customerId={customerId} />
+        </TabsContent>
+
+        <TabsContent value="returns">
+          <ReturnHistoryTab customerId={customerId} />
         </TabsContent>
 
         <TabsContent value="advances">
@@ -1154,5 +1159,105 @@ function PurchaseHistoryTab({ customerId }: { customerId: number }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function ReturnHistoryTab({ customerId }: { customerId: number }) {
+  const [returns, setReturns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchReturns();
+  }, [customerId]);
+
+  const fetchReturns = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/returns', {
+        params: { customer_id: customerId, limit: 200 },
+      });
+      setReturns(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch returns:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    const formatted = new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+    return `rs ${formatted}`;
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="flex items-center justify-center">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!returns || returns.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Return History</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-center py-8 text-muted-foreground">
+            No returns found for this customer.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Return History ({returns.length} returns)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Return ID</TableHead>
+              <TableHead>Sale ID</TableHead>
+              <TableHead>Items</TableHead>
+              <TableHead>Refund</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {returns.map((ret) => (
+              <TableRow key={ret.id}>
+                <TableCell>{formatDate(ret.created_at)}</TableCell>
+                <TableCell className="font-medium">#{ret.id}</TableCell>
+                <TableCell>{ret.sale_id ? `#${ret.sale_id}` : '-'}</TableCell>
+                <TableCell>{ret.items?.length || 0}</TableCell>
+                <TableCell className="text-red-600">{formatCurrency(ret.refund_amount || 0)}</TableCell>
+                <TableCell className="capitalize">{ret.status}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }

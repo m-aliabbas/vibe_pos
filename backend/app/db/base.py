@@ -6,3 +6,4 @@ from app.models.purchase import Purchase, PurchaseItem
 from app.models.sale import Sale, SaleItem
 from app.models.customer import Customer, CustomerNote, CustomerPayment
 from app.models.pos_return import PosReturn, ReturnItem
+from app.models.accounting import Account, JournalEntry, JournalLine

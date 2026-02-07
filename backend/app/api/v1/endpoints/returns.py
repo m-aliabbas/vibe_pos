@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -11,6 +11,7 @@ from app.models.product import Product, ProductVariation
 from app.models.user import User
 from app.models.customer import Customer
 from app.schemas.return_schema import ReturnCreate, ReturnResponse, ReturnStatusUpdate
+from app.services import accounting as accounting_service
 import json
 
 router = APIRouter()
@@ -218,6 +219,9 @@ def create_return(
             else:
                 product.quantity += int(quantity_in_base_units)
     
+    ar_reduction = 0.0
+    cash_refund = refund_amount
+
     # Update customer balance if there was a credit (udhar) - only for sale-based returns
     if return_in.sale_id:
         sale = db.query(Sale).filter(Sale.id == return_in.sale_id).first()
@@ -226,8 +230,9 @@ def create_return(
             if customer:
                 # Reduce outstanding balance by refund amount (if they had udhar)
                 if customer.outstanding_balance > 0:
-                    reduction = min(customer.outstanding_balance, refund_amount)
-                    customer.outstanding_balance -= reduction
+                    ar_reduction = min(customer.outstanding_balance, refund_amount)
+                    customer.outstanding_balance -= ar_reduction
+                    cash_refund = max(0.0, refund_amount - ar_reduction)
                 
                 # Update customer stats
                 customer.total_spent = max(0, customer.total_spent - refund_amount)
@@ -235,6 +240,14 @@ def create_return(
     
     # Commit transaction
     try:
+        accounting_service.post_return_entry(
+            db=db,
+            return_record=db_return,
+            refund_amount=refund_amount,
+            ar_reduction=ar_reduction,
+            cash_refund=cash_refund,
+            created_by=current_user.id,
+        )
         db.commit()
         db.refresh(db_return)
         
@@ -283,6 +296,7 @@ def list_returns(
     skip: int = 0,
     limit: int = 100,
     sale_id: int = None,
+    customer_id: Optional[int] = None,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
 ):
@@ -291,6 +305,11 @@ def list_returns(
     
     if sale_id:
         query = query.filter(PosReturn.sale_id == sale_id)
+
+    if customer_id:
+        query = query.join(Sale, Sale.id == PosReturn.sale_id).filter(
+            Sale.customer_ref_id == customer_id
+        )
     
     query = query.order_by(PosReturn.created_at.desc())
     returns = query.offset(skip).limit(limit).all()

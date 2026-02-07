@@ -63,6 +63,7 @@ export function Navbar() {
     { href: '/vendors', label: 'Vendors', icon: Truck, show: true },
     { href: '/returns', label: 'Returns', icon: RotateCcw, show: true },
     { href: '/sales/history', label: 'History', icon: Receipt, show: true },
+    { href: '/accounting', label: 'Accounting', icon: BarChart3, show: user?.role === 'admin' },
     // { href: '/admin', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
     { href: '/users', label: 'Users', icon: Users, show: user?.role === 'admin' },
     { href: '/backup', label: 'Backup', icon: Database, show: user?.role === 'admin' },

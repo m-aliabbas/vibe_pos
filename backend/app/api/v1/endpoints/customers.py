@@ -12,6 +12,7 @@ from app.models.user import User
 from app.models.customer import Customer, CustomerNote, CustomerPayment
 from app.models.sale import Sale
 from app.schemas import customer as customer_schema
+from app.services import accounting as accounting_service
 
 router = APIRouter()
 
@@ -594,6 +595,13 @@ def record_customer_payment(
     
     db.add(payment)
     db.add(customer)
+    accounting_service.post_customer_payment(
+        db=db,
+        customer_id=id,
+        amount=payment_in.amount,
+        payment_method=payment_in.payment_method,
+        created_by=current_user.id,
+    )
     db.commit()
     db.refresh(payment)
     
@@ -643,6 +651,13 @@ def add_customer_advance(
     
     db.add(note)
     db.add(customer)
+    accounting_service.post_customer_advance(
+        db=db,
+        customer_id=id,
+        amount=amount,
+        payment_method=payment_method,
+        created_by=current_user.id,
+    )
     db.commit()
     db.refresh(customer)
     db.refresh(note)
