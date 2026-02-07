@@ -25,6 +25,8 @@ class SaleItem(SaleItemBase):
     sale_id: int
     unit_price: float
     total_price: float
+    product_name: Optional[str] = None
+    variation_attributes: Optional[dict] = None
     
     class Config:
         from_attributes = True

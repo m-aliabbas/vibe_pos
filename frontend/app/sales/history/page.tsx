@@ -50,6 +50,24 @@ interface SaleItem {
   total_price: number;
 }
 
+interface ReturnItem {
+  id: number;
+  sale_item_id?: number | null;
+  product_id: number;
+  quantity: number;
+  unit: string;
+  total_refund?: number | null;
+  restocked?: boolean | null;
+}
+
+interface ReturnRecord {
+  id: number;
+  sale_id?: number | null;
+  refund_amount: number;
+  created_at: string;
+  items: ReturnItem[];
+}
+
 interface Sale {
   id: number;
   user_id: number;
@@ -80,6 +98,10 @@ export default function SalesHistory() {
   const [filteredSales, setFilteredSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<{ [key: number]: Product }>({});
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [selectedSaleReturns, setSelectedSaleReturns] = useState<ReturnRecord[]>([]);
+  const [returnedBySaleItem, setReturnedBySaleItem] = useState<{ [key: number]: number }>({});
+  const [returnRefundTotal, setReturnRefundTotal] = useState(0);
+  const [returnsBySaleId, setReturnsBySaleId] = useState<{ [key: number]: number }>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -173,6 +195,19 @@ export default function SalesHistory() {
       });
       setSales(response.data);
       setFilteredSales(response.data);
+
+      const returnsRes = await api.get("/returns/", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { limit: 5000 },
+      });
+      const returnsData: ReturnRecord[] = returnsRes.data || [];
+      const saleReturnCounts: { [key: number]: number } = {};
+      returnsData.forEach((ret) => {
+        if (ret.sale_id) {
+          saleReturnCounts[ret.sale_id] = (saleReturnCounts[ret.sale_id] || 0) + 1;
+        }
+      });
+      setReturnsBySaleId(saleReturnCounts);
     } catch (error) {
       console.error("Failed to fetch sales:", error);
     } finally {
@@ -201,6 +236,27 @@ export default function SalesHistory() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setSelectedSale(response.data);
+      const returnsRes = await api.get("/returns/", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { sale_id: saleId },
+      });
+      const returnsData: ReturnRecord[] = returnsRes.data || [];
+      setSelectedSaleReturns(returnsData);
+
+      const returnedMap: { [key: number]: number } = {};
+      let refundTotal = 0;
+      returnsData.forEach((ret) => {
+        refundTotal += ret.refund_amount || 0;
+        ret.items.forEach((item) => {
+          if (item.sale_item_id) {
+            returnedMap[item.sale_item_id] =
+              (returnedMap[item.sale_item_id] || 0) + (item.quantity || 0);
+          }
+        });
+      });
+      setReturnedBySaleItem(returnedMap);
+      setReturnRefundTotal(refundTotal);
+
       setDetailsOpen(true);
     } catch (error) {
       console.error("Failed to fetch sale details:", error);
@@ -381,6 +437,11 @@ export default function SalesHistory() {
                         <Badge variant="outline">
                           {sale.items.length} items
                         </Badge>
+                        {returnsBySaleId[sale.id] && (
+                          <Badge variant="secondary" className="ml-2">
+                            Returned: {returnsBySaleId[sale.id]}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge className={getPaymentMethodBadge(sale.payment_method)}>
@@ -487,6 +548,7 @@ export default function SalesHistory() {
                         <TableHead>Product</TableHead>
                         <TableHead className="text-right">Price</TableHead>
                         <TableHead className="text-center">Qty</TableHead>
+                        <TableHead className="text-center">Returned</TableHead>
                         <TableHead className="text-right">Total</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -508,6 +570,11 @@ export default function SalesHistory() {
                           </TableCell>
                           <TableCell className="text-center">
                             <Badge variant="outline">{item.quantity}</Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="secondary">
+                              {returnedBySaleItem[item.id] || 0}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-right font-semibold">
                             rs {item.total_price.toFixed(2)}
@@ -544,6 +611,24 @@ export default function SalesHistory() {
                       rs {selectedSale.total.toFixed(2)}
                     </span>
                   </div>
+                  {selectedSaleReturns.length > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span>Returns:</span>
+                      <span>{selectedSaleReturns.length}</span>
+                    </div>
+                  )}
+                  {returnRefundTotal > 0 && (
+                    <div className="flex justify-between text-sm text-red-600">
+                      <span>Returned (Refunded):</span>
+                      <span>-rs {returnRefundTotal.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {returnRefundTotal > 0 && (
+                    <div className="flex justify-between text-sm font-semibold">
+                      <span>Net Total:</span>
+                      <span>rs {(selectedSale.total - returnRefundTotal).toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="border-t pt-2 space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="font-medium">Amount Paid:</span>

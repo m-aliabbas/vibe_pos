@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -17,35 +16,48 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Search, Package, Trash2, RotateCcw } from "lucide-react";
+import { ArrowLeft, Search, Package, RotateCcw } from "lucide-react";
 import api from "@/lib/api";
 
-interface Product {
+interface SaleItem {
   id: number;
-  name: string;
-  sku: string | null;
-  category: string;
-  unit: string;
+  product_id: number;
+  product_name?: string | null;
   quantity: number;
+  unit: string;
+  unit_price: number;
+  total_price: number;
+  variation_attributes?: Record<string, string> | null;
 }
 
-interface ReturnItem {
-  product: Product;
+interface Sale {
+  id: number;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  created_at: string;
+  total: number;
+  items: SaleItem[];
+}
+
+interface ReturnLine {
+  sale_item: SaleItem;
   quantity: number;
-  add_to_inventory: boolean;
+  restocked: boolean;
+  selected: boolean;
+  remaining: number;
+  returned: number;
 }
 
 export default function CreateReturnPage() {
   const router = useRouter();
   const { token, isLoading } = useAuth();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [selectedProductIndex, setSelectedProductIndex] = useState(0);
-  const productsRequestIdRef = useRef(0);
-  
-  const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [saleSearch, setSaleSearch] = useState("");
+  const [saleResults, setSaleResults] = useState<Sale[]>([]);
+  const [saleLoading, setSaleLoading] = useState(false);
+  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
+  const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
+  const [returnedBySaleItem, setReturnedBySaleItem] = useState<{ [key: number]: number }>({});
+  const saleSearchRequestIdRef = useRef(0);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [returnReason, setReturnReason] = useState("defective");
@@ -53,112 +65,119 @@ export default function CreateReturnPage() {
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredProducts([]);
-      setShowAutocomplete(false);
+    if (!saleSearch.trim()) {
+      setSaleResults([]);
       return;
     }
 
     const timer = setTimeout(() => {
-      fetchProducts(searchQuery.trim());
+      fetchSales(saleSearch.trim());
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, token]);
+  }, [saleSearch, token]);
 
-  const fetchProducts = async (searchTerm: string) => {
-    const requestId = ++productsRequestIdRef.current;
+  const fetchSales = async (searchTerm: string) => {
+    const requestId = ++saleSearchRequestIdRef.current;
     try {
-      const response = await api.get("/products/", {
+      setSaleLoading(true);
+      const response = await api.get("/sales/", {
         headers: { Authorization: `Bearer ${token}` },
-        params: { search: searchTerm, limit: 500 },
+        params: { search: searchTerm, limit: 20 },
       });
-      if (requestId !== productsRequestIdRef.current) {
+      if (requestId !== saleSearchRequestIdRef.current) {
         return;
       }
-      setProducts(response.data);
-      setFilteredProducts(response.data);
-      setShowAutocomplete(response.data.length > 0);
-      setSelectedProductIndex(0);
+      setSaleResults(response.data);
     } catch (error) {
-      console.error("Failed to fetch products:", error);
-    }
-  };
-
-  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!showAutocomplete || filteredProducts.length === 0) return;
-
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelectedProductIndex((prev) =>
-        prev < filteredProducts.length - 1 ? prev + 1 : prev
-      );
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelectedProductIndex((prev) => (prev > 0 ? prev - 1 : 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const selectedProduct = filteredProducts[selectedProductIndex];
-      if (selectedProduct) {
-        addToReturn(selectedProduct);
-        setSearchQuery("");
-        setShowAutocomplete(false);
+      console.error("Failed to fetch sales:", error);
+    } finally {
+      if (requestId === saleSearchRequestIdRef.current) {
+        setSaleLoading(false);
       }
-    } else if (e.key === "Escape") {
-      setShowAutocomplete(false);
     }
   };
 
-  const addToReturn = (product: Product) => {
-    const existingItem = returnItems.find(
-      (item) => item.product.id === product.id
-    );
+  const selectSale = async (saleId: number) => {
+    try {
+      const response = await api.get(`/sales/${saleId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const returnsRes = await api.get("/returns/", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { sale_id: saleId },
+      });
+      const returnsData = returnsRes.data || [];
+      const returnedMap: { [key: number]: number } = {};
+      returnsData.forEach((ret: any) => {
+        (ret.items || []).forEach((item: any) => {
+          if (item.sale_item_id) {
+            returnedMap[item.sale_item_id] =
+              (returnedMap[item.sale_item_id] || 0) + (item.quantity || 0);
+          }
+        });
+      });
+      setReturnedBySaleItem(returnedMap);
 
-    if (existingItem) {
-      setReturnItems(
-        returnItems.map((item) =>
-          item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
-        )
+      const sale: Sale = response.data;
+      setSelectedSale(sale);
+      setCustomerName(sale.customer_name || "");
+      setCustomerPhone(sale.customer_phone || "");
+      setReturnLines(
+        (sale.items || []).map((item) => ({
+          returned: returnedMap[item.id] || 0,
+          remaining: Math.max(0, item.quantity - (returnedMap[item.id] || 0)),
+          sale_item: item,
+          quantity: Math.max(1, Math.min(item.quantity, Math.max(0, item.quantity - (returnedMap[item.id] || 0)))),
+          restocked: true,
+          selected: (item.quantity - (returnedMap[item.id] || 0)) > 0,
+        }))
       );
-    } else {
-      setReturnItems([
-        ...returnItems,
-        { product, quantity: 1, add_to_inventory: true },
-      ]);
+    } catch (error) {
+      console.error("Failed to fetch sale:", error);
     }
   };
 
-  const updateQuantity = (productId: number, quantity: number) => {
-    if (quantity <= 0) {
-      removeItem(productId);
-      return;
-    }
-    setReturnItems(
-      returnItems.map((item) =>
-        item.product.id === productId ? { ...item, quantity } : item
+  const toggleLineSelected = (saleItemId: number) => {
+    setReturnLines((prev) =>
+      prev.map((line) =>
+        line.sale_item.id === saleItemId
+          ? (line.remaining > 0 ? { ...line, selected: !line.selected } : line)
+          : line
       )
     );
   };
 
-  const toggleAddToInventory = (productId: number) => {
-    setReturnItems(
-      returnItems.map((item) =>
-        item.product.id === productId
-          ? { ...item, add_to_inventory: !item.add_to_inventory }
-          : item
-      )
+  const updateReturnQuantity = (saleItemId: number, quantity: number) => {
+    setReturnLines((prev) =>
+      prev.map((line) => {
+        if (line.sale_item.id !== saleItemId) return line;
+        const maxQty = line.remaining;
+        const nextQty = Math.max(1, Math.min(maxQty, quantity));
+        return { ...line, quantity: nextQty };
+      })
     );
   };
 
-  const removeItem = (productId: number) => {
-    setReturnItems(returnItems.filter((item) => item.product.id !== productId));
+  const toggleRestocked = (saleItemId: number) => {
+    setReturnLines((prev) =>
+      prev.map((line) =>
+        line.sale_item.id === saleItemId
+          ? { ...line, restocked: !line.restocked }
+          : line
+      )
+    );
   };
 
   const processReturn = async () => {
-    if (returnItems.length === 0) {
-      alert("Please add at least one product");
+    if (!selectedSale) {
+      alert("Please select a sale/invoice");
+      return;
+    }
+
+    const selectedLines = returnLines.filter((line) => line.selected && line.remaining > 0 && line.quantity > 0);
+    if (selectedLines.length === 0) {
+      alert("Please select at least one item to return");
       return;
     }
 
@@ -167,14 +186,15 @@ export default function CreateReturnPage() {
       await api.post(
         "/returns/",
         {
-          customer_name: customerName || null,
-          customer_phone: customerPhone || null,
+          sale_id: selectedSale.id,
+          customer_name: customerName || selectedSale.customer_name || null,
+          customer_phone: customerPhone || selectedSale.customer_phone || null,
           reason: returnReason,
           notes: returnNotes || null,
-          items: returnItems.map((item) => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            add_to_inventory: item.add_to_inventory,
+          items: selectedLines.map((line) => ({
+            sale_item_id: line.sale_item.id,
+            quantity_returned: line.quantity,
+            restocked: line.restocked,
           })),
         },
         {
@@ -213,137 +233,53 @@ export default function CreateReturnPage() {
               <RotateCcw className="h-8 w-8" />
               Process Return
             </h1>
-            <p className="text-muted-foreground">Add products and process return</p>
+            <p className="text-muted-foreground">Select a sale/invoice and return items</p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Side - Product Search & Selection */}
+          {/* Left Side - Sale Search & Selection */}
           <Card>
             <CardHeader>
-              <CardTitle>Search Products</CardTitle>
+              <CardTitle>Search Sale / Invoice</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Search Bar */}
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by name, SKU, or category..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Search by invoice/sale id, customer name, or phone..."
+                  value={saleSearch}
+                  onChange={(e) => setSaleSearch(e.target.value)}
                   className="pl-9"
                   autoFocus
                 />
+                {saleLoading && (
+                  <div className="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-b-2 border-primary" />
+                )}
 
-                {/* Autocomplete Dropdown */}
-                {showAutocomplete && (
+                {saleResults.length > 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-background border rounded-lg shadow-lg max-h-80 overflow-y-auto">
-                    {filteredProducts.map((product, index) => (
+                    {saleResults.map((sale) => (
                       <div
-                        key={product.id}
-                        className={`p-3 cursor-pointer hover:bg-muted transition-colors ${
-                          index === selectedProductIndex ? "bg-muted" : ""
-                        }`}
+                        key={sale.id}
+                        className="p-3 cursor-pointer hover:bg-muted transition-colors"
                         onClick={() => {
-                          addToReturn(product);
-                          setSearchQuery("");
-                          setShowAutocomplete(false);
+                          setSaleResults([]);
+                          setSaleSearch(String(sale.id));
+                          selectSale(sale.id);
                         }}
                       >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <p className="font-medium">{product.name}</p>
-                            <div className="flex gap-2 mt-1">
-                              <Badge variant="outline" className="text-xs">
-                                {product.sku}
-                              </Badge>
-                              <Badge variant="secondary" className="text-xs">
-                                {product.category}
-                              </Badge>
-                            </div>
-                          </div>
-                          <Badge
-                            variant={product.quantity > 10 ? "default" : "destructive"}
-                            className="ml-2"
-                          >
-                            Stock: {product.quantity}
-                          </Badge>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Return Items List */}
-              <div className="space-y-3">
-                <Label>Items to Return ({returnItems.length})</Label>
-                {returnItems.length === 0 ? (
-                  <div className="border rounded-lg p-8 text-center text-muted-foreground">
-                    <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No items added yet</p>
-                    <p className="text-sm">Search and add products above</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {returnItems.map((item) => (
-                      <div
-                        key={item.product.id}
-                        className="border rounded-lg p-3 space-y-2"
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <p className="font-medium">{item.product.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              SKU: {item.product.sku}
+                            <p className="font-medium">Invoice #{sale.id}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {sale.customer_name || "Walk-in"}
+                              {sale.customer_phone ? ` • ${sale.customer_phone}` : ""}
                             </p>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeItem(item.product.id)}
-                            className="h-8 w-8"
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <Label className="text-xs">Quantity</Label>
-                            <Input
-                              type="number"
-                              min="1"
-                              value={item.quantity}
-                              onChange={(e) =>
-                                updateQuantity(
-                                  item.product.id,
-                                  parseInt(e.target.value) || 1
-                                )
-                              }
-                              className="h-9"
-                            />
-                          </div>
-                          <div>
-                            <Label className="text-xs">Add to Stock?</Label>
-                            <Select
-                              value={item.add_to_inventory.toString()}
-                              onValueChange={(value) =>
-                                value === "toggle" && toggleAddToInventory(item.product.id)
-                              }
-                            >
-                              <SelectTrigger className="h-9">
-                                <SelectValue>
-                                  {item.add_to_inventory ? "Yes" : "No"}
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="toggle">
-                                  {item.add_to_inventory ? "No" : "Yes"}
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
+                          <div className="text-right text-sm text-muted-foreground">
+                            <div>{new Date(sale.created_at).toLocaleString()}</div>
+                            <div className="font-semibold">rs {sale.total.toFixed(2)}</div>
                           </div>
                         </div>
                       </div>
@@ -351,6 +287,27 @@ export default function CreateReturnPage() {
                   </div>
                 )}
               </div>
+
+              {selectedSale ? (
+                <div className="border rounded-lg p-4 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">Selected Invoice #{selectedSale.id}</p>
+                      <p className="text-muted-foreground">
+                        {selectedSale.customer_name || "Walk-in"}
+                        {selectedSale.customer_phone ? ` • ${selectedSale.customer_phone}` : ""}
+                      </p>
+                    </div>
+                    <div className="font-semibold">rs {selectedSale.total.toFixed(2)}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="border rounded-lg p-8 text-center text-muted-foreground">
+                  <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No sale selected</p>
+                  <p className="text-sm">Search and select an invoice to continue</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -360,6 +317,75 @@ export default function CreateReturnPage() {
               <CardTitle>Return Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {selectedSale && (
+                <div className="space-y-3">
+                  <Label>Items to Return</Label>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {returnLines.map((line) => (
+                      <div
+                        key={line.sale_item.id}
+                        className="border rounded-lg p-3 space-y-2"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2">
+                            <input
+                              type="checkbox"
+                              checked={line.selected}
+                              onChange={() => toggleLineSelected(line.sale_item.id)}
+                              className="mt-1"
+                              disabled={line.remaining === 0}
+                            />
+                            <div>
+                              <p className="font-medium">
+                                {line.sale_item.product_name || `Product #${line.sale_item.product_id}`}
+                              </p>
+                              {line.sale_item.variation_attributes && (
+                                <p className="text-xs text-muted-foreground">
+                                  {Object.entries(line.sale_item.variation_attributes)
+                                    .map(([k, v]) => `${k}: ${v}`)
+                                    .join(", ")}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground">
+                                Sold: {line.sale_item.quantity} {line.sale_item.unit} • rs {line.sale_item.unit_price.toFixed(2)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Returned: {line.returned} • Remaining: {line.remaining}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min={1}
+                              max={line.remaining}
+                              value={line.quantity}
+                              onChange={(e) =>
+                                updateReturnQuantity(
+                                  line.sale_item.id,
+                                  parseInt(e.target.value) || 1
+                                )
+                              }
+                              className="h-9 w-20"
+                              disabled={line.remaining === 0 || !line.selected}
+                            />
+                            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <input
+                                type="checkbox"
+                                checked={line.restocked}
+                                onChange={() => toggleRestocked(line.sale_item.id)}
+                                disabled={line.remaining === 0 || !line.selected}
+                              />
+                              Restock
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Customer Info */}
               <div className="space-y-2">
                 <Label>Customer Name (Optional)</Label>
@@ -414,18 +440,22 @@ export default function CreateReturnPage() {
               <div className="border-t pt-4 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Total Items:</span>
-                  <span className="font-semibold">{returnItems.length}</span>
+                  <span className="font-semibold">
+                    {returnLines.filter((line) => line.selected).length}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Total Quantity:</span>
                   <span className="font-semibold">
-                    {returnItems.reduce((sum, item) => sum + item.quantity, 0)}
+                    {returnLines
+                      .filter((line) => line.selected)
+                      .reduce((sum, line) => sum + line.quantity, 0)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Adding to Stock:</span>
                   <span className="font-semibold">
-                    {returnItems.filter((item) => item.add_to_inventory).length} items
+                    {returnLines.filter((line) => line.selected && line.restocked).length} items
                   </span>
                 </div>
               </div>
@@ -442,7 +472,7 @@ export default function CreateReturnPage() {
                 <Button
                   className="flex-1"
                   onClick={processReturn}
-                  disabled={returnItems.length === 0 || processing}
+                  disabled={!selectedSale || returnLines.filter((line) => line.selected).length === 0 || processing}
                 >
                   {processing ? "Processing..." : "Process Return"}
                 </Button>

@@ -1,6 +1,7 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime
 
 from app.api import deps
@@ -44,6 +45,20 @@ def create_return(
         sale = db.query(Sale).filter(Sale.id == return_in.sale_id).first()
         if not sale:
             raise HTTPException(status_code=404, detail="Sale not found")
+
+        # Pre-calc already returned quantities per sale_item
+        returned_rows = (
+            db.query(
+                ReturnItem.sale_item_id,
+                func.coalesce(func.sum(ReturnItem.quantity_returned), 0)
+            )
+            .join(PosReturn, PosReturn.id == ReturnItem.return_id)
+            .filter(PosReturn.sale_id == return_in.sale_id)
+            .group_by(ReturnItem.sale_item_id)
+            .all()
+        )
+
+        returned_map = {row[0]: row[1] for row in returned_rows if row[0] is not None}
         
         # Validate return items and calculate totals
         return_items_data = []
@@ -74,10 +89,13 @@ def create_return(
                     detail=f"Return quantity must be positive"
                 )
             
-            if quantity > sale_item.quantity:
+            already_returned = returned_map.get(sale_item.id, 0)
+            remaining_qty = max(0, sale_item.quantity - already_returned)
+
+            if quantity > remaining_qty:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Cannot return {quantity} {sale_item.unit} - only {sale_item.quantity} {sale_item.unit} were purchased"
+                    detail=f"Cannot return {quantity} {sale_item.unit} - only {remaining_qty} {sale_item.unit} remaining after previous returns"
                 )
             
             # Calculate refund for this item
@@ -243,10 +261,13 @@ def create_return(
             product = db.query(Product).filter(Product.id == ret_item.product_id).first()
             response.items.append({
                 "id": ret_item.id,
+                "sale_item_id": ret_item.sale_item_id,
                 "product_id": ret_item.product_id,
                 "product_name": product.name if product else None,
                 "quantity": ret_item.quantity_returned,
                 "unit": ret_item.unit,
+                "total_refund": ret_item.total_refund,
+                "restocked": ret_item.restocked,
                 "add_to_inventory": ret_item.restocked
             })
         
@@ -300,10 +321,13 @@ def list_returns(
             product = db.query(Product).filter(Product.id == ret_item.product_id).first()
             response.items.append({
                 "id": ret_item.id,
+                "sale_item_id": ret_item.sale_item_id,
                 "product_id": ret_item.product_id,
                 "product_name": product.name if product else None,
                 "quantity": ret_item.quantity_returned,
-                "unit": ret_item.unit
+                "unit": ret_item.unit,
+                "total_refund": ret_item.total_refund,
+                "restocked": ret_item.restocked
             })
         
         responses.append(response)
@@ -345,10 +369,13 @@ def get_return(
         product = db.query(Product).filter(Product.id == ret_item.product_id).first()
         response.items.append({
             "id": ret_item.id,
+            "sale_item_id": ret_item.sale_item_id,
             "product_id": ret_item.product_id,
             "product_name": product.name if product else None,
             "quantity": ret_item.quantity_returned,
-            "unit": ret_item.unit
+            "unit": ret_item.unit,
+            "total_refund": ret_item.total_refund,
+            "restocked": ret_item.restocked
         })
     
     return response

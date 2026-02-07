@@ -3,7 +3,7 @@ import re
 import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from datetime import datetime, date
 from pathlib import Path
 from reportlab.lib.pagesizes import letter
@@ -654,16 +654,23 @@ def list_sales(
     if end_date:
         query = query.filter(func.date(Sale.created_at) <= end_date)
     
-    # Search filter (customer name or phone)
+    # Search filter (customer name, phone, or sale id)
     if search:
+        conditions = []
+
         # Normalize phone if search looks like a phone number
         normalized_search = normalize_phone_number(search)
         if normalized_search:
-            # Search by normalized phone
-            query = query.filter(Sale.customer_phone == normalized_search)
-        else:
-            # Search by customer name (case-insensitive)
-            query = query.filter(Sale.customer_name.ilike(f"%{search}%"))
+            conditions.append(Sale.customer_phone == normalized_search)
+
+        # Search by sale ID if numeric
+        if search.strip().isdigit():
+            conditions.append(Sale.id == int(search.strip()))
+
+        # Search by customer name (case-insensitive)
+        conditions.append(Sale.customer_name.ilike(f"%{search}%"))
+
+        query = query.filter(or_(*conditions))
     
     # Order by most recent first
     query = query.order_by(Sale.created_at.desc())

@@ -43,6 +43,23 @@ interface SaleItem {
   variation?: ProductVariation;
 }
 
+interface ReturnItem {
+  id: number;
+  sale_item_id?: number | null;
+  product_id: number;
+  quantity: number;
+  unit: string;
+  total_refund?: number | null;
+}
+
+interface ReturnRecord {
+  id: number;
+  sale_id?: number | null;
+  refund_amount: number;
+  created_at: string;
+  items: ReturnItem[];
+}
+
 interface User {
   id: number;
   username: string;
@@ -88,6 +105,9 @@ export default function InvoicePage() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [sending, setSending] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
+  const [saleReturns, setSaleReturns] = useState<ReturnRecord[]>([]);
+  const [returnedBySaleItem, setReturnedBySaleItem] = useState<{ [key: number]: number }>({});
+  const [returnRefundTotal, setReturnRefundTotal] = useState(0);
 
   useEffect(() => {
     fetchSaleDetails();
@@ -101,6 +121,33 @@ export default function InvoicePage() {
       // Fetch sale details
       const saleResponse = await api.get(`/sales/${params.id}`);
       const saleData = saleResponse.data;
+
+      // Fetch returns for this sale
+      let returnsData: ReturnRecord[] = [];
+      try {
+        const returnsRes = await api.get("/returns/", {
+          params: { sale_id: saleData.id },
+        });
+        returnsData = returnsRes.data || [];
+      } catch (err) {
+        console.error("Failed to fetch returns:", err);
+      }
+
+      const returnedMap: { [key: number]: number } = {};
+      let refundTotal = 0;
+      returnsData.forEach((ret) => {
+        refundTotal += ret.refund_amount || 0;
+        ret.items.forEach((item) => {
+          if (item.sale_item_id) {
+            returnedMap[item.sale_item_id] =
+              (returnedMap[item.sale_item_id] || 0) + (item.quantity || 0);
+          }
+        });
+      });
+
+      setSaleReturns(returnsData);
+      setReturnedBySaleItem(returnedMap);
+      setReturnRefundTotal(refundTotal);
 
       // Fetch all users to get cashier info
       let userData = null;
@@ -351,6 +398,11 @@ export default function InvoicePage() {
                       rs {item.total_price.toFixed(2)}
                     </span>
                   </div>
+                  {(returnedBySaleItem[item.id] || 0) > 0 && (
+                    <div className="text-xs text-orange-600 mt-1">
+                      Returned: {returnedBySaleItem[item.id]} {item.unit}
+                    </div>
+                  )}
                   {item.item_discount && item.item_discount > 0 && (
                     <div className="text-xs text-red-600 mb-1 text-right">
                       Disc: -rs {item.item_discount.toFixed(2)}
@@ -373,7 +425,7 @@ export default function InvoicePage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Discount:</span>
                   <span className="font-medium text-red-600">
-                    -${sale.discount.toFixed(2)}
+                    -rs {sale.discount.toFixed(2)}
                   </span>
                 </div>
               )}
@@ -382,7 +434,7 @@ export default function InvoicePage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Tax:</span>
                   <span className="font-medium text-gray-900">
-                    ${sale.tax.toFixed(2)}
+                    rs {sale.tax.toFixed(2)}
                   </span>
                 </div>
               )}
@@ -391,7 +443,7 @@ export default function InvoicePage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Delivery:</span>
                   <span className="font-medium text-gray-900">
-                    ${sale.delivery_charges.toFixed(2)}
+                    rs {sale.delivery_charges.toFixed(2)}
                   </span>
                 </div>
               )}
@@ -399,9 +451,25 @@ export default function InvoicePage() {
               <div className="flex justify-between text-base font-bold pt-2 border-t-2 border-gray-900">
                 <span className="text-gray-900">TOTAL:</span>
                 <span className="text-gray-900">
-                  ${sale.total.toFixed(2)}
+                  rs {sale.total.toFixed(2)}
                 </span>
               </div>
+              {returnRefundTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Returned (Refunded):</span>
+                  <span className="font-medium text-red-600">
+                    -rs {returnRefundTotal.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {returnRefundTotal > 0 && (
+                <div className="flex justify-between text-sm font-semibold">
+                  <span className="text-gray-700">Net Total:</span>
+                  <span className="text-gray-900">
+                    rs {(sale.total - returnRefundTotal).toFixed(2)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Payment Details */}
@@ -417,14 +485,14 @@ export default function InvoicePage() {
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Paid:</span>
                   <span className="font-medium text-gray-900">
-                    ${sale.amount_paid.toFixed(2)}
+                    rs {sale.amount_paid.toFixed(2)}
                   </span>
                 </div>
                 {sale.change_amount > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Change:</span>
                     <span className="font-semibold text-green-600">
-                      ${sale.change_amount.toFixed(2)}
+                      rs {sale.change_amount.toFixed(2)}
                     </span>
                   </div>
                 )}
@@ -432,7 +500,15 @@ export default function InvoicePage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Due:</span>
                     <span className="font-semibold text-red-600">
-                      ${sale.amount_due.toFixed(2)}
+                      rs {sale.amount_due.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {returnRefundTotal > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Net Due:</span>
+                    <span className="font-semibold text-red-600">
+                      rs {Math.max(0, sale.amount_due - returnRefundTotal).toFixed(2)}
                     </span>
                   </div>
                 )}
@@ -484,7 +560,7 @@ export default function InvoicePage() {
                 <strong>Invoice:</strong> {formatInvoiceNumber(sale!.id)}
               </p>
               <p className="text-sm text-gray-700">
-                <strong>Total:</strong> ${sale!.total.toFixed(2)}
+                <strong>Total:</strong> rs {sale!.total.toFixed(2)}
               </p>
               {sale!.customer_name && (
                 <p className="text-sm text-gray-700">

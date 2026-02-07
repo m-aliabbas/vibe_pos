@@ -62,3 +62,11 @@ class SaleItem(Base):
     sale = relationship("Sale", back_populates="items")
     product = relationship("Product")
     variation = relationship("ProductVariation")
+
+    @property
+    def product_name(self):
+        return self.product.name if self.product else None
+
+    @property
+    def variation_attributes(self):
+        return self.variation.attributes if self.variation else None
