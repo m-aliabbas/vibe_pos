@@ -5,7 +5,6 @@ alembic
 pydantic
 pydantic-settings
 python-jose[cryptography]
-passlib[bcrypt]
 python-multipart
 apscheduler
 reportlab==4.0.9
