@@ -8,6 +8,8 @@ This project supports loading Firebase service account credentials from an encry
 
 Run from the backend folder:
 
+
+
 - `python scripts/secure_firebase_key.py --input k1.json --output k1.json.enc`
 
 This prints a Fernet key. Store it securely (do not commit it).
