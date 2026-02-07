@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
@@ -91,6 +91,10 @@ export default function InventoryPage() {
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('All');
     const [stockFilter, setStockFilter] = useState<string>('all');
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(100);
+    const [totalCount, setTotalCount] = useState(0);
+    const fetchRequestIdRef = useRef(0);
 
     // Form State
     const [name, setName] = useState('');
@@ -110,17 +114,37 @@ export default function InventoryPage() {
             fetchProducts();
         }, 500);
         return () => clearTimeout(timer);
+    }, [search, categoryFilter, stockFilter, page]);
+
+    useEffect(() => {
+        setPage(1);
     }, [search, categoryFilter, stockFilter]);
 
     const fetchProducts = async () => {
+        const requestId = ++fetchRequestIdRef.current;
         try {
             setLoading(true);
-            const { data } = await api.get('/products/', {
-                params: { 
+            const { data: countData } = await api.get('/products/count', {
+                params: {
                     search: search || undefined,
                     category: categoryFilter !== 'All' ? categoryFilter : undefined
                 }
             });
+            if (requestId !== fetchRequestIdRef.current) {
+                return;
+            }
+            setTotalCount(countData?.total || 0);
+            const { data } = await api.get('/products/', {
+                params: { 
+                    search: search || undefined,
+                    category: categoryFilter !== 'All' ? categoryFilter : undefined,
+                    skip: (page - 1) * pageSize,
+                    limit: pageSize,
+                }
+            });
+            if (requestId !== fetchRequestIdRef.current) {
+                return;
+            }
             
             // Apply stock filter on frontend
             let filtered = data;
@@ -136,7 +160,9 @@ export default function InventoryPage() {
         } catch (error) {
             console.error("Failed to fetch products", error);
         } finally {
-            setLoading(false);
+            if (requestId === fetchRequestIdRef.current) {
+                setLoading(false);
+            }
         }
     };
     
@@ -298,7 +324,12 @@ export default function InventoryPage() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Product Catalog</h1>
-                    <p className="text-gray-500 mt-1">Define the items you sell. Manage stock via Purchases.</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                        <p className="text-gray-500">Define the items you sell. Manage stock via Purchases.</p>
+                        <Badge variant="secondary" className="font-normal">
+                            Total Products: {totalCount}
+                        </Badge>
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <Dialog open={bulkOpen} onOpenChange={(nextOpen) => {
@@ -387,7 +418,7 @@ export default function InventoryPage() {
                                 </div>
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="price">Selling Price (₹)</Label>
+                                <Label htmlFor="price">Selling Price (rs)</Label>
                                 <Input id="price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required placeholder="0.00" />
                             </div>
 
@@ -428,7 +459,7 @@ export default function InventoryPage() {
                                 <div className="flex flex-wrap gap-2">
                                     {sellingUnits.map((unit, idx) => (
                                         <Badge key={idx} variant="secondary" className="gap-2">
-                                            {unit.unit} (×{unit.conversion}) ₹{unit.price}
+                                            {unit.unit} (×{unit.conversion}) rs {unit.price}
                                             <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
                                         </Badge>
                                     ))}
@@ -553,7 +584,7 @@ export default function InventoryPage() {
                                         <Badge variant="secondary" className="font-normal">{product.category}</Badge>
                                     </TableCell>
                                     <TableCell className="text-right font-medium text-emerald-600">
-                                        ₹{product.selling_price.toFixed(2)}
+                                        rs {product.selling_price.toFixed(2)}
                                     </TableCell>
                                     <TableCell className="text-center">
                                         <Badge variant={product.quantity > 0 ? "outline" : "secondary"} className={product.quantity > 0 ? "text-blue-600 border-blue-200" : "bg-red-100 text-red-600 border-red-200"}>
@@ -608,6 +639,32 @@ export default function InventoryPage() {
                         </TableBody>
                     </Table>
                 </div>
+
+                <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-500">
+                        {totalCount === 0
+                            ? "Showing 0 of 0"
+                            : `Showing ${(page - 1) * pageSize + 1}-${(page - 1) * pageSize + products.length} of ${totalCount}`}
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                            disabled={page === 1 || loading}
+                        >
+                            Previous
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPage((p) => p + 1)}
+                            disabled={page * pageSize >= totalCount || loading}
+                        >
+                            Next
+                        </Button>
+                    </div>
+                </div>
             </div>
 
             {/* Edit Product Dialog */}
@@ -635,7 +692,7 @@ export default function InventoryPage() {
                             </div>
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="edit-price">Selling Price (₹)</Label>
+                            <Label htmlFor="edit-price">Selling Price (rs)</Label>
                             <Input id="edit-price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required />
                         </div>
                         <DialogFooter>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,15 +44,19 @@ export default function CustomersPage() {
   const router = useRouter();
   const { user, token, isLoading } = useAuthStore();
   const [customers, setCustomers] = useState<CustomerListResponse[]>([]);
-  const [filteredCustomers, setFilteredCustomers] = useState<CustomerListResponse[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(100);
+  const [totalCount, setTotalCount] = useState(0);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+  const showInitialLoading = loading && customers.length === 0;
+  const fetchRequestIdRef = useRef(0);
 
   // Form state for creating customer
   const [newCustomer, setNewCustomer] = useState<CustomerCreate>({
@@ -77,31 +81,41 @@ export default function CustomersPage() {
   }, [token, isLoading]);
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredCustomers(customers);
-      return;
-    }
+    const timer = setTimeout(() => {
+      fetchCustomers();
+    }, 300);
 
-    const query = searchQuery.toLowerCase();
-    const filtered = customers.filter(
-      (customer) =>
-        customer.name?.toLowerCase().includes(query) ||
-        customer.phone?.toLowerCase().includes(query) ||
-        customer.customer_id?.toLowerCase().includes(query)
-    );
-    setFilteredCustomers(filtered);
-  }, [searchQuery, customers]);
+    return () => clearTimeout(timer);
+  }, [searchQuery, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery]);
 
   const fetchCustomers = async () => {
+    const requestId = ++fetchRequestIdRef.current;
     try {
       setLoading(true);
-      const response = await customerApi.getCustomers();
-      setCustomers(response);
-      setFilteredCustomers(response);
+      const [customersRes, countRes] = await Promise.all([
+        customerApi.getCustomers({
+          skip: (page - 1) * pageSize,
+          limit: pageSize,
+          search: searchQuery || undefined,
+        }),
+        customerApi.countCustomers({ search: searchQuery || undefined }),
+      ]);
+
+      if (requestId !== fetchRequestIdRef.current) {
+        return;
+      }
+      setCustomers(customersRes);
+      setTotalCount(countRes.total || 0);
     } catch (error) {
       console.error("Failed to fetch customers:", error);
     } finally {
-      setLoading(false);
+      if (requestId === fetchRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -169,10 +183,11 @@ export default function CustomersPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
+    const formatted = new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
+    return `rs ${formatted}`;
   };
 
   const formatDate = (dateString: string) => {
@@ -195,7 +210,7 @@ export default function CustomersPage() {
     );
   }
 
-  if (loading) {
+  if (showInitialLoading) {
     return (
       <div className="p-6">
         <div className="flex items-center justify-center h-64">
@@ -245,9 +260,9 @@ export default function CustomersPage() {
                     accept=".csv"
                     onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Opening balance must be $\geq 0$.
-                  </p>
+                    <p className="text-xs text-muted-foreground">
+                      Opening balance must be rs &gt;= 0.
+                    </p>
                 </div>
                 {bulkResult && (
                   <div className="rounded-md border p-3 text-sm">
@@ -394,6 +409,9 @@ export default function CustomersPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1"
             />
+            {loading && (
+              <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-primary" />
+            )}
           </div>
         </CardContent>
       </Card>
@@ -403,11 +421,11 @@ export default function CustomersPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <UserCheck className="h-5 w-5" />
-            Customer List ({filteredCustomers.length})
+            Customer List ({totalCount})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredCustomers.length === 0 ? (
+          {customers.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               {searchQuery ? "No customers found matching your search." : "No customers yet."}
             </div>
@@ -425,7 +443,7 @@ export default function CustomersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCustomers.map((customer) => {
+                {customers.map((customer) => {
                   // Ensure customer has valid ID before rendering
                   if (!customer?.id) {
                     console.error("Customer missing ID:", customer);
@@ -496,6 +514,32 @@ export default function CustomersPage() {
           )}
         </CardContent>
       </Card>
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {totalCount === 0
+            ? "Showing 0 of 0"
+            : `Showing ${(page - 1) * pageSize + 1}-${(page - 1) * pageSize + customers.length} of ${totalCount}`}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1 || loading}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page * pageSize >= totalCount || loading}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
     </div >
   );
 }

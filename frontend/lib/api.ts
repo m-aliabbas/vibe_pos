@@ -125,6 +125,14 @@ export const customerApi = {
         return response.data;
     },
 
+    // Count customers with optional search
+    countCustomers: async (params?: {
+        search?: string;
+    }): Promise<{ total: number }> => {
+        const response = await api.get('/customers/count', { params });
+        return response.data;
+    },
+
     // Search for customer by phone or customer_id
     searchCustomer: async (params: {
         phone?: string;

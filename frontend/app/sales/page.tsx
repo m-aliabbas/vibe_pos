@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,7 +57,7 @@ interface SellingUnit {
 interface Product {
   id: number;
   name: string;
-  sku: string;
+  sku: string | null;
   category: string;
   selling_price: number;
   cost_price: number; // Added
@@ -133,6 +133,8 @@ export default function SalesTerminal() {
     totalCount: 0,
     byPayment: { cash: 0, card: 0, mobile: 0, other: 0 },
   });
+  const fetchProductsRequestIdRef = useRef(0);
+  const customerLookupRequestIdRef = useRef(0);
 
   // Variation picker state
   const [variationDialogOpen, setVariationDialogOpen] = useState(false);
@@ -190,10 +192,22 @@ export default function SalesTerminal() {
     if (!token) {
       router.push("/login");
       return;
-    }
-    fetchProducts();
-    fetchTodayStats();
+    }    fetchTodayStats();
   }, [token, isLoading]);
+
+  useEffect(() => {
+    if (isLoading || !token) return;
+
+    const { searchTerm } = parseQuantityFromSearch(searchQuery);
+    const timer = setTimeout(() => {
+      fetchProducts({
+        search: searchTerm.trim() ? searchTerm : undefined,
+        category: categoryFilter !== "All" ? categoryFilter : undefined,
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, categoryFilter, token, isLoading]);
 
   const buildSummary = (sales: any[]): SaleSummary => {
     const summary: SaleSummary = {
@@ -241,10 +255,11 @@ export default function SalesTerminal() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
+    const formatted = new Intl.NumberFormat("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
+    return `rs ${formatted}`;
   };
 
   // Filter products based on search
@@ -270,7 +285,7 @@ export default function SalesTerminal() {
       filtered = filtered.filter(
         (p) =>
           p.name.toLowerCase().includes(query) ||
-          p.sku.toLowerCase().includes(query) ||
+          (p.sku || "").toLowerCase().includes(query) ||
           p.category.toLowerCase().includes(query)
       );
     }
@@ -294,11 +309,16 @@ export default function SalesTerminal() {
     setSelectedProductIndex(0);
   }, [searchQuery, products, categoryFilter, stockFilter]);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (params?: { search?: string; category?: string }) => {
+    const requestId = ++fetchProductsRequestIdRef.current;
     try {
       const response = await api.get("/products/", {
         headers: { Authorization: `Bearer ${token}` },
+        params: { limit: 500, ...params },
       });
+      if (requestId !== fetchProductsRequestIdRef.current) {
+        return;
+      }
       setProducts(response.data);
       setFilteredProducts(response.data);
     } catch (error) {
@@ -641,6 +661,7 @@ export default function SalesTerminal() {
       return;
     }
 
+    const requestId = ++customerLookupRequestIdRef.current;
     setCustomerSearchLoading(true);
     try {
       let customer: CustomerSimple | null = null;
@@ -663,6 +684,10 @@ export default function SalesTerminal() {
         if (byId) customer = byId;
       }
 
+      if (requestId !== customerLookupRequestIdRef.current) {
+        return;
+      }
+
       if (customer) {
         setSelectedCustomer(customer);
         // Fill missing display info (don’t override user-typed name if they want)
@@ -677,7 +702,9 @@ export default function SalesTerminal() {
       console.error("Customer lookup failed:", error);
       setSelectedCustomer(null);
     } finally {
-      setCustomerSearchLoading(false);
+      if (requestId === customerLookupRequestIdRef.current) {
+        setCustomerSearchLoading(false);
+      }
     }
   };
 
@@ -996,7 +1023,7 @@ export default function SalesTerminal() {
                                 </div>
                                 <div className="text-right">
                                   <p className="font-bold text-primary">
-                                    ₹{product.selling_price.toFixed(2)}
+                                    rs {product.selling_price.toFixed(2)}
                                   </p>
                                   <Badge
                                     variant={
@@ -1054,7 +1081,7 @@ export default function SalesTerminal() {
                         >
                           <td className="p-3 font-medium">{product.name}</td>
                           <td className="p-3 text-right font-semibold text-primary">
-                            ₹{product.selling_price.toFixed(2)}
+                            rs {product.selling_price.toFixed(2)}
                           </td>
                           <td className="p-3 text-center">
                             <Badge
@@ -1136,7 +1163,7 @@ export default function SalesTerminal() {
                             )}
                             <div className="flex flex-wrap items-center gap-3 mt-2">
                               <div className="text-xs text-muted-foreground bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                                Buy: ₹{item.product.cost_price?.toFixed(2) || "0.00"}
+                                Buy: rs {item.product.cost_price?.toFixed(2) || "0.00"}
                               </div>
                               <div className="flex items-center gap-2">
                                 <Label className="text-xs font-medium">Disc:</Label>
@@ -1162,10 +1189,10 @@ export default function SalesTerminal() {
                           </div>
                           <div className="flex flex-col items-end gap-1">
                             <span className="font-semibold">
-                              ₹{((itemPrice * item.quantity) - (item.item_discount || 0)).toFixed(2)}
+                              rs {((itemPrice * item.quantity) - (item.item_discount || 0)).toFixed(2)}
                             </span>
                             <span className="text-xs text-muted-foreground">
-                              ₹{itemPrice.toFixed(2)}/{item.unit}
+                              rs {itemPrice.toFixed(2)}/{item.unit}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1205,29 +1232,29 @@ export default function SalesTerminal() {
                   <div className="border-t pt-4 space-y-2">
                     <div className="flex justify-between font-semibold mt-2 pt-2 border-t">
                       <span>Subtotal</span>
-                      <span>₹{calculateSubtotal().toFixed(2)}</span>
+                      <span>rs {calculateSubtotal().toFixed(2)}</span>
                     </div>
                     {(discount > 0 || calculateItemDiscounts() > 0) && (
                       <div className="flex justify-between text-red-600">
                         <span>Discount</span>
-                        <span>-₹{(discount + calculateItemDiscounts()).toFixed(2)}</span>
+                        <span>-rs {(discount + calculateItemDiscounts()).toFixed(2)}</span>
                       </div>
                     )}
                     {tax > 0 && (
                       <div className="flex justify-between">
                         <span>Tax</span>
-                        <span>+₹{tax.toFixed(2)}</span>
+                        <span>+rs {tax.toFixed(2)}</span>
                       </div>
                     )}
                     {deliveryCharges > 0 && (
                       <div className="flex justify-between">
                         <span>Delivery</span>
-                        <span>+₹{deliveryCharges.toFixed(2)}</span>
+                        <span>+rs {deliveryCharges.toFixed(2)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-bold text-lg pt-2 border-t mt-2">
                       <span>Total</span>
-                      <span>₹{calculateTotal().toFixed(2)}</span>
+                      <span>rs {calculateTotal().toFixed(2)}</span>
                     </div>
                   </div>
 
@@ -1320,7 +1347,7 @@ export default function SalesTerminal() {
                   </div>
                   {selectedCustomer.outstanding_balance > 0 && (
                     <Badge variant="destructive" className="text-xs">
-                      Udhar: ${selectedCustomer.outstanding_balance.toFixed(2)}
+                      Udhar: rs {selectedCustomer.outstanding_balance.toFixed(2)}
                     </Badge>
                   )}
                 </div>
@@ -1355,7 +1382,7 @@ export default function SalesTerminal() {
 
             {/* Delivery Charges Input */}
             <div className="space-y-1 pt-2">
-              <Label htmlFor="delivery" className="text-sm">Delivery Charges (₹)</Label>
+              <Label htmlFor="delivery" className="text-sm">Delivery Charges (rs)</Label>
               <Input
                 id="delivery"
                 type="number"
@@ -1383,7 +1410,7 @@ export default function SalesTerminal() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="discount" className="text-sm">Global Discount (₹)</Label>
+                <Label htmlFor="discount" className="text-sm">Global Discount (rs)</Label>
                 <Input
                   id="discount"
                   type="number"
@@ -1395,7 +1422,7 @@ export default function SalesTerminal() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="tax" className="text-sm">Tax (₹)</Label>
+                <Label htmlFor="tax" className="text-sm">Tax (rs)</Label>
                 <Input
                   id="tax"
                   type="number"
@@ -1409,7 +1436,7 @@ export default function SalesTerminal() {
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="amountPaid" className="text-sm">Amount Paid (₹)</Label>
+              <Label htmlFor="amountPaid" className="text-sm">Amount Paid (rs)</Label>
               <Input
                 id="amountPaid"
                 type="number"
@@ -1428,23 +1455,23 @@ export default function SalesTerminal() {
               {(calculateItemDiscounts() > 0) && (
                 <div className="flex justify-between text-red-600">
                   <span>Total Item Discs:</span>
-                  <span>-₹{calculateItemDiscounts().toFixed(2)}</span>
+                  <span>-rs {calculateItemDiscounts().toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between font-semibold">
                 <span>Total:</span>
-                <span className="text-lg">₹{calculateTotal().toFixed(2)}</span>
+                <span className="text-lg">rs {calculateTotal().toFixed(2)}</span>
               </div>
               {amountPaid < calculateTotal() && (
                 <div className="flex justify-between text-red-600 font-semibold">
                   <span>Due (Udhar):</span>
-                  <span>₹{(calculateTotal() - amountPaid).toFixed(2)}</span>
+                  <span>rs {(calculateTotal() - amountPaid).toFixed(2)}</span>
                 </div>
               )}
               {amountPaid > calculateTotal() && (
                 <div className="flex justify-between text-green-600 font-semibold">
                   <span>Change:</span>
-                  <span>₹{(amountPaid - calculateTotal()).toFixed(2)}</span>
+                  <span>rs {(amountPaid - calculateTotal()).toFixed(2)}</span>
                 </div>
               )}
             </div>
@@ -1452,7 +1479,7 @@ export default function SalesTerminal() {
             <div className="bg-primary/10 p-2 rounded border border-primary/20">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-sm">Amount Paid:</span>
-                <span className="text-xl font-bold text-primary">₹{amountPaid.toFixed(2)}</span>
+                <span className="text-xl font-bold text-primary">rs {amountPaid.toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -1494,13 +1521,13 @@ export default function SalesTerminal() {
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Total Sale:</span>
                 <span className="text-xl font-bold text-primary">
-                  ₹{completedSaleTotal.toFixed(2)}
+                  rs {completedSaleTotal.toFixed(2)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Amount Paid:</span>
                 <span className="text-xl font-semibold text-green-600">
-                  ₹{completedAmountPaid.toFixed(2)}
+                  rs {completedAmountPaid.toFixed(2)}
                 </span>
               </div>
               {completedChange > 0 && (
@@ -1509,7 +1536,7 @@ export default function SalesTerminal() {
                     Change to Return:
                   </span>
                   <span className="text-3xl font-bold text-green-700">
-                    ₹{completedChange.toFixed(2)}
+                    rs {completedChange.toFixed(2)}
                   </span>
                 </div>
               )}
@@ -1519,7 +1546,7 @@ export default function SalesTerminal() {
                     Amount Due (Udhar):
                   </span>
                   <span className="text-3xl font-bold text-red-700">
-                    ₹{(completedSaleTotal - completedAmountPaid).toFixed(2)}
+                    rs {(completedSaleTotal - completedAmountPaid).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -1581,7 +1608,7 @@ export default function SalesTerminal() {
                             .join(", ")}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          ₹{finalPrice.toFixed(2)} • Stock: {variation.quantity > 0 ? variation.quantity : '0 - Out of Stock'}
+                          rs {finalPrice.toFixed(2)} • Stock: {variation.quantity > 0 ? variation.quantity : '0 - Out of Stock'}
                         </div>
                         {variation.quantity <= 0 && (
                           <div className="text-xs text-red-600">Out of stock</div>
@@ -1603,13 +1630,13 @@ export default function SalesTerminal() {
                   <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Buying Price:</span>
-                    <span className="font-medium text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">₹{selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}</span>
+                    <span className="font-medium text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">rs {selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}</span>
                   </div>
                   {selectedVariation && (
                     <div className="flex justify-between items-center text-sm mt-1">
                       <span className="text-muted-foreground">Selling Price:</span>
                       <span className="font-semibold text-primary">
-                        ₹{(selectedProductForVariation.selling_price + selectedVariation.price_adjustment).toFixed(2)}
+                        rs {(selectedProductForVariation.selling_price + selectedVariation.price_adjustment).toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -1627,7 +1654,7 @@ export default function SalesTerminal() {
                       </SelectItem>
                       {selectedProductForVariation.selling_units.map((unit) => (
                         <SelectItem key={unit.unit} value={unit.unit}>
-                          {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
+                          {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1672,7 +1699,7 @@ export default function SalesTerminal() {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="variationDiscount">Item Discount (₹)</Label>
+              <Label htmlFor="variationDiscount">Item Discount (rs)</Label>
               <Input
                 id="variationDiscount"
                 type="number"
@@ -1714,11 +1741,11 @@ export default function SalesTerminal() {
                   <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Buying Price:</span>
-                    <span className="font-medium text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">₹{selectedProductForUnit.cost_price?.toFixed(2) || "0.00"}</span>
+                    <span className="font-medium text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">rs {selectedProductForUnit.cost_price?.toFixed(2) || "0.00"}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm mt-1">
                     <span className="text-muted-foreground">Selling Price:</span>
-                    <span className="font-semibold text-primary">₹{selectedProductForUnit.selling_price.toFixed(2)}</span>
+                    <span className="font-semibold text-primary">rs {selectedProductForUnit.selling_price.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -1733,12 +1760,12 @@ export default function SalesTerminal() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={selectedProductForUnit.base_unit}>
-                        {selectedProductForUnit.base_unit} (Base unit) - ₹
+                        {selectedProductForUnit.base_unit} (Base unit) - rs 
                         {selectedProductForUnit.selling_price.toFixed(2)}
                       </SelectItem>
                       {selectedProductForUnit.selling_units.map((unit) => (
                         <SelectItem key={unit.unit} value={unit.unit}>
-                          {unit.unit} (×{unit.conversion}) - ₹{unit.price.toFixed(2)}
+                          {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1779,7 +1806,7 @@ export default function SalesTerminal() {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="unitDiscount">Item Discount (₹)</Label>
+              <Label htmlFor="unitDiscount">Item Discount (rs)</Label>
               <Input
                 id="unitDiscount"
                 type="number"

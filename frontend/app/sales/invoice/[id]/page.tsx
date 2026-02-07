@@ -346,14 +346,14 @@ export default function InvoicePage() {
                     </div>
                   )}
                   <div className="flex justify-between text-xs text-gray-600">
-                    <span>{item.quantity} {item.unit} x ₹{item.unit_price.toFixed(2)}</span>
+                    <span>{item.quantity} {item.unit} x rs {item.unit_price.toFixed(2)}</span>
                     <span className="font-semibold text-gray-900">
-                      ₹{item.total_price.toFixed(2)}
+                      rs {item.total_price.toFixed(2)}
                     </span>
                   </div>
                   {item.item_discount && item.item_discount > 0 && (
                     <div className="text-xs text-red-600 mb-1 text-right">
-                      Disc: -₹{item.item_discount.toFixed(2)}
+                      Disc: -rs {item.item_discount.toFixed(2)}
                     </div>
                   )}
                 </div>
@@ -365,7 +365,7 @@ export default function InvoicePage() {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal:</span>
                 <span className="font-medium text-gray-900">
-                  ₹{sale.subtotal.toFixed(2)}
+                  rs {sale.subtotal.toFixed(2)}
                 </span>
               </div>
 

@@ -32,13 +32,13 @@ OUT_FIELDS = [
 ]
 
 ALIASES = {
-    "name": ["name", "product_name", "item_name", "title"],
-    "sku": ["sku", "barcode", "bar_code", "ean", "upc", "product_code", "code"],
-    "category": ["category", "category_name", "cat", "group"],
+    "name": ["name", "product_name", "item_name", "title","ItemName"],
+    "sku": ["sku", "barcode", "bar_code", "ean", "upc", "product_code", "code","ItemCode"],
+    "category": ["category", "category_name", "cat", "group","Category"],
     "description": ["description", "desc", "details", "product_description"],
-    "selling_price": ["selling_price", "sale_price", "price", "mrp", "retail_price"],
-    "cost_price": ["cost_price", "cost", "purchase_price", "buy_price"],
-    "quantity": ["quantity", "qty", "stock", "stock_qty", "available_qty", "on_hand"],
+    "selling_price": ["selling_price", "sale_price", "price", "mrp", "retail_price","SalePrice"],
+    "cost_price": ["cost_price", "cost", "purchase_price", "buy_price","PurchasePrice"],
+    "quantity": ["quantity", "qty", "stock", "stock_qty", "available_qty", "on_hand","Quantity"],
     # ✅ base unit source (your requirement)
     "scale": ["scale", "unit", "uom"],
     "selling_units_json": ["selling_units_json", "selling_units", "units_json", "units"],

@@ -27,6 +27,7 @@ function PurchasePageContent() {
     const [vendors, setVendors] = useState<any[]>([]);
     const [products, setProducts] = useState<any[]>([]);
     const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
+    const productsRequestIdRef = useRef(0);
 
     // Purchase State
     const [vendorId, setVendorId] = useState(preselectedVendorId || '');
@@ -81,31 +82,46 @@ function PurchasePageContent() {
     }, [vendorSearch, vendors]);
 
     useEffect(() => {
-        if (productSearch.trim()) {
-            const filtered = products.filter(p =>
-                p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-                p.sku?.toLowerCase().includes(productSearch.toLowerCase())
-            );
-            setFilteredProducts(filtered);
-            setShowProductDropdown(true); // Always show dropdown when typing
-            setSelectedProductIndex(0);
-        } else {
+        if (!productSearch.trim()) {
             setFilteredProducts([]);
             setShowProductDropdown(false);
+            return;
         }
-    }, [productSearch, products]);
+
+        const timer = setTimeout(() => {
+            fetchProducts(productSearch.trim());
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [productSearch]);
 
     const fetchData = async () => {
         try {
-            const [vRes, pRes] = await Promise.all([
-                api.get('/vendors/'),
-                api.get('/products/')
+            const [vRes] = await Promise.all([
+                api.get('/vendors/')
             ]);
             setVendors(vRes.data);
-            setProducts(pRes.data);
             setFilteredVendors(vRes.data);
         } catch (error) {
             console.error("Failed to load data", error);
+        }
+    };
+
+    const fetchProducts = async (searchTerm: string) => {
+        const requestId = ++productsRequestIdRef.current;
+        try {
+            const { data } = await api.get('/products/', {
+                params: { search: searchTerm, limit: 500 }
+            });
+            if (requestId !== productsRequestIdRef.current) {
+                return;
+            }
+            setProducts(data);
+            setFilteredProducts(data);
+            setShowProductDropdown(true);
+            setSelectedProductIndex(0);
+        } catch (error) {
+            console.error("Failed to fetch products", error);
         }
     };
 
@@ -436,7 +452,7 @@ function PurchasePageContent() {
                                     </div>
                                     <div className="col-span-2 text-right font-medium">{item.quantity}</div>
                                     <div className="col-span-2 text-right">${item.unit_cost.toFixed(2)}</div>
-                                    <div className="col-span-2 text-right font-bold">₹{item.total_cost.toFixed(2)}</div>
+                                    <div className="col-span-2 text-right font-bold">rs {item.total_cost.toFixed(2)}</div>
                                     <div className="col-span-2 text-right text-sm text-muted-foreground">
                                         {item.expiry_date
                                             ? new Date(item.expiry_date).toLocaleDateString()
@@ -464,7 +480,7 @@ function PurchasePageContent() {
                     <div className="max-w-md space-y-4">
                         <div className="flex justify-between items-center text-2xl font-bold py-4 border-y">
                             <span>Total Payable:</span>
-                            <span>₹{totalAmount.toFixed(2)}</span>
+                            <span>rs {totalAmount.toFixed(2)}</span>
                         </div>
 
                         <div>
@@ -545,7 +561,7 @@ function PurchasePageContent() {
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="sellingPrice">
-                                    Selling Price (₹) <span className="text-red-500">*</span>
+                                    Selling Price (rs) <span className="text-red-500">*</span>
                                 </Label>
                                 <Input
                                     id="sellingPrice"
@@ -557,7 +573,7 @@ function PurchasePageContent() {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="costPrice">Cost Price (₹)</Label>
+                                <Label htmlFor="costPrice">Cost Price (rs)</Label>
                                 <Input
                                     id="costPrice"
                                     type="number"

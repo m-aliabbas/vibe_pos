@@ -206,10 +206,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
+    const formatted = new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
+    return `rs ${formatted}`;
   };
 
   const formatDate = (dateString: string) => {
@@ -236,7 +237,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     
     // Track remaining amount for each advance
     const advanceStatus = sortedAdvances.map(advance => {
-      const amountMatch = advance.note_text.match(/\$([0-9.,]+)/);
+      const amountMatch = advance.note_text.match(/(?:rs|\$)\s*([0-9.,]+)/i);
       const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '')) : 0;
       return {
         id: advance.id,
@@ -909,10 +910,11 @@ function AllPaymentsTab({ customerId, customerPayments }: { customerId: number, 
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
+    const formatted = new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
+    return `rs ${formatted}`;
   };
 
   const formatDate = (dateString: string) => {
@@ -1048,10 +1050,11 @@ function PurchaseHistoryTab({ customerId }: { customerId: number }) {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
+    const formatted = new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount);
+    return `rs ${formatted}`;
   };
 
   const formatDate = (dateString: string) => {

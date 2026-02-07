@@ -35,6 +35,20 @@ def read_products(
         
     return query.offset(skip).limit(limit).all()
 
+@router.get("/count")
+def count_products(
+    db: Session = Depends(deps.get_db),
+    search: Optional[str] = None,
+    category: Optional[str] = None,
+) -> Any:
+    query = db.query(Product)
+    if search:
+        query = query.filter(Product.name.ilike(f"%{search}%") | Product.sku.ilike(f"%{search}%"))
+    if category and category != "All":
+        query = query.filter(Product.category == category)
+
+    return {"total": query.count()}
+
 @router.post("/", response_model=product_schema.Product)
 def create_product(
     *,
@@ -53,6 +67,26 @@ def create_product(
     db.commit()
     db.refresh(product)
     return product
+
+@router.get("/{id}", response_model=product_schema.Product)
+def get_product(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+) -> Any:
+    product = db.query(Product).filter(Product.id == id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product
+
+@router.put("/{id}", response_model=product_schema.Product)
+def update_product(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    product_in: product_schema.ProductUpdate,
+) -> Any:
+    product = db.query(Product).filter(Product.id == id).first()
 
 @router.get("/{id}", response_model=product_schema.Product)
 def get_product(
@@ -100,25 +134,6 @@ def delete_product(
     db.delete(product)
     db.commit()
     return {"message": "Product deleted successfully"}
-
-
-@router.post("/bulk-import")
-async def bulk_import_products(
-    *,
-    db: Session = Depends(deps.get_db),
-    file: UploadFile = File(...),
-) -> Any:
-    """Bulk import products from CSV."""
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Please upload a CSV file")
-
-    content = await file.read()
-    try:
-        text = content.decode("utf-8-sig")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Unable to read CSV file")
-
-    reader = csv.DictReader(io.StringIO(text))
     created = 0
     skipped = 0
     errors: List[str] = []

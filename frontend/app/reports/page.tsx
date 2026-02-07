@@ -71,7 +71,7 @@ export default function ReportsPage() {
         }
     };
 
-    const formatCurrency = (val: number) => `₹${val.toFixed(2)}`;
+    const formatCurrency = (val: number) => `rs ${val.toFixed(2)}`;
 
     if (loading && !summary) {
         return <div className="p-8 flex justify-center">Loading reports...</div>;
@@ -163,11 +163,11 @@ export default function ReportsPage() {
                                     fontSize={12}
                                 />
                                 <YAxis
-                                    tickFormatter={(val) => `₹${val}`}
+                                    tickFormatter={(val) => `rs ${val}`}
                                     fontSize={12}
                                 />
                                 <Tooltip
-                                    formatter={(value: number | undefined) => value ? [`₹${value.toFixed(2)}`, 'Revenue'] : ['₹0.00', 'Revenue']}
+                                    formatter={(value: number | undefined) => value ? [`rs ${value.toFixed(2)}`, 'Revenue'] : ['rs 0.00', 'Revenue']}
                                     labelFormatter={(label) => format(new Date(label), 'MMM dd, yyyy')}
                                 />
                                 <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />

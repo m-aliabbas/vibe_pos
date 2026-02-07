@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
 import {ProtectedRoute} from "@/components/ProtectedRoute";
@@ -23,7 +23,7 @@ import api from "@/lib/api";
 interface Product {
   id: number;
   name: string;
-  sku: string;
+  sku: string | null;
   category: string;
   unit: string;
   quantity: number;
@@ -43,6 +43,7 @@ export default function CreateReturnPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [selectedProductIndex, setSelectedProductIndex] = useState(0);
+  const productsRequestIdRef = useRef(0);
   
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
   const [customerName, setCustomerName] = useState("");
@@ -52,37 +53,33 @@ export default function CreateReturnPage() {
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
-    if (token) {
-      fetchProducts();
-    }
-  }, [token]);
-
-  useEffect(() => {
     if (!searchQuery.trim()) {
       setFilteredProducts([]);
       setShowAutocomplete(false);
       return;
     }
 
-    const query = searchQuery.toLowerCase();
-    const filtered = products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(query) ||
-        p.sku.toLowerCase().includes(query) ||
-        p.category.toLowerCase().includes(query)
-    );
+    const timer = setTimeout(() => {
+      fetchProducts(searchQuery.trim());
+    }, 300);
 
-    setFilteredProducts(filtered);
-    setShowAutocomplete(filtered.length > 0);
-    setSelectedProductIndex(0);
-  }, [searchQuery, products]);
+    return () => clearTimeout(timer);
+  }, [searchQuery, token]);
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (searchTerm: string) => {
+    const requestId = ++productsRequestIdRef.current;
     try {
       const response = await api.get("/products/", {
         headers: { Authorization: `Bearer ${token}` },
+        params: { search: searchTerm, limit: 500 },
       });
+      if (requestId !== productsRequestIdRef.current) {
+        return;
+      }
       setProducts(response.data);
+      setFilteredProducts(response.data);
+      setShowAutocomplete(response.data.length > 0);
+      setSelectedProductIndex(0);
     } catch (error) {
       console.error("Failed to fetch products:", error);
     }

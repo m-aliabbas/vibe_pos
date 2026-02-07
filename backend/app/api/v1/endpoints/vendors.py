@@ -1,10 +1,10 @@
-from typing import Any, List
+from typing import Any, List, Optional
 import csv
 import io
 import requests
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, File, UploadFile, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from app.api import deps
 from app.models.vendor import Vendor
 from app.models.purchase import Purchase, PurchaseStatus
@@ -12,13 +12,75 @@ from app.schemas import vendor as vendor_schema
 
 router = APIRouter()
 
+
+def normalize_phone(phone: str) -> str:
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if digits.startswith("92") and len(digits) > 10:
+        digits = digits[2:]
+    if digits.startswith("0") and len(digits) > 10:
+        digits = digits[1:]
+    if len(digits) > 10:
+        digits = digits[-10:]
+    return digits
+
+
+def build_phone_variants(phone: str) -> List[str]:
+    base = normalize_phone(phone)
+    if not base:
+        return []
+    return [
+        base,
+        f"0{base}",
+        f"92{base}",
+        f"+92{base}",
+    ]
+
 @router.get("/", response_model=List[vendor_schema.Vendor])
 def read_vendors(
     db: Session = Depends(deps.get_db),
     skip: int = 0,
     limit: int = 100,
+    search: Optional[str] = Query(None, description="Search by name, contact, email, or phone"),
 ) -> Any:
-    return db.query(Vendor).offset(skip).limit(limit).all()
+    query = db.query(Vendor)
+    if search:
+        search_term = f"%{search}%"
+        phone_variants = build_phone_variants(search)
+        phone_filters = [Vendor.phone.ilike(f"%{variant}%") for variant in phone_variants]
+        query = query.filter(
+            or_(
+                Vendor.name.ilike(search_term),
+                Vendor.contact_name.ilike(search_term),
+                Vendor.email.ilike(search_term),
+                Vendor.phone.ilike(search_term),
+                *phone_filters,
+            )
+        )
+
+    return query.offset(skip).limit(limit).all()
+
+
+@router.get("/count")
+def count_vendors(
+    db: Session = Depends(deps.get_db),
+    search: Optional[str] = Query(None, description="Search by name, contact, email, or phone"),
+) -> Any:
+    query = db.query(Vendor)
+    if search:
+        search_term = f"%{search}%"
+        phone_variants = build_phone_variants(search)
+        phone_filters = [Vendor.phone.ilike(f"%{variant}%") for variant in phone_variants]
+        query = query.filter(
+            or_(
+                Vendor.name.ilike(search_term),
+                Vendor.contact_name.ilike(search_term),
+                Vendor.email.ilike(search_term),
+                Vendor.phone.ilike(search_term),
+                *phone_filters,
+            )
+        )
+
+    return {"total": query.count()}
 
 @router.post("/", response_model=vendor_schema.Vendor)
 def create_vendor(
@@ -33,7 +95,11 @@ def create_vendor(
     if vendor_in.opening_balance is not None and vendor_in.opening_balance < 0:
         raise HTTPException(status_code=400, detail="Opening balance must be greater than or equal to 0")
     
-    vendor = Vendor(**vendor_in.dict())
+    vendor_data = vendor_in.dict()
+    if vendor_data.get("phone"):
+        vendor_data["phone"] = normalize_phone(vendor_data["phone"])
+
+    vendor = Vendor(**vendor_data)
     db.add(vendor)
     db.commit()
     db.refresh(vendor)
@@ -91,11 +157,12 @@ async def bulk_import_vendors(
                 skipped += 1
                 continue
 
+            raw_phone = (row.get("phone") or "").strip() or None
             vendor = Vendor(
                 name=name,
                 contact_name=(row.get("contact_name") or "").strip() or None,
                 email=(row.get("email") or "").strip() or None,
-                phone=(row.get("phone") or "").strip() or None,
+                phone=normalize_phone(raw_phone) if raw_phone else None,
                 address=(row.get("address") or "").strip() or None,
                 opening_balance=opening_balance,
             )
@@ -138,6 +205,8 @@ def update_vendor(
         raise HTTPException(status_code=404, detail="Vendor not found")
     
     for field, value in vendor_in.dict(exclude_unset=True).items():
+        if field == "phone" and value:
+            value = normalize_phone(value)
         setattr(vendor, field, value)
     
     db.add(vendor)

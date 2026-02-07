@@ -102,7 +102,7 @@ const InventoryReports: React.FC = () => {
     { 
       key: 'selling_price', 
       label: 'Price',
-      render: (value: number) => `₹${value?.toFixed(2)}`
+      render: (value: number) => `rs ${value?.toFixed(2)}`
     }
   ];
 

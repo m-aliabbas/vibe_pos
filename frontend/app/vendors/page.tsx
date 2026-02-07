@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,11 @@ export default function VendorsPage() {
     const [bulkFile, setBulkFile] = useState<File | null>(null);
     const [bulkUploading, setBulkUploading] = useState(false);
     const [bulkResult, setBulkResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+    const [search, setSearch] = useState('');
+    const [page, setPage] = useState(1);
+    const [pageSize] = useState(100);
+    const [totalCount, setTotalCount] = useState(0);
+    const fetchRequestIdRef = useRef(0);
 
     // Form State
     const [name, setName] = useState('');
@@ -48,17 +53,44 @@ export default function VendorsPage() {
     const [openingBalance, setOpeningBalance] = useState(0);
 
     useEffect(() => {
-        fetchVendors();
-    }, []);
+        const timer = setTimeout(() => {
+            fetchVendors();
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [search, page]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [search]);
 
     const fetchVendors = async () => {
+        const requestId = ++fetchRequestIdRef.current;
         try {
-            const { data } = await api.get('/vendors/');
-            setVendors(data);
+            setLoading(true);
+            const [{ data: vendorsData }, { data: countData }] = await Promise.all([
+                api.get('/vendors/', {
+                    params: {
+                        search: search || undefined,
+                        skip: (page - 1) * pageSize,
+                        limit: pageSize,
+                    }
+                }),
+                api.get('/vendors/count', {
+                    params: { search: search || undefined }
+                })
+            ]);
+            if (requestId !== fetchRequestIdRef.current) {
+                return;
+            }
+            setVendors(vendorsData);
+            setTotalCount(countData?.total || 0);
         } catch (error) {
             console.error("Failed to fetch vendors", error);
         } finally {
-            setLoading(false);
+            if (requestId === fetchRequestIdRef.current) {
+                setLoading(false);
+            }
         }
     };
 
@@ -156,7 +188,7 @@ export default function VendorsPage() {
                                         onChange={e => setBulkFile(e.target.files?.[0] || null)}
                                     />
                                     <p className="text-xs text-muted-foreground">
-                                        Opening balance must be $\geq 0$.
+                                        Opening balance must be rs &gt;= 0.
                                     </p>
                                 </div>
                                 {bulkResult && (
@@ -244,6 +276,14 @@ export default function VendorsPage() {
                 </div>
             </div>
 
+            <div className="bg-white rounded-lg border shadow-sm p-4">
+                <Input
+                    placeholder="Search vendors by name, contact, email, or phone..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {vendors.map((vendor) => (
                     <Card key={vendor.id} onClick={() => router.push(`/vendors/${vendor.id}`)} className="hover:shadow-md transition-shadow group cursor-pointer border-l-4 border-l-transparent hover:border-l-indigo-500">
@@ -276,6 +316,32 @@ export default function VendorsPage() {
                         <p className="text-gray-500">No vendors found. Add your first supplier to get started.</p>
                     </div>
                 )}
+            </div>
+
+            <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500">
+                    {totalCount === 0
+                        ? "Showing 0 of 0"
+                        : `Showing ${(page - 1) * pageSize + 1}-${(page - 1) * pageSize + vendors.length} of ${totalCount}`}
+                </p>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page === 1 || loading}
+                    >
+                        Previous
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPage((p) => p + 1)}
+                        disabled={page * pageSize >= totalCount || loading}
+                    >
+                        Next
+                    </Button>
+                </div>
             </div>
         </div>
     );

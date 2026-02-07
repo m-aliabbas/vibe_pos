@@ -16,6 +16,29 @@ from app.schemas import customer as customer_schema
 router = APIRouter()
 
 
+def normalize_phone(phone: str) -> str:
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if digits.startswith("92") and len(digits) > 10:
+        digits = digits[2:]
+    if digits.startswith("0") and len(digits) > 10:
+        digits = digits[1:]
+    if len(digits) > 10:
+        digits = digits[-10:]
+    return digits
+
+
+def build_phone_variants(phone: str) -> List[str]:
+    base = normalize_phone(phone)
+    if not base:
+        return []
+    return [
+        base,
+        f"0{base}",
+        f"92{base}",
+        f"+92{base}",
+    ]
+
+
 def generate_customer_id(db: Session) -> str:
     """Generate a unique human-readable customer ID (e.g., CUST001)"""
     # Find the highest numeric suffix
@@ -48,9 +71,12 @@ def read_customers(
     
     if search:
         search_term = f"%{search}%"
+        phone_variants = build_phone_variants(search)
+        phone_filters = [Customer.phone.ilike(f"%{variant}%") for variant in phone_variants]
         query = query.filter(
             or_(
                 Customer.phone.ilike(search_term),
+                *phone_filters,
                 Customer.customer_id.ilike(search_term),
                 Customer.name.ilike(search_term),
             )
@@ -58,6 +84,30 @@ def read_customers(
     
     customers = query.order_by(Customer.created_at.desc()).offset(skip).limit(limit).all()
     return customers
+
+
+@router.get("/count")
+def count_customers(
+    db: Session = Depends(deps.get_db),
+    search: Optional[str] = Query(None, description="Search by phone, customer_id, or name"),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    query = db.query(Customer)
+
+    if search:
+        search_term = f"%{search}%"
+        phone_variants = build_phone_variants(search)
+        phone_filters = [Customer.phone.ilike(f"%{variant}%") for variant in phone_variants]
+        query = query.filter(
+            or_(
+                Customer.phone.ilike(search_term),
+                *phone_filters,
+                Customer.customer_id.ilike(search_term),
+                Customer.name.ilike(search_term),
+            )
+        )
+
+    return {"total": query.count()}
 
 
 @router.get("/search", response_model=Optional[customer_schema.CustomerSimple])
@@ -77,11 +127,11 @@ def search_customer(
     query = db.query(Customer)
     
     if phone:
-        # Clean phone number (remove spaces, dashes)
-        clean_phone = phone.strip().replace(" ", "").replace("-", "")
-        customer = query.filter(Customer.phone == clean_phone).first()
-        if customer:
-            return customer
+        phone_variants = build_phone_variants(phone)
+        for variant in phone_variants:
+            customer = query.filter(Customer.phone == variant).first()
+            if customer:
+                return customer
     
     if customer_id:
         customer = query.filter(Customer.customer_id == customer_id.strip().upper()).first()
@@ -121,7 +171,7 @@ def create_customer(
     
     # Check for duplicate phone
     if customer_in.phone:
-        clean_phone = customer_in.phone.strip().replace(" ", "").replace("-", "")
+        clean_phone = normalize_phone(customer_in.phone)
         existing = db.query(Customer).filter(Customer.phone == clean_phone).first()
         if existing:
             raise HTTPException(
@@ -145,7 +195,7 @@ def create_customer(
     
     customer = Customer(
         customer_id=final_customer_id,
-        phone=customer_in.phone.strip().replace(" ", "").replace("-", "") if customer_in.phone else None,
+        phone=normalize_phone(customer_in.phone) if customer_in.phone else None,
         email=customer_in.email,
         name=customer_in.name,
         address=customer_in.address,
@@ -205,7 +255,7 @@ async def bulk_import_customers(
                 errors.append(f"Row {row_index}: opening_balance must be >= 0")
                 continue
 
-            clean_phone = phone_raw.replace(" ", "").replace("-", "") if phone_raw else None
+            clean_phone = normalize_phone(phone_raw) if phone_raw else None
 
             if clean_phone:
                 existing = db.query(Customer).filter(Customer.phone == clean_phone).first()
@@ -265,7 +315,7 @@ def find_or_create_customer(
     
     # Try to find by phone first
     if customer_in.phone:
-        clean_phone = customer_in.phone.strip().replace(" ", "").replace("-", "")
+        clean_phone = normalize_phone(customer_in.phone)
         existing = db.query(Customer).filter(Customer.phone == clean_phone).first()
         if existing:
             return existing
@@ -283,7 +333,7 @@ def find_or_create_customer(
     
     customer = Customer(
         customer_id=final_customer_id,
-        phone=customer_in.phone.strip().replace(" ", "").replace("-", "") if customer_in.phone else None,
+        phone=normalize_phone(customer_in.phone) if customer_in.phone else None,
         email=customer_in.email,
         name=customer_in.name,
         address=customer_in.address,
@@ -330,7 +380,7 @@ def update_customer(
     
     # Check for duplicate phone if changing
     if customer_in.phone and customer_in.phone != customer.phone:
-        clean_phone = customer_in.phone.strip().replace(" ", "").replace("-", "")
+        clean_phone = normalize_phone(customer_in.phone)
         existing = db.query(Customer).filter(
             Customer.phone == clean_phone,
             Customer.id != id

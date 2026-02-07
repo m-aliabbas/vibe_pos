@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     # Database
     # Data Directory
     DATA_DIR: str = "data"
+    # WhatsApp
+    WHATSAPP_PHONE: Optional[str] = None
 
     @property
     def DATABASE_URL(self) -> str:
