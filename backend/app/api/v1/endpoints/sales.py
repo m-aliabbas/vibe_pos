@@ -1,4 +1,5 @@
 from typing import List, Optional
+import os
 import re
 import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
@@ -27,6 +28,254 @@ router = APIRouter()
 # Invoice folder
 INVOICE_DIR = Path.home() / "Downloads" / "pos_invoices"
 INVOICE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _load_system_font(size: int, bold: bool = False):
+    """
+    Load a system font that is commonly available on Windows/macOS/Linux.
+    Falls back to PIL's default bitmap font if none found.
+    """
+    from PIL import ImageFont
+
+    windows_fonts = [
+        "C:/Windows/Fonts/segoeuib.ttf" if bold else "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/tahomabd.ttf" if bold else "C:/Windows/Fonts/tahoma.ttf",
+    ]
+    mac_fonts = [
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/SFNS.ttf",
+        "/Library/Fonts/Arial.ttf",
+        "/Library/Fonts/Helvetica.ttf",
+    ]
+    linux_fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ]
+
+    for font_path in [*windows_fonts, *mac_fonts, *linux_fonts]:
+        if font_path and os.path.exists(font_path):
+            try:
+                return ImageFont.truetype(font_path, size)
+            except Exception:
+                continue
+
+    return ImageFont.load_default()
+
+
+def _get_store_details() -> tuple[str, str]:
+    store_name = os.getenv("STORE_NAME", "MyStore").strip() or "MyStore"
+    store_address = os.getenv("STORE_ADDRESS", "Gulberg Islamabad").strip() or "Gulberg Islamabad"
+    return store_name, store_address
+
+
+def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
+    """Render an invoice image with consistent design across OSes."""
+    from PIL import ImageDraw
+
+    mm_to_px = dpi / 25.4
+
+    def mm(mm_val: float) -> int:
+        return int(mm_val * mm_to_px)
+
+    # 80mm thermal receipt width
+    width = int(80 * mm_to_px)
+    base_height = int(135 * mm_to_px)
+    item_height = len(sale.items) * int(22 * mm_to_px)
+    total_height = base_height + item_height
+
+    img = Image.new("RGB", (width, total_height), color="white")
+    draw = ImageDraw.Draw(img)
+
+    font_xl = _load_system_font(mm(5), bold=True)
+    font_lg = _load_system_font(mm(4), bold=True)
+    font_md = _load_system_font(mm(3.2), bold=False)
+    font_sm = _load_system_font(mm(2.6), bold=False)
+    font_sm_bold = _load_system_font(mm(2.6), bold=True)
+
+    y = 0
+
+    store_name, store_address = _get_store_details()
+
+    # Header bar
+    header_height = mm(10)
+    draw.rectangle([(0, y), (width, y + header_height)], fill="black")
+    bbox = draw.textbbox((0, 0), store_name, font=font_lg)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, y + mm(2)), store_name, fill="white", font=font_lg)
+    y += header_height + mm(2)
+
+    for line in [store_address]:
+        bbox = draw.textbbox((0, 0), line, font=font_sm)
+        text_width = bbox[2] - bbox[0]
+        draw.text(((width - text_width) // 2, y), line, fill="black", font=font_sm)
+        y += mm(4)
+
+    y += mm(2)
+    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    y += mm(4)
+
+    invoice_text = "INVOICE"
+    bbox = draw.textbbox((0, 0), invoice_text, font=font_xl)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, y), invoice_text, fill="black", font=font_xl)
+    y += mm(7)
+
+    invoice_num = f"#{str(sale.id).zfill(6)}"
+    bbox = draw.textbbox((0, 0), invoice_num, font=font_md)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, y), invoice_num, fill="black", font=font_md)
+    y += mm(5)
+
+    date_text = sale.created_at.strftime("%Y-%m-%d %H:%M")
+    bbox = draw.textbbox((0, 0), date_text, font=font_sm)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, y), date_text, fill="black", font=font_sm)
+    y += mm(4)
+
+    cashier_text = f"Cashier: {sale.user.username if sale.user else 'N/A'}"
+    bbox = draw.textbbox((0, 0), cashier_text, font=font_sm)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, y), cashier_text, fill="black", font=font_sm)
+    y += mm(5)
+
+    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    y += mm(4)
+
+    draw.text((mm(3), y), "CUSTOMER", fill="black", font=font_sm_bold)
+    y += mm(4)
+    customer_name = sale.customer_name or "Walk-in Customer"
+    draw.text((mm(3), y), customer_name[:40], fill="black", font=font_md)
+    y += mm(6)
+
+    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    y += mm(4)
+
+    draw.text((mm(3), y), "ITEMS", fill="black", font=font_sm_bold)
+    y += mm(5)
+
+    total_item_discount = 0
+    for item in sale.items:
+        if hasattr(item, "item_discount") and item.item_discount:
+            total_item_discount += item.item_discount
+
+    for item in sale.items:
+        product_name = item.product.name if item.product else f"Product #{item.product_id}"
+        draw.text((mm(3), y), product_name[:34], fill="black", font=font_md)
+        y += mm(4)
+
+        if item.variation:
+            attrs = ", ".join([f"{k}: {v}" for k, v in item.variation.attributes.items()])
+            draw.text((mm(4), y), attrs[:36], fill="#5c4dff", font=font_sm)
+            y += mm(4)
+
+        qty_price = f"{item.quantity} {item.unit} x ₹{item.unit_price:.2f}"
+        draw.text((mm(4), y), qty_price, fill="black", font=font_sm)
+        y += mm(4)
+
+        original_price = item.unit_price * item.quantity
+        if item.item_discount and item.item_discount > 0:
+            original_text = f"₹{original_price:.2f}"
+            bbox = draw.textbbox((0, 0), original_text, font=font_sm)
+            text_width = bbox[2] - bbox[0]
+            x_pos = width - text_width - mm(3)
+            draw.text((x_pos, y), original_text, fill="gray", font=font_sm)
+            draw.line([(x_pos, y + mm(1.6)), (x_pos + text_width, y + mm(1.6))], fill="gray", width=1)
+            y += mm(4)
+
+            discount_text = f"Discount: -₹{item.item_discount:.2f}"
+            draw.text((mm(4), y), discount_text, fill="#cc0000", font=font_sm)
+            y += mm(4)
+
+        final_price = f"₹{item.total_price:.2f}"
+        bbox = draw.textbbox((0, 0), final_price, font=font_sm_bold)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), final_price, fill="#0a7d2c", font=font_sm_bold)
+        y += mm(6)
+
+    y += mm(1)
+    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    y += mm(4)
+
+    draw.text((mm(3), y), "Subtotal", fill="black", font=font_md)
+    subtotal_text = f"₹{sale.subtotal:.2f}"
+    bbox = draw.textbbox((0, 0), subtotal_text, font=font_md)
+    text_width = bbox[2] - bbox[0]
+    draw.text((width - text_width - mm(3), y), subtotal_text, fill="black", font=font_md)
+    y += mm(5)
+
+    total_discount = sale.discount + total_item_discount
+    if total_discount > 0:
+        draw.text((mm(3), y), "Discount", fill="black", font=font_md)
+        discount_text = f"-₹{total_discount:.2f}"
+        bbox = draw.textbbox((0, 0), discount_text, font=font_md)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), discount_text, fill="#cc0000", font=font_md)
+        y += mm(5)
+
+    if sale.tax > 0:
+        draw.text((mm(3), y), "Tax", fill="black", font=font_md)
+        tax_text = f"₹{sale.tax:.2f}"
+        bbox = draw.textbbox((0, 0), tax_text, font=font_md)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), tax_text, fill="black", font=font_md)
+        y += mm(5)
+
+    if sale.delivery_charges > 0:
+        draw.text((mm(3), y), "Delivery", fill="black", font=font_md)
+        delivery_text = f"₹{sale.delivery_charges:.2f}"
+        bbox = draw.textbbox((0, 0), delivery_text, font=font_md)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), delivery_text, fill="black", font=font_md)
+        y += mm(5)
+
+    draw.text((mm(3), y), "TOTAL", fill="black", font=font_lg)
+    total_text = f"₹{sale.total:.2f}"
+    bbox = draw.textbbox((0, 0), total_text, font=font_lg)
+    text_width = bbox[2] - bbox[0]
+    draw.text((width - text_width - mm(3), y), total_text, fill="black", font=font_lg)
+    y += mm(7)
+
+    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    y += mm(4)
+
+    draw.text((mm(3), y), "Amount Paid", fill="black", font=font_md)
+    paid_text = f"₹{sale.amount_paid:.2f}"
+    bbox = draw.textbbox((0, 0), paid_text, font=font_md)
+    text_width = bbox[2] - bbox[0]
+    draw.text((width - text_width - mm(3), y), paid_text, fill="black", font=font_md)
+    y += mm(5)
+
+    if sale.amount_due > 0:
+        draw.text((mm(3), y), "Outstanding (Udhar)", fill="black", font=font_sm_bold)
+        due_text = f"₹{sale.amount_due:.2f}"
+        bbox = draw.textbbox((0, 0), due_text, font=font_sm_bold)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), due_text, fill="#cc0000", font=font_sm_bold)
+        y += mm(5)
+
+    if sale.change_amount > 0:
+        draw.text((mm(3), y), "Change", fill="black", font=font_md)
+        change_text = f"₹{sale.change_amount:.2f}"
+        bbox = draw.textbbox((0, 0), change_text, font=font_md)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), change_text, fill="#0a7d2c", font=font_md)
+        y += mm(5)
+
+    payment_text = f"Payment: {sale.payment_method}"
+    draw.text((mm(3), y), payment_text, fill="black", font=font_sm)
+    y += mm(7)
+
+    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    y += mm(4)
+
+    footer_text = "VibePOS (by vibeexe.com)"
+    bbox = draw.textbbox((0, 0), footer_text, font=font_sm)
+    text_width = bbox[2] - bbox[0]
+    draw.text(((width - text_width) // 2, y), footer_text, fill="gray", font=font_sm)
+
+    img = img.crop((0, 0, width, y + mm(10)))
+    img.save(file_path, "PNG", quality=95)
 
 
 def parse_json_field(value):
@@ -65,7 +314,6 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
     """
     Background task to generate invoice image and send via WhatsApp
     """
-    from PIL import ImageDraw, ImageFont
     from app.db.session import SessionLocal
     
     # Create new DB session for background task
@@ -81,239 +329,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"invoice_{timestamp}.png"
         file_path = INVOICE_DIR / filename
-        
-        # Create thermal receipt with high DPI for better quality
-        # 80mm width at 300 DPI = ~944 pixels (much higher quality than 96 DPI)
-        dpi = 300
-        mm_to_px = dpi / 25.4  # Convert mm to pixels
-        width = int(80 * mm_to_px)  # 80mm thermal receipt width
-        
-        # Calculate height based on items
-        base_height = int(120 * mm_to_px)  # ~120mm base
-        item_height = len(sale.items) * int(20 * mm_to_px)  # ~20mm per item
-        total_height = base_height + item_height
-        
-        # Create white image
-        img = Image.new('RGB', (width, total_height), color='white')
-        draw = ImageDraw.Draw(img)
-        
-        # Try to use a font, fallback to default
-        try:
-            # Increase font sizes proportionally for high DPI
-            font_bold = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 44)
-            font_normal = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 34)
-            font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 28)
-        except:
-            font_bold = ImageFont.load_default()
-            font_normal = ImageFont.load_default()
-            font_small = ImageFont.load_default()
-        
-        y = int(5 * mm_to_px)
-        
-        # Helper function for mm to px conversion
-        def mm(mm_val):
-            return int(mm_val * mm_to_px)
-        
-        # Store Header
-        store_name = "The Oil Stop"
-        bbox = draw.textbbox((0, 0), store_name, font=font_bold)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), store_name, fill='black', font=font_bold)
-        y += mm(7)
-        
-        for line in ["Near Rehmanabad Metro", "Rawalpindi, Pakistan", "Phone: +923025114945"]:
-            bbox = draw.textbbox((0, 0), line, font=font_small)
-            text_width = bbox[2] - bbox[0]
-            draw.text(((width - text_width) // 2, y), line, fill='black', font=font_small)
-            y += mm(4.5)
-        
-        y += mm(3)
-        draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=int(mm(0.5)))
-        y += mm(4)
-        
-        # Invoice Header
-        invoice_text = "INVOICE"
-        bbox = draw.textbbox((0, 0), invoice_text, font=font_bold)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), invoice_text, fill='black', font=font_bold)
-        y += mm(6)
-        
-        invoice_num = f"#{str(sale.id).zfill(6)}"
-        bbox = draw.textbbox((0, 0), invoice_num, font=font_normal)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), invoice_num, fill='black', font=font_normal)
-        y += mm(5)
-        
-        date_text = sale.created_at.strftime("%Y-%m-%d %H:%M")
-        bbox = draw.textbbox((0, 0), date_text, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), date_text, fill='black', font=font_small)
-        y += mm(4)
-        
-        cashier_text = f"Cashier: {sale.user.username if sale.user else 'N/A'}"
-        bbox = draw.textbbox((0, 0), cashier_text, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), cashier_text, fill='black', font=font_small)
-        y += mm(5)
-        
-        draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=1)
-        y += mm(4)
-        
-        # Customer
-        draw.text((mm(3), y), "CUSTOMER:", fill='black', font=font_bold)
-        y += mm(5)
-        customer_name = sale.customer_name or "Walk-in Customer"
-        draw.text((mm(3), y), customer_name[:35], fill='black', font=font_normal)
-        y += mm(6)
-        
-        draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=1)
-        y += mm(4)
-        
-        # Items
-        draw.text((mm(3), y), "ITEMS:", fill='black', font=font_bold)
-        y += mm(6)
-        
-        # Calculate total item discounts
-        total_item_discount = 0
-        for item in sale.items:
-            # Assuming item has an item_discount field, otherwise calculate from price difference
-            if hasattr(item, 'item_discount') and item.item_discount:
-                total_item_discount += item.item_discount
-        
-        for item in sale.items:
-            product_name = item.product.name if item.product else f"Product #{item.product_id}"
-            draw.text((mm(3), y), product_name[:30], fill='black', font=font_normal)
-            y += mm(4.5)
-            
-            if item.variation:
-                attrs = ", ".join([f"{k}: {v}" for k, v in item.variation.attributes.items()])
-                draw.text((mm(4), y), attrs[:30], fill='purple', font=font_small)
-                y += mm(4)
-            
-            # Calculate original price (before discount)
-            original_price = item.unit_price * item.quantity
-            
-            # Show quantity and unit price
-            qty_price = f"{item.quantity} {item.unit} x ₹{item.unit_price:.2f}"
-            draw.text((mm(4), y), qty_price, fill='black', font=font_small)
-            y += mm(4)
-            
-            # If item has discount, show original price (strikethrough effect) and discount
-            if item.item_discount and item.item_discount > 0:
-                # Original price (before discount) - shown with strikethrough
-                original_text = f"₹{original_price:.2f}"
-                bbox = draw.textbbox((0, 0), original_text, font=font_small)
-                text_width = bbox[2] - bbox[0]
-                x_pos = width - text_width - mm(3)
-                draw.text((x_pos, y), original_text, fill='gray', font=font_small)
-                # Draw strikethrough line
-                draw.line([(x_pos, y + mm(2)), (x_pos + text_width, y + mm(2))], fill='gray', width=1)
-                y += mm(4)
-                
-                # Discount amount
-                discount_text = f"Discount: -₹{item.item_discount:.2f}"
-                draw.text((mm(4), y), discount_text, fill='red', font=font_small)
-                y += mm(4)
-            
-            # Final price (after discount)
-            final_price = f"₹{item.total_price:.2f}"
-            bbox = draw.textbbox((0, 0), final_price, font=font_normal)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - mm(3), y), final_price, fill='darkgreen', font=font_bold)
-            y += mm(6)
-        
-        y += mm(1.5)
-        draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=int(mm(0.7)))
-        y += mm(4)
-        
-        # Totals
-        draw.text((mm(3), y), "Subtotal:", fill='black', font=font_normal)
-        subtotal_text = f"₹{sale.subtotal:.2f}"
-        bbox = draw.textbbox((0, 0), subtotal_text, font=font_normal)
-        text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - mm(3), y), subtotal_text, fill='black', font=font_normal)
-        y += mm(5)
-        
-        # Combine global discount with item discounts
-        total_discount = sale.discount + total_item_discount
-        if total_discount > 0:
-            draw.text((mm(3), y), "Discount:", fill='black', font=font_normal)
-            discount_text = f"-₹{total_discount:.2f}"
-            bbox = draw.textbbox((0, 0), discount_text, font=font_normal)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - mm(3), y), discount_text, fill='red', font=font_normal)
-            y += mm(5)
-        
-        if sale.tax > 0:
-            draw.text((mm(3), y), "Tax:", fill='black', font=font_normal)
-            tax_text = f"₹{sale.tax:.2f}"
-            bbox = draw.textbbox((0, 0), tax_text, font=font_normal)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - mm(3), y), tax_text, fill='black', font=font_normal)
-            y += mm(5)
-        
-        if sale.delivery_charges > 0:
-            draw.text((mm(3), y), "Delivery Charges:", fill='black', font=font_normal)
-            delivery_text = f"₹{sale.delivery_charges:.2f}"
-            bbox = draw.textbbox((0, 0), delivery_text, font=font_normal)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - mm(3), y), delivery_text, fill='black', font=font_normal)
-            y += mm(5)
-        
-        draw.text((mm(3), y), "TOTAL:", fill='black', font=font_bold)
-        total_text = f"₹{sale.total:.2f}"
-        bbox = draw.textbbox((0, 0), total_text, font=font_bold)
-        text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - mm(3), y), total_text, fill='black', font=font_bold)
-        y += mm(6)
-        
-        # Payment breakdown
-        draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=1)
-        y += mm(4)
-        
-        # Amount paid
-        draw.text((mm(3), y), "Amount Paid:", fill='black', font=font_normal)
-        paid_text = f"₹{sale.amount_paid:.2f}"
-        bbox = draw.textbbox((0, 0), paid_text, font=font_normal)
-        text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - mm(3), y), paid_text, fill='black', font=font_normal)
-        y += mm(5)
-        
-        # Outstanding balance (Udhar) - only show if there's a balance
-        if sale.amount_due > 0:
-            draw.text((mm(3), y), "Outstanding (Udhar):", fill='black', font=font_bold)
-            due_text = f"₹{sale.amount_due:.2f}"
-            bbox = draw.textbbox((0, 0), due_text, font=font_bold)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - mm(3), y), due_text, fill='red', font=font_bold)
-            y += mm(5)
-        
-        # Change - only show if there's change to return
-        if sale.change_amount > 0:
-            draw.text((mm(3), y), "Change:", fill='black', font=font_normal)
-            change_text = f"₹{sale.change_amount:.2f}"
-            bbox = draw.textbbox((0, 0), change_text, font=font_normal)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - mm(3), y), change_text, fill='darkgreen', font=font_normal)
-            y += mm(5)
-        
-        y += mm(2)
-        payment_text = f"Payment: {sale.payment_method}"
-        draw.text((mm(3), y), payment_text, fill='black', font=font_normal)
-        y += mm(7)
-        
-        draw.line([(mm(3), y), (width-mm(3), y)], fill='black', width=1)
-        y += mm(4)
-        
-        footer_text = "Thank you for your business!"
-        bbox = draw.textbbox((0, 0), footer_text, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), footer_text, fill='gray', font=font_small)
-        
-        # Crop and save with high quality
-        img = img.crop((0, 0, width, y + mm(10)))
-        # Save at high quality
-        img.save(file_path, 'PNG', quality=95)
+        _render_invoice_image(sale, file_path, dpi=300)
         
         # Send to WhatsApp
         whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"
@@ -763,173 +779,11 @@ def send_invoice(
         raise HTTPException(status_code=400, detail="Invalid phone number")
     
     try:
-        from PIL import ImageDraw, ImageFont
-        
         # Generate invoice image
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"invoice_{timestamp}.png"
         file_path = INVOICE_DIR / filename
-        
-        # Create thermal receipt (80mm width = ~302 pixels at 96 DPI)
-        width = 302
-        # Calculate height based on items (approximate)
-        base_height = 400
-        item_height = len(sale.items) * 60
-        total_height = base_height + item_height
-        
-        # Create white image
-        img = Image.new('RGB', (width, total_height), color='white')
-        draw = ImageDraw.Draw(img)
-        
-        # Try to use a monospace font, fallback to default
-        try:
-            font_bold = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 14)
-            font_normal = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
-            font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 9)
-        except:
-            font_bold = ImageFont.load_default()
-            font_normal = ImageFont.load_default()
-            font_small = ImageFont.load_default()
-        
-        y = 10
-        
-        # Store Header
-        store_name = "The Oil Exchange"
-        bbox = draw.textbbox((0, 0), store_name, font=font_bold)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), store_name, fill='black', font=font_bold)
-        y += 25
-        
-        for line in ["Chandni Chowk.", "Rawalpindi, Talagang.", "Phone: +923025114945"]:
-            bbox = draw.textbbox((0, 0), line, font=font_small)
-            text_width = bbox[2] - bbox[0]
-            draw.text(((width - text_width) // 2, y), line, fill='black', font=font_small)
-            y += 15
-        
-        # Separator
-        y += 10
-        draw.line([(10, y), (width-10, y)], fill='black', width=2)
-        y += 15
-        
-        # Invoice Header
-        invoice_text = "The Oil Change Invoice"
-        bbox = draw.textbbox((0, 0), invoice_text, font=font_bold)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), invoice_text, fill='black', font=font_bold)
-        y += 20
-        
-        invoice_num = f"#{str(sale.id).zfill(6)}"
-        bbox = draw.textbbox((0, 0), invoice_num, font=font_normal)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), invoice_num, fill='black', font=font_normal)
-        y += 18
-        
-        date_text = sale.created_at.strftime("%Y-%m-%d %H:%M")
-        bbox = draw.textbbox((0, 0), date_text, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), date_text, fill='black', font=font_small)
-        y += 15
-        
-        cashier_text = f"Cashier: {sale.user.username if sale.user else 'N/A'}"
-        bbox = draw.textbbox((0, 0), cashier_text, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), cashier_text, fill='black', font=font_small)
-        y += 20
-        
-        # Separator
-        draw.line([(10, y), (width-10, y)], fill='black', width=1)
-        y += 15
-        
-        # Customer
-        draw.text((10, y), "CUSTOMER:", fill='black', font=font_bold)
-        y += 18
-        customer_name = sale.customer_name or "Walk-in Customer"
-        draw.text((10, y), customer_name[:35], fill='black', font=font_normal)
-        y += 20
-        
-        # Separator
-        draw.line([(10, y), (width-10, y)], fill='black', width=1)
-        y += 15
-        
-        # Items Header
-        draw.text((10, y), "ITEMS:", fill='black', font=font_bold)
-        y += 20
-        
-        # Items
-        for item in sale.items:
-            product_name = item.product.name if item.product else f"Product #{item.product_id}"
-            draw.text((10, y), product_name[:30], fill='black', font=font_normal)
-            y += 15
-            
-            if item.variation:
-                attrs = ", ".join([f"{k}: {v}" for k, v in item.variation.attributes.items()])
-                draw.text((15, y), attrs[:30], fill='purple', font=font_small)
-                y += 13
-            
-            qty_price = f"{item.quantity} {item.unit} x ₹{item.unit_price:.2f}"
-            total_price = f"₹{item.total_price:.2f}"
-            draw.text((15, y), qty_price, fill='black', font=font_small)
-            bbox = draw.textbbox((0, 0), total_price, font=font_small)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - 10, y), total_price, fill='black', font=font_normal)
-            y += 20
-        
-        # Separator
-        y += 5
-        draw.line([(10, y), (width-10, y)], fill='black', width=2)
-        y += 15
-        
-        # Totals
-        draw.text((10, y), "Subtotal:", fill='black', font=font_normal)
-        subtotal_text = f"₹{sale.subtotal:.2f}"
-        bbox = draw.textbbox((0, 0), subtotal_text, font=font_normal)
-        text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - 10, y), subtotal_text, fill='black', font=font_normal)
-        y += 18
-        
-        if sale.discount > 0:
-            draw.text((10, y), "Discount:", fill='black', font=font_normal)
-            discount_text = f"-₹{sale.discount:.2f}"
-            bbox = draw.textbbox((0, 0), discount_text, font=font_normal)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - 10, y), discount_text, fill='red', font=font_normal)
-            y += 18
-        
-        if sale.tax > 0:
-            draw.text((10, y), "Tax:", fill='black', font=font_normal)
-            tax_text = f"₹{sale.tax:.2f}"
-            bbox = draw.textbbox((0, 0), tax_text, font=font_normal)
-            text_width = bbox[2] - bbox[0]
-            draw.text((width - text_width - 10, y), tax_text, fill='black', font=font_normal)
-            y += 18
-        
-        draw.text((10, y), "TOTAL:", fill='black', font=font_bold)
-        total_text = f"₹{sale.total:.2f}"
-        bbox = draw.textbbox((0, 0), total_text, font=font_bold)
-        text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - 10, y), total_text, fill='black', font=font_bold)
-        y += 25
-        
-        # Payment method
-        payment_text = f"Payment: {sale.payment_method}"
-        draw.text((10, y), payment_text, fill='black', font=font_normal)
-        y += 25
-        
-        # Separator
-        draw.line([(10, y), (width-10, y)], fill='black', width=1)
-        y += 15
-        
-        # Footer
-        footer_text = "Thank you so much. Please visit again!"
-        bbox = draw.textbbox((0, 0), footer_text, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(((width - text_width) // 2, y), footer_text, fill='gray', font=font_small)
-        
-        # Crop to actual content
-        img = img.crop((0, 0, width, y + 30))
-        
-        # Save image
-        img.save(file_path, 'PNG')
+        _render_invoice_image(sale, file_path, dpi=300)
         
         # Send to WhatsApp API
         whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"

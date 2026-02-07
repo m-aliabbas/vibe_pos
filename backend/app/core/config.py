@@ -3,8 +3,12 @@ from typing import Optional
 from pathlib import Path
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "POS System"
+    PROJECT_NAME: str = "VibePOS"
     API_V1_STR: str = "/api/v1"
+
+    # Store branding
+    STORE_NAME: str = "MyStore"
+    STORE_ADDRESS: str = "Gulberg Islamabad"
     
     # Database
     # Data Directory

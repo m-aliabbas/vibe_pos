@@ -83,9 +83,9 @@ export function Navbar() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                  POS System
+                  VibePOS
                 </h1>
-                <p className="text-xs text-gray-500">Point of Sale</p>
+                <p className="text-xs text-gray-500">by vibe.exe</p>
               </div>
             </Link>
           </div>

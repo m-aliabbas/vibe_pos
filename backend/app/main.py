@@ -61,4 +61,4 @@ async def shutdown_event():
 
 @app.get("/")
 def root():
-    return {"message": "Welcome to POS System API"}
+    return {"message": "Welcome to VibePOS API"}

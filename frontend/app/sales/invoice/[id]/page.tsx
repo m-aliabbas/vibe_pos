@@ -311,10 +311,18 @@ export default function InvoicePage() {
               <h1 className="text-xl font-bold text-gray-900 mb-1">
                 {storeConfig.name}
               </h1>
-              <p className="text-xs text-gray-600">{storeConfig.address}</p>
-              <p className="text-xs text-gray-600">{storeConfig.city}</p>
-              <p className="text-xs text-gray-600">{storeConfig.phone}</p>
-              <p className="text-xs text-gray-600">{storeConfig.email}</p>
+              {storeConfig.address && (
+                <p className="text-xs text-gray-600">{storeConfig.address}</p>
+              )}
+              {storeConfig.city && (
+                <p className="text-xs text-gray-600">{storeConfig.city}</p>
+              )}
+              {storeConfig.phone && (
+                <p className="text-xs text-gray-600">{storeConfig.phone}</p>
+              )}
+              {storeConfig.email && (
+                <p className="text-xs text-gray-600">{storeConfig.email}</p>
+              )}
               {storeConfig.taxId && (
                 <p className="text-xs text-gray-600">Tax ID: {storeConfig.taxId}</p>
               )}
@@ -526,7 +534,7 @@ export default function InvoicePage() {
                 </p>
               )}
               <p className="text-xs text-gray-400 mt-2">
-                Powered by {storeConfig.name} POS
+                VibePOS (by vibeexe.com)
               </p>
             </div>
           </div>

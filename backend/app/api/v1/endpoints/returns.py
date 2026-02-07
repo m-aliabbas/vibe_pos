@@ -1,8 +1,11 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime
+from pathlib import Path
+from PIL import Image
+import requests
 
 from app.api import deps
 from app.models.pos_return import PosReturn, ReturnItem
@@ -13,6 +16,145 @@ from app.models.customer import Customer
 from app.schemas.return_schema import ReturnCreate, ReturnResponse, ReturnStatusUpdate
 from app.services import accounting as accounting_service
 import json
+
+RETURN_DIR = Path.home() / "Downloads" / "pos_invoices"
+RETURN_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def normalize_phone_number(phone: Optional[str]) -> Optional[str]:
+    if not phone:
+        return None
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if digits.startswith("0"):
+        digits = "92" + digits[1:]
+    elif len(digits) == 10:
+        digits = "92" + digits
+    return digits if digits else None
+
+
+def generate_and_send_return_invoice(return_id: int, phone_number: str):
+    from PIL import ImageDraw, ImageFont
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        ret = db.query(PosReturn).filter(PosReturn.id == return_id).first()
+        if not ret:
+            return
+
+        sale = db.query(Sale).filter(Sale.id == ret.sale_id).first() if ret.sale_id else None
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"return_{timestamp}.png"
+        file_path = RETURN_DIR / filename
+
+        dpi = 300
+        mm_to_px = dpi / 25.4
+        width = int(80 * mm_to_px)
+        base_height = int(110 * mm_to_px)
+        item_height = len(ret.items) * int(18 * mm_to_px)
+        total_height = base_height + item_height
+
+        img = Image.new('RGB', (width, total_height), color='white')
+        draw = ImageDraw.Draw(img)
+
+        try:
+            font_bold = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 42)
+            font_normal = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 32)
+            font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 26)
+        except:
+            font_bold = ImageFont.load_default()
+            font_normal = ImageFont.load_default()
+            font_small = ImageFont.load_default()
+
+        y = int(5 * mm_to_px)
+
+        def mm(mm_val):
+            return int(mm_val * mm_to_px)
+
+        store_name = "VibePOS"
+        bbox = draw.textbbox((0, 0), store_name, font=font_bold)
+        text_width = bbox[2] - bbox[0]
+        draw.text(((width - text_width) // 2, y), store_name, fill='black', font=font_bold)
+        y += mm(6)
+
+        for line in ["by vibe.exe", "Return Invoice"]:
+            bbox = draw.textbbox((0, 0), line, font=font_small)
+            text_width = bbox[2] - bbox[0]
+            draw.text(((width - text_width) // 2, y), line, fill='black', font=font_small)
+            y += mm(4)
+
+        y += mm(2)
+        draw.line([(mm(3), y), (width - mm(3), y)], fill='black', width=1)
+        y += mm(4)
+
+        return_num = f"Return #{str(ret.id).zfill(6)}"
+        bbox = draw.textbbox((0, 0), return_num, font=font_normal)
+        text_width = bbox[2] - bbox[0]
+        draw.text(((width - text_width) // 2, y), return_num, fill='black', font=font_normal)
+        y += mm(5)
+
+        if sale:
+            sale_text = f"Sale #{str(sale.id).zfill(6)}"
+            bbox = draw.textbbox((0, 0), sale_text, font=font_small)
+            text_width = bbox[2] - bbox[0]
+            draw.text(((width - text_width) // 2, y), sale_text, fill='black', font=font_small)
+            y += mm(4)
+
+        date_text = ret.created_at.strftime("%Y-%m-%d %H:%M")
+        bbox = draw.textbbox((0, 0), date_text, font=font_small)
+        text_width = bbox[2] - bbox[0]
+        draw.text(((width - text_width) // 2, y), date_text, fill='black', font=font_small)
+        y += mm(4)
+
+        draw.line([(mm(3), y), (width - mm(3), y)], fill='black', width=1)
+        y += mm(4)
+
+        draw.text((mm(3), y), "ITEMS:", fill='black', font=font_bold)
+        y += mm(6)
+
+        for item in ret.items:
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+            name = product.name if product else f"Product #{item.product_id}"
+            draw.text((mm(3), y), name[:30], fill='black', font=font_normal)
+            y += mm(4.5)
+            qty_line = f"{item.quantity_returned} {item.unit}"
+            draw.text((mm(4), y), qty_line, fill='black', font=font_small)
+            refund_text = f"₹{(item.total_refund or 0.0):.2f}"
+            bbox = draw.textbbox((0, 0), refund_text, font=font_small)
+            text_width = bbox[2] - bbox[0]
+            draw.text((width - text_width - mm(3), y), refund_text, fill='black', font=font_small)
+            y += mm(5)
+
+        y += mm(1)
+        draw.line([(mm(3), y), (width - mm(3), y)], fill='black', width=1)
+        y += mm(4)
+
+        draw.text((mm(3), y), "Refund:", fill='black', font=font_normal)
+        refund_total = f"₹{ret.refund_amount:.2f}"
+        bbox = draw.textbbox((0, 0), refund_total, font=font_normal)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), refund_total, fill='black', font=font_normal)
+
+        img.save(file_path, "PNG")
+
+        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send"
+        payload = {
+            "phone_number": phone_number,
+            "image_url": str(file_path.absolute()),
+            "caption": f"Return #{str(ret.id).zfill(6)} - Refund: ₹{ret.refund_amount:.2f}"
+        }
+
+        requests.post(
+            whatsapp_url,
+            json=payload,
+            headers={"accept": "application/json", "Content-Type": "application/json"},
+            timeout=30
+        )
+    except Exception as e:
+        print(f"Failed to send return invoice {return_id}: {str(e)}")
+    finally:
+        db.close()
 
 router = APIRouter()
 
@@ -29,6 +171,7 @@ def parse_json_field(value):
 
 @router.post("/", response_model=ReturnResponse)
 def create_return(
+    background_tasks: BackgroundTasks,
     return_in: ReturnCreate,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
@@ -41,11 +184,13 @@ def create_return(
     """
     
     # MODE 1: Sale-based return (legacy)
+    return_customer_phone = return_in.customer_phone
     if return_in.sale_id:
         # Validate sale exists
         sale = db.query(Sale).filter(Sale.id == return_in.sale_id).first()
         if not sale:
             raise HTTPException(status_code=404, detail="Sale not found")
+        return_customer_phone = sale.customer_phone or return_customer_phone
 
         # Pre-calc already returned quantities per sale_item
         returned_rows = (
@@ -250,6 +395,10 @@ def create_return(
         )
         db.commit()
         db.refresh(db_return)
+
+        normalized_phone = normalize_phone_number(return_customer_phone)
+        if normalized_phone and background_tasks is not None:
+            background_tasks.add_task(generate_and_send_return_invoice, db_return.id, normalized_phone)
         
         # Build response
         response = ReturnResponse(

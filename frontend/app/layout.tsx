@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "POS System - Point of Sale",
-  description: "Modern Point of Sale System for managing sales, inventory, and more",
+  title: "VibePOS - by vibe.exe",
+  description: "VibePOS by vibe.exe team",
 };
 
 import { AutoBreadcrumb } from "@/components/AutoBreadcrumb";

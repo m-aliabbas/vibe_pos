@@ -12,11 +12,11 @@ export interface StoreInfo {
 }
 
 export const storeConfig: StoreInfo = {
-  name: "My Store POS",
-  address: "123 Main Street",
-  city: "City, State 12345",
-  phone: "(555) 123-4567",
-  email: "info@mystore.com",
-  taxId: "TAX-123456",
-  website: "www.mystore.com"
+  name: process.env.NEXT_PUBLIC_STORE_NAME || "MyStore",
+  address: process.env.NEXT_PUBLIC_STORE_ADDRESS || "Gulberg Islamabad",
+  city: process.env.NEXT_PUBLIC_STORE_CITY || "",
+  phone: process.env.NEXT_PUBLIC_STORE_PHONE || "",
+  email: process.env.NEXT_PUBLIC_STORE_EMAIL || "",
+  taxId: process.env.NEXT_PUBLIC_STORE_TAX_ID || "",
+  website: process.env.NEXT_PUBLIC_STORE_WEBSITE || "vibeexe.com"
 };

@@ -1,5 +1,5 @@
 {
-  "productName": "POS System",
+  "productName": "VibePOS",
   "version": "0.1.0",
   "identifier": "com.pos.desktop",
   "build": {
@@ -21,13 +21,13 @@
     ],
     "copyright": "",
     "category": "Business",
-    "shortDescription": "Point of Sale System",
-    "longDescription": "A modern desktop POS system with inventory management, sales tracking, and invoicing"
+    "shortDescription": "VibePOS by vibe.exe",
+    "longDescription": "vibe.exe team"
   },
   "app": {
     "windows": [
       {
-        "title": "POS System",
+        "title": "VibePOS",
         "width": 1280,
         "height": 800,
         "resizable": true,
