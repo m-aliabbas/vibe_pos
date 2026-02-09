@@ -98,6 +98,7 @@ import os
 import sys
 from pathlib import Path
 import sqlite3
+import multiprocessing
 import uvicorn
 from dotenv import load_dotenv
 
@@ -225,6 +226,9 @@ def ensure_schema_ready() -> Path:
 
 
 if __name__ == "__main__":
+    if os.name == "nt":
+        multiprocessing.freeze_support()
+
     # 1) Load env first
     load_env_from_exe_dir()
 

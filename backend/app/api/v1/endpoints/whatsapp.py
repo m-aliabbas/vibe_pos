@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
@@ -43,6 +44,15 @@ def _default_connection_status():
         "message": "Not connected yet",
         "pairing_code": None,
     }
+
+
+def _use_multiprocessing() -> bool:
+    raw = (os.getenv("WHATSAPP_MULTIPROCESS") or "").strip().lower()
+    if raw in {"1", "true", "yes", "y"}:
+        return True
+    if raw in {"0", "false", "no", "n"}:
+        return False
+    return os.name != "nt"
 
 # Global state (will be replaced by Manager dict when worker starts)
 connection_status = _default_connection_status()
@@ -276,15 +286,25 @@ def _ensure_whatsapp_worker():
     if whatsapp_worker and whatsapp_worker.is_alive():
         return
 
-    whatsapp_manager = multiprocessing.Manager()
-    connection_status = whatsapp_manager.dict(_default_connection_status())
-    message_queue = whatsapp_manager.Queue()
+    if _use_multiprocessing():
+        whatsapp_manager = multiprocessing.Manager()
+        connection_status = whatsapp_manager.dict(_default_connection_status())
+        message_queue = whatsapp_manager.Queue()
 
-    whatsapp_worker = multiprocessing.Process(
-        target=run_whatsapp_worker,
-        args=(connection_status, message_queue),
-        daemon=True,
-    )
+        whatsapp_worker = multiprocessing.Process(
+            target=run_whatsapp_worker,
+            args=(connection_status, message_queue),
+            daemon=True,
+        )
+    else:
+        whatsapp_manager = None
+        connection_status = _default_connection_status()
+        message_queue = queue.Queue()
+        whatsapp_worker = threading.Thread(
+            target=run_whatsapp_worker,
+            args=(connection_status, message_queue),
+            daemon=True,
+        )
     whatsapp_worker.start()
 
 
