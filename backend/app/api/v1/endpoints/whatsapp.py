@@ -8,6 +8,7 @@ from typing import Optional
 from neonize.client import NewClient
 from neonize.events import ConnectedEv, MessageEv, PairStatusEv, LoggedOutEv, event
 from neonize.utils import build_jid
+import multiprocessing
 import threading
 import time
 import datetime
@@ -34,15 +35,20 @@ WHATSAPP_DATA_DIR = Path(settings.DATA_DIR) / "whatsapp"
 WHATSAPP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 SESSION_FILE = str(WHATSAPP_DATA_DIR / "my_bot_session.db")
 
-# Initialize the WhatsApp client
 client = NewClient(SESSION_FILE)
 
-# Global state
-connection_status = {
-    "connected": False,
-    "message": "Not connected yet",
-    "pairing_code": None
-}
+def _default_connection_status():
+    return {
+        "connected": False,
+        "message": "Not connected yet",
+        "pairing_code": None,
+    }
+
+# Global state (will be replaced by Manager dict when worker starts)
+connection_status = _default_connection_status()
+whatsapp_manager = None
+message_queue = None
+whatsapp_worker = None
 
 print(f"📁 WhatsApp session file: {SESSION_FILE}")
 
@@ -216,12 +222,84 @@ def run_whatsapp_client():
         connection_status["connected"] = False
         connection_status["message"] = f"Connection error: {str(e)}"
 
+def run_whatsapp_worker(status_proxy, task_queue):
+    global connection_status
+    connection_status = status_proxy
+
+    connect_thread = threading.Thread(target=run_whatsapp_client, daemon=True)
+    connect_thread.start()
+
+    while True:
+        task = task_queue.get()
+        if task is None:
+            break
+
+        task_type = task.get("type")
+        retries = int(task.get("retries", 0))
+
+        if not connection_status.get("connected"):
+            if retries < 5:
+                task["retries"] = retries + 1
+                time.sleep(2)
+                task_queue.put(task)
+            else:
+                print("⚠️ WhatsApp task dropped after retries (not connected)")
+            continue
+
+        try:
+            if task_type == "text":
+                jid = build_jid(task["phone_number"])
+                client.send_message(jid, task["message"])
+            elif task_type == "image":
+                jid = build_jid(task["phone_number"])
+                client.send_image(jid, task["image_url"], caption=task.get("caption") or "")
+            elif task_type == "audio":
+                jid = build_jid(task["phone_number"])
+                client.send_audio(jid, task["audio_url"])
+            elif task_type == "document":
+                jid = build_jid(task["phone_number"])
+                client.send_document(
+                    jid,
+                    task["document_url"],
+                    caption=task.get("caption") or "",
+                    filename=task.get("filename") or "",
+                )
+            else:
+                print(f"⚠️ Unknown WhatsApp task type: {task_type}")
+        except Exception as e:
+            print(f"❌ WhatsApp send error: {e}")
+
+
+def _ensure_whatsapp_worker():
+    global whatsapp_manager, message_queue, whatsapp_worker, connection_status
+
+    if whatsapp_worker and whatsapp_worker.is_alive():
+        return
+
+    whatsapp_manager = multiprocessing.Manager()
+    connection_status = whatsapp_manager.dict(_default_connection_status())
+    message_queue = whatsapp_manager.Queue()
+
+    whatsapp_worker = multiprocessing.Process(
+        target=run_whatsapp_worker,
+        args=(connection_status, message_queue),
+        daemon=True,
+    )
+    whatsapp_worker.start()
+
+
+def _enqueue_task(task: dict):
+    _ensure_whatsapp_worker()
+    if message_queue is None:
+        raise HTTPException(status_code=503, detail="WhatsApp worker not available")
+    message_queue.put(task)
+
+
 # Initialize WhatsApp client
 def init_whatsapp():
-    """Initialize WhatsApp client in background thread"""
-    thread = threading.Thread(target=run_whatsapp_client, daemon=True)
-    thread.start()
-    print("🚀 WhatsApp client started in background")
+    """Initialize WhatsApp client in a separate worker process"""
+    _ensure_whatsapp_worker()
+    print("🚀 WhatsApp worker started")
 
 # Create router
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
@@ -234,12 +312,7 @@ async def get_status():
 @router.get("/connected")
 async def is_connected():
     """Check if WhatsApp is currently connected (real-time status)"""
-    is_actually_connected = connection_status["connected"] and client.is_logged_in
-    
-    if not is_actually_connected and connection_status["connected"]:
-        connection_status["connected"] = False
-        connection_status["message"] = "Connection lost"
-    
+    is_actually_connected = bool(connection_status.get("connected"))
     return {
         "connected": is_actually_connected,
         "timestamp": datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5))).isoformat()
@@ -253,19 +326,16 @@ async def send_message(request: SendMessageRequest):
     - **phone_number**: Phone number with country code (no + or spaces)
     - **message**: The message text to send
     """
-    if not connection_status["connected"]:
-        raise HTTPException(
-            status_code=503,
-            detail="WhatsApp bot is not connected. Please wait for connection or scan QR code."
-        )
-    
     try:
-        jid = build_jid(request.phone_number)
-        client.send_message(jid, request.message)
-        
+        _enqueue_task({
+            "type": "text",
+            "phone_number": request.phone_number,
+            "message": request.message,
+            "retries": 0,
+        })
         return SendMessageResponse(
-            status="success",
-            message="Message sent successfully",
+            status="queued",
+            message="Message queued successfully",
             phone_number=request.phone_number
         )
     except Exception as e:
@@ -283,23 +353,17 @@ async def send_image(request: SendImageRequest):
     - **image_url**: URL of the image to send
     - **caption**: Optional caption for the image
     """
-    if not connection_status["connected"]:
-        raise HTTPException(
-            status_code=503,
-            detail="WhatsApp bot is not connected. Please wait for connection or scan QR code."
-        )
-    
     try:
-        jid = build_jid(request.phone_number)
-        client.send_image(
-            jid,
-            request.image_url,
-            caption=request.caption or ""
-        )
-        
+        _enqueue_task({
+            "type": "image",
+            "phone_number": request.phone_number,
+            "image_url": request.image_url,
+            "caption": request.caption,
+            "retries": 0,
+        })
         return SendMessageResponse(
-            status="success",
-            message="Image sent successfully",
+            status="queued",
+            message="Image queued successfully",
             phone_number=request.phone_number
         )
     except Exception as e:
@@ -316,19 +380,16 @@ async def send_audio(request: SendAudioRequest):
     - **phone_number**: Phone number with country code (no + or spaces)
     - **audio_url**: URL of the audio file to send
     """
-    if not connection_status["connected"]:
-        raise HTTPException(
-            status_code=503,
-            detail="WhatsApp bot is not connected. Please wait for connection or scan QR code."
-        )
-    
     try:
-        jid = build_jid(request.phone_number)
-        client.send_audio(jid, request.audio_url)
-        
+        _enqueue_task({
+            "type": "audio",
+            "phone_number": request.phone_number,
+            "audio_url": request.audio_url,
+            "retries": 0,
+        })
         return SendMessageResponse(
-            status="success",
-            message="Audio sent successfully",
+            status="queued",
+            message="Audio queued successfully",
             phone_number=request.phone_number
         )
     except Exception as e:
@@ -347,24 +408,18 @@ async def send_document(request: SendDocumentRequest):
     - **caption**: Optional caption for the document
     - **filename**: Optional filename for the document
     """
-    if not connection_status["connected"]:
-        raise HTTPException(
-            status_code=503,
-            detail="WhatsApp bot is not connected. Please wait for connection or scan QR code."
-        )
-    
     try:
-        jid = build_jid(request.phone_number)
-        client.send_document(
-            jid,
-            request.document_url,
-            caption=request.caption or "",
-            filename=request.filename or ""
-        )
-        
+        _enqueue_task({
+            "type": "document",
+            "phone_number": request.phone_number,
+            "document_url": request.document_url,
+            "caption": request.caption,
+            "filename": request.filename,
+            "retries": 0,
+        })
         return SendMessageResponse(
-            status="success",
-            message="Document sent successfully",
+            status="queued",
+            message="Document queued successfully",
             phone_number=request.phone_number
         )
     except Exception as e:
@@ -384,21 +439,19 @@ async def send_bulk_messages(
     - **phone_numbers**: List of phone numbers with country codes
     - **message**: The message text to send to all numbers
     """
-    if not connection_status["connected"]:
-        raise HTTPException(
-            status_code=503,
-            detail="WhatsApp bot is not connected. Please wait for connection or scan QR code."
-        )
-    
     results = []
     for phone in phone_numbers:
         try:
-            jid = build_jid(phone)
-            client.send_message(jid, message)
+            _enqueue_task({
+                "type": "text",
+                "phone_number": phone,
+                "message": message,
+                "retries": 0,
+            })
             results.append({
                 "phone_number": phone,
-                "status": "success",
-                "message": "Message sent"
+                "status": "queued",
+                "message": "Message queued"
             })
         except Exception as e:
             results.append({
