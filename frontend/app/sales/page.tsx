@@ -333,6 +333,7 @@ export default function SalesTerminal() {
     setSelectedProductIndex(0);
   }, [searchQuery, products, categoryFilter, stockFilter]);
 
+
   const fetchProducts = async (params?: { search?: string; category?: string }) => {
     const requestId = ++fetchProductsRequestIdRef.current;
     try {
@@ -738,6 +739,22 @@ export default function SalesTerminal() {
     setUnitPriceOverrideEnabled(false);
   };
 
+  useEffect(() => {
+    if (!unitDialogOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey) return;
+
+      if (e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        addUnitToCart();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [unitDialogOpen, addUnitToCart]);
+
   const updateQuantity = (index: number, newQuantity: number) => {
     if (newQuantity <= 0) {
       removeFromCart(index);
@@ -1097,6 +1114,46 @@ export default function SalesTerminal() {
     return subtotal - itemDiscounts - discount + tax + deliveryCharges;
   };
 
+  const calculateHeldTotal = (hold: HoldSaleResponse) => {
+    const payload = hold.payload;
+    const subtotal = (payload.cart || []).reduce((sum, item) => {
+      const product = products.find((p) => p.id === item.product_id);
+      if (!product) return sum;
+
+      let itemPrice =
+        typeof item.unit_price === "number" ? item.unit_price : product.selling_price;
+
+      if (item.variation_id && typeof item.unit_price !== "number") {
+        const variation = product.variations?.find((v) => v.id === item.variation_id);
+        if (variation) {
+          itemPrice += variation.price_adjustment;
+        }
+      }
+
+      if (item.unit !== product.base_unit && typeof item.unit_price !== "number") {
+        const sellingUnit = product.selling_units.find((u) => u.unit === item.unit);
+        if (sellingUnit) {
+          itemPrice = sellingUnit.price;
+        }
+      }
+
+      return sum + itemPrice * item.quantity;
+    }, 0);
+
+    const itemDiscounts = (payload.cart || []).reduce(
+      (sum, item) => sum + (item.item_discount || 0),
+      0
+    );
+
+    return (
+      subtotal -
+      itemDiscounts -
+      (payload.discount || 0) +
+      (payload.tax || 0) +
+      (payload.deliveryCharges || 0)
+    );
+  };
+
   const amountPaidValue = amountPaid.trim() === "" ? 0 : parseFloat(amountPaid);
 
   const handleCheckout = () => {
@@ -1106,6 +1163,26 @@ export default function SalesTerminal() {
     }
     setCheckoutOpen(true);
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!e.ctrlKey) return;
+
+      if (e.key.toLowerCase() === "h") {
+        e.preventDefault();
+        holdCurrentSale();
+        return;
+      }
+
+      if (e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        handleCheckout();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleCheckout, holdCurrentSale]);
 
   const completeSale = async () => {
     setLoading(true);
@@ -1666,7 +1743,10 @@ export default function SalesTerminal() {
                             {new Date(hold.created_at).toLocaleString()}
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center rounded-md bg-red-600 px-2 py-1 text-sm font-bold text-white">
+                            {formatCurrency(calculateHeldTotal(hold))}
+                          </span>
                           <Button size="sm" onClick={() => resumeHeldSale(hold)}>
                             Resume
                           </Button>

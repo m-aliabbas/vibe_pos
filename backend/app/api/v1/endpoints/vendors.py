@@ -462,8 +462,8 @@ def send_vendor_payment_notification(phone: str, amount: float, balance: float, 
             
         message = f"✅ *Payment Sent to Vendor*\n\n" \
                   f"Vendor: {vendor_name}\n" \
-                  f"Amount Paid: ${amount:,.2f}\n" \
-                  f"Remaining Balance: ${balance:,.2f}\n\n" \
+                  f"Amount Paid: RS{amount:,.2f}\n" \
+                  f"Remaining Balance: RS{balance:,.2f}\n\n" \
                   f"Transaction recorded successfully."
                   
         requests.post(

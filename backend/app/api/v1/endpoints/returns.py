@@ -120,7 +120,7 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
             y += mm(4.5)
             qty_line = f"{item.quantity_returned} {item.unit}"
             draw.text((mm(4), y), qty_line, fill='black', font=font_small)
-            refund_text = f"₹{(item.total_refund or 0.0):.2f}"
+            refund_text = f"RS: {(item.total_refund or 0.0):.2f}"
             bbox = draw.textbbox((0, 0), refund_text, font=font_small)
             text_width = bbox[2] - bbox[0]
             draw.text((width - text_width - mm(3), y), refund_text, fill='black', font=font_small)
@@ -131,7 +131,7 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
         y += mm(4)
 
         draw.text((mm(3), y), "Refund:", fill='black', font=font_normal)
-        refund_total = f"₹{ret.refund_amount:.2f}"
+        refund_total = f"RS: {ret.refund_amount:.2f}"
         bbox = draw.textbbox((0, 0), refund_total, font=font_normal)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), refund_total, fill='black', font=font_normal)
@@ -142,7 +142,7 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
         payload = {
             "phone_number": phone_number,
             "image_url": str(file_path.absolute()),
-            "caption": f"Return #{str(ret.id).zfill(6)} - Refund: ₹{ret.refund_amount:.2f}"
+            "caption": f"Return #{str(ret.id).zfill(6)} - Refund: RS{ret.refund_amount:.2f}"
         }
 
         requests.post(

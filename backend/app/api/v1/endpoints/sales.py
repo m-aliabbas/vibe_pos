@@ -169,13 +169,13 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
             draw.text((mm(4), y), attrs[:36], fill="#5c4dff", font=font_sm)
             y += mm(4)
 
-        qty_price = f"{item.quantity} {item.unit} x ₹{item.unit_price:.2f}"
+        qty_price = f"{item.quantity} {item.unit} x RS {item.unit_price:.2f}"
         draw.text((mm(4), y), qty_price, fill="black", font=font_sm)
         y += mm(4)
 
         original_price = item.unit_price * item.quantity
         if item.item_discount and item.item_discount > 0:
-            original_text = f"₹{original_price:.2f}"
+            original_text = f"RS {original_price:.2f}"
             bbox = draw.textbbox((0, 0), original_text, font=font_sm)
             text_width = bbox[2] - bbox[0]
             x_pos = width - text_width - mm(3)
@@ -183,11 +183,11 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
             draw.line([(x_pos, y + mm(1.6)), (x_pos + text_width, y + mm(1.6))], fill="gray", width=1)
             y += mm(4)
 
-            discount_text = f"Discount: -₹{item.item_discount:.2f}"
+            discount_text = f"Discount: -RS {item.item_discount:.2f}"
             draw.text((mm(4), y), discount_text, fill="#cc0000", font=font_sm)
             y += mm(4)
 
-        final_price = f"₹{item.total_price:.2f}"
+        final_price = f"RS {item.total_price:.2f}"
         bbox = draw.textbbox((0, 0), final_price, font=font_sm_bold)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), final_price, fill="#0a7d2c", font=font_sm_bold)
@@ -198,7 +198,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     y += mm(4)
 
     draw.text((mm(3), y), "Subtotal", fill="black", font=font_md)
-    subtotal_text = f"₹{sale.subtotal:.2f}"
+    subtotal_text = f"RS {sale.subtotal:.2f}"
     bbox = draw.textbbox((0, 0), subtotal_text, font=font_md)
     text_width = bbox[2] - bbox[0]
     draw.text((width - text_width - mm(3), y), subtotal_text, fill="black", font=font_md)
@@ -207,7 +207,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     total_discount = sale.discount + total_item_discount
     if total_discount > 0:
         draw.text((mm(3), y), "Discount", fill="black", font=font_md)
-        discount_text = f"-₹{total_discount:.2f}"
+        discount_text = f"-RS {total_discount:.2f}"
         bbox = draw.textbbox((0, 0), discount_text, font=font_md)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), discount_text, fill="#cc0000", font=font_md)
@@ -215,7 +215,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
 
     if sale.tax > 0:
         draw.text((mm(3), y), "Tax", fill="black", font=font_md)
-        tax_text = f"₹{sale.tax:.2f}"
+        tax_text = f"RS {sale.tax:.2f}"
         bbox = draw.textbbox((0, 0), tax_text, font=font_md)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), tax_text, fill="black", font=font_md)
@@ -223,14 +223,14 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
 
     if sale.delivery_charges > 0:
         draw.text((mm(3), y), "Delivery", fill="black", font=font_md)
-        delivery_text = f"₹{sale.delivery_charges:.2f}"
+        delivery_text = f"RS {sale.delivery_charges:.2f}"
         bbox = draw.textbbox((0, 0), delivery_text, font=font_md)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), delivery_text, fill="black", font=font_md)
         y += mm(5)
 
     draw.text((mm(3), y), "TOTAL", fill="black", font=font_lg)
-    total_text = f"₹{sale.total:.2f}"
+    total_text = f"RS {sale.total:.2f}"
     bbox = draw.textbbox((0, 0), total_text, font=font_lg)
     text_width = bbox[2] - bbox[0]
     draw.text((width - text_width - mm(3), y), total_text, fill="black", font=font_lg)
@@ -240,7 +240,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     y += mm(4)
 
     draw.text((mm(3), y), "Amount Paid", fill="black", font=font_md)
-    paid_text = f"₹{sale.amount_paid:.2f}"
+    paid_text = f"RS {sale.amount_paid:.2f}"
     bbox = draw.textbbox((0, 0), paid_text, font=font_md)
     text_width = bbox[2] - bbox[0]
     draw.text((width - text_width - mm(3), y), paid_text, fill="black", font=font_md)
@@ -248,7 +248,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
 
     if sale.amount_due > 0:
         draw.text((mm(3), y), "Outstanding (Udhar)", fill="black", font=font_sm_bold)
-        due_text = f"₹{sale.amount_due:.2f}"
+        due_text = f"RS {sale.amount_due:.2f}"
         bbox = draw.textbbox((0, 0), due_text, font=font_sm_bold)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), due_text, fill="#cc0000", font=font_sm_bold)
@@ -256,7 +256,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
 
     if sale.change_amount > 0:
         draw.text((mm(3), y), "Change", fill="black", font=font_md)
-        change_text = f"₹{sale.change_amount:.2f}"
+        change_text = f"RS {sale.change_amount:.2f}"
         bbox = draw.textbbox((0, 0), change_text, font=font_md)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), change_text, fill="#0a7d2c", font=font_md)
@@ -336,7 +336,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         payload = {
             "phone_number": phone_number,
             "image_url": str(file_path.absolute()),
-            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: ₹{sale.total:.2f}\nThank you for your business!"
+            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: RS {sale.total:.2f}\nThank you for your business!"
         }
         
         response = requests.post(
@@ -794,7 +794,7 @@ def send_invoice(
         payload = {
             "phone_number": normalized_phone,
             "image_url": str(file_path.absolute()),
-            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: ₹{sale.total:.2f}\nThank you for your business!"
+            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: RS {sale.total:.2f}\nThank you for your business!"
         }
         
         response = requests.post(

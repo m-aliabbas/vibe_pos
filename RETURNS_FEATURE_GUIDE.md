@@ -113,9 +113,9 @@ Would you like me to create the frontend UI now?
    ```
    Sale #123 - Customer: John Doe
    Items:
-   - Engine Oil 5W-30 (4 bottles) @ ₹250 each = ₹1000
-   - Oil Filter (1 pc) @ ₹150 = ₹150
-   Total: ₹1150
+   - Engine Oil 5W-30 (4 bottles) @ RS 250 each = RS 1000
+   - Oil Filter (1 pc) @ RS 150 = RS 150
+   Total: RS 1150
    ```
 
 2. **Process Return**
@@ -135,7 +135,7 @@ Would you like me to create the frontend UI now?
    ```
 
 3. **Result**
-   - Refund: ₹500 (2 × ₹250)
+   - Refund: RS 500 (2 × RS 250)
    - Inventory: NOT updated (restocked=false)
    - Customer balance: Reduced if they had credit
    - Return record created for audit

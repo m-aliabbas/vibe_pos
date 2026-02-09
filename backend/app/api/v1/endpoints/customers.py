@@ -711,7 +711,7 @@ def add_customer_advance(
     note = CustomerNote(
         customer_id=id,
         note_type="advance_payment",
-        note_text=f"Paid ${amount:.2f} on behalf via {payment_method}: {description}"
+        note_text=f"Paid RS {amount:.2f} on behalf via {payment_method}: {description}"
     )
     
     db.add(note)
@@ -814,8 +814,8 @@ def send_payment_notification(phone: str, amount: float, balance: float, payment
             phone = '92' + phone
             
         message = f"✅ *Payment Received*\n\n" \
-                  f"Amount: ${amount:,.2f}\n" \
-                  f"Remaining Balance: ${balance:,.2f}\n" \
+                  f"Amount: RS{amount:,.2f}\n" \
+                  f"Remaining Balance: RS{balance:,.2f}\n" \
                   f"Payment ID: #{payment_id}\n\n" \
                   f"Thank you.!"\
                   f"vibeexe.com"
@@ -849,7 +849,7 @@ def send_due_reminder_notification(phone: str, name: str, balance: float, custom
             f"🔔 *Payment Reminder*\n\n"
             f"Malik D Store.\n"
             f"Customer: {name}\n"
-            f"Due Amount: ${balance:,.2f}\n\n"
+            f"Due Amount: RS{balance:,.2f}\n\n"
             f"Please clear your outstanding balance at your earliest convenience.\n"
             f"Customer ID: #{customer_id}"
             f"Malik D Store.\n"
@@ -870,7 +870,7 @@ def send_due_reminder_notification(phone: str, name: str, balance: float, custom
 def _extract_amount_from_note(note_text: str) -> float:
     if not note_text:
         return 0.0
-    match = re.search(r"\$([0-9.,]+)", note_text)
+    match = re.search(r"RS([0-9.,]+)", note_text)
     if not match:
         return 0.0
     try:
