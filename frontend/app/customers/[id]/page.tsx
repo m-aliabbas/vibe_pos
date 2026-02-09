@@ -27,6 +27,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import api, { customerApi, CustomerResponse, CustomerNote, CustomerPayment } from "@/lib/api";
+import { storeConfig } from "@/lib/store-config";
 import {
   User,
   Phone,
@@ -62,6 +63,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
 
   // Form states
   const [newNote, setNewNote] = useState({ note_type: "general", note_text: "" });
@@ -74,6 +76,18 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     address: "",
     opening_balance: 0,
   });
+
+  const [receiptData, setReceiptData] = useState<{
+    type: "payment" | "advance";
+    title: string;
+    customerName: string;
+    customerPhone?: string;
+    amount: number;
+    method?: string;
+    reference?: string;
+    date: string;
+    balance?: number;
+  } | null>(null);
 
   // Parse customerId with validation
   const customerId = parseInt(unwrappedParams.id);
@@ -150,9 +164,22 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     if (!isValidId) return;
 
     try {
-      await customerApi.recordCustomerPayment(customerId, newPayment);
+      const payment = await customerApi.recordCustomerPayment(customerId, newPayment);
+      const updatedCustomer = await customerApi.getCustomer(customerId);
       setPaymentDialogOpen(false);
       setNewPayment({ amount: 0, payment_method: "cash", reference_note: "" });
+      setReceiptData({
+        type: "payment",
+        title: "Payment Receipt",
+        customerName: updatedCustomer.name || "Customer",
+        customerPhone: updatedCustomer.phone || undefined,
+        amount: payment.amount,
+        method: payment.payment_method,
+        reference: payment.reference_note || undefined,
+        date: payment.payment_date || payment.created_at,
+        balance: updatedCustomer.outstanding_balance,
+      });
+      setReceiptDialogOpen(true);
       fetchCustomerData();
     } catch (error) {
       console.error("Failed to record payment:", error);
@@ -192,9 +219,22 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     if (!isValidId) return;
 
     try {
-      await customerApi.addCustomerAdvance(customerId, newAdvance);
+      const advanceResponse = await customerApi.addCustomerAdvance(customerId, newAdvance);
+      const updatedCustomer = await customerApi.getCustomer(customerId);
       setAdvanceDialogOpen(false);
       setNewAdvance({ amount: 0, description: "", payment_method: "cash" });
+      setReceiptData({
+        type: "advance",
+        title: "Advance Payment Receipt",
+        customerName: updatedCustomer.name || "Customer",
+        customerPhone: updatedCustomer.phone || undefined,
+        amount: advanceResponse.amount,
+        method: advanceResponse.payment_method || "cash",
+        reference: advanceResponse.description || undefined,
+        date: new Date().toISOString(),
+        balance: advanceResponse.new_balance ?? updatedCustomer.outstanding_balance,
+      });
+      setReceiptDialogOpen(true);
       fetchCustomerData();
     } catch (error) {
       console.error("Failed to add advance:", error);
@@ -228,6 +268,142 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       console.error("Failed to send reminder", error);
       alert(error?.response?.data?.detail || "Failed to send reminder");
     }
+  };
+
+  const parseCsv = (text: string) => {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    const pushCell = () => {
+      row.push(current);
+      current = "";
+    };
+
+    const pushRow = () => {
+      if (row.length > 0 || current.length > 0) {
+        pushCell();
+        rows.push(row);
+        row = [];
+      }
+    };
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const next = text[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+
+      if (char === ',' && !inQuotes) {
+        pushCell();
+        continue;
+      }
+
+      if ((char === '\n' || char === '\r') && !inQuotes) {
+        if (char === '\r' && next === '\n') {
+          i++;
+        }
+        pushRow();
+        continue;
+      }
+
+      current += char;
+    }
+
+    pushRow();
+    return rows.filter((r) => r.length > 0);
+  };
+
+  const handleCustomerReportPdf = async () => {
+    if (!isValidId) return;
+    try {
+      const response = await api.get(`/customers/${customerId}/report`, { responseType: "text" });
+      const csvText = response.data as string;
+      const rows = parseCsv(csvText);
+      if (rows.length === 0) {
+        alert("No data to export");
+        return;
+      }
+
+      const headers = rows[0];
+      const body = rows.slice(1);
+
+      const { default: jsPDF } = await import("jspdf");
+      const autoTable = (await import("jspdf-autotable")).default;
+
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      doc.setFontSize(14);
+      doc.text(storeConfig.name || "Store", 40, 40);
+      doc.setFontSize(12);
+      doc.text(`Customer Report - ${customer?.name || "Customer"}`, 40, 58);
+      doc.setFontSize(10);
+      doc.text(new Date().toLocaleString(), 40, 74);
+
+      autoTable(doc, {
+        startY: 90,
+        head: [headers],
+        body,
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [33, 33, 33] },
+      });
+
+      doc.save(`customer_report_${customerId}.pdf`);
+    } catch (error: any) {
+      console.error("Failed to export customer report PDF", error);
+      alert(error?.response?.data?.detail || "Failed to export PDF");
+    }
+  };
+
+  const handlePrintReceipt = () => {
+    if (!receiptData) return;
+
+    const content = `
+      <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
+        <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
+          <div style="font-size:16px; font-weight:bold;">${storeConfig.name}</div>
+          ${storeConfig.address ? `<div>${storeConfig.address}</div>` : ""}
+          ${storeConfig.city ? `<div>${storeConfig.city}</div>` : ""}
+          ${storeConfig.phone ? `<div>${storeConfig.phone}</div>` : ""}
+          ${storeConfig.email ? `<div>${storeConfig.email}</div>` : ""}
+        </div>
+        <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
+        <div style="margin-bottom:8px;">
+          <div><strong>Customer:</strong> ${receiptData.customerName}</div>
+          ${receiptData.customerPhone ? `<div><strong>Phone:</strong> ${receiptData.customerPhone}</div>` : ""}
+          <div><strong>Date:</strong> ${new Date(receiptData.date).toLocaleString()}</div>
+        </div>
+        <div style="border-top:1px dashed #999; border-bottom:1px dashed #999; padding:8px 0; margin:8px 0;">
+          <div style="display:flex; justify-content:space-between;"><span>Amount</span><strong>rs ${receiptData.amount.toFixed(2)}</strong></div>
+          ${receiptData.method ? `<div style="display:flex; justify-content:space-between;"><span>Method</span><span>${receiptData.method}</span></div>` : ""}
+          ${receiptData.reference ? `<div style="margin-top:6px;"><strong>Reference:</strong> ${receiptData.reference}</div>` : ""}
+          ${typeof receiptData.balance === "number" ? `<div style="display:flex; justify-content:space-between; margin-top:6px;"><span>Outstanding</span><strong>rs ${receiptData.balance.toFixed(2)}</strong></div>` : ""}
+        </div>
+        <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
+        ${storeConfig.website ? `<div style="text-align:center; color:#999;">${storeConfig.website}</div>` : ""}
+      </div>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=400,height=600");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head><title>Receipt</title></head>
+        <body>${content}</body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    printWindow.close();
   };
 
   const handleDeleteNote = async (noteId: number) => {
@@ -346,6 +522,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleCustomerReportPdf}>
+            <FileText className="h-4 w-4 mr-2" /> Download PDF
+          </Button>
           <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
@@ -974,6 +1153,68 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>{receiptData?.title || "Receipt"}</DialogTitle>
+            <DialogDescription>
+              Customer payment/advance receipt.
+            </DialogDescription>
+          </DialogHeader>
+
+          {receiptData && (
+            <div className="space-y-3 text-sm">
+              <div className="text-center border-b border-dashed pb-2">
+                <div className="text-base font-semibold">{storeConfig.name}</div>
+                {storeConfig.address && <div>{storeConfig.address}</div>}
+                {storeConfig.city && <div>{storeConfig.city}</div>}
+                {storeConfig.phone && <div>{storeConfig.phone}</div>}
+              </div>
+              <div>
+                <div><span className="font-medium">Customer:</span> {receiptData.customerName}</div>
+                {receiptData.customerPhone && (
+                  <div><span className="font-medium">Phone:</span> {receiptData.customerPhone}</div>
+                )}
+                <div><span className="font-medium">Date:</span> {new Date(receiptData.date).toLocaleString()}</div>
+              </div>
+              <div className="border-t border-b border-dashed py-2">
+                <div className="flex justify-between">
+                  <span>Amount</span>
+                  <span className="font-semibold">rs {receiptData.amount.toFixed(2)}</span>
+                </div>
+                {receiptData.method && (
+                  <div className="flex justify-between">
+                    <span>Method</span>
+                    <span>{receiptData.method}</span>
+                  </div>
+                )}
+                {receiptData.reference && (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Ref: {receiptData.reference}
+                  </div>
+                )}
+                {typeof receiptData.balance === "number" && (
+                  <div className="flex justify-between mt-2">
+                    <span>Outstanding</span>
+                    <span className="font-semibold">rs {receiptData.balance.toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setReceiptDialogOpen(false)}
+            >
+              Close
+            </Button>
+            <Button onClick={handlePrintReceipt}>Print Receipt</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
-import api, { customerApi, CustomerSimple } from "@/lib/api";
+import { Checkbox } from "@/components/ui/checkbox";
+import api, { customerApi, CustomerSimple, holdSalesApi, HoldSaleResponse } from "@/lib/api";
 import {
   Search,
   ShoppingCart,
@@ -76,6 +77,7 @@ interface CartItem {
   variation?: ProductVariation;
   unit: string;
   item_discount?: number; // Added for item-level discount
+  unit_price?: number; // Optional override per unit
 }
 
 interface SaleSummary {
@@ -84,6 +86,7 @@ interface SaleSummary {
   totalCount: number;
   byPayment: Record<string, number>;
 }
+
 
 export default function SalesTerminal() {
   const router = useRouter();
@@ -107,6 +110,9 @@ export default function SalesTerminal() {
     null
   );
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
+  const [customerNameResults, setCustomerNameResults] = useState<CustomerSimple[]>([]);
+  const [customerNameLoading, setCustomerNameLoading] = useState(false);
+  const [showCustomerNameResults, setShowCustomerNameResults] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [discount, setDiscount] = useState<number>(0);
@@ -121,6 +127,8 @@ export default function SalesTerminal() {
   const [completedAmountPaid, setCompletedAmountPaid] = useState<number>(0);
   const [completedChange, setCompletedChange] = useState<number>(0);
   const [summaryOpen, setSummaryOpen] = useState<boolean>(false);
+  const [heldSales, setHeldSales] = useState<HoldSaleResponse[]>([]);
+  const [heldOpen, setHeldOpen] = useState(false);
   const [todayStats, setTodayStats] = useState<SaleSummary>({
     totalRevenue: 0,
     totalUdhar: 0,
@@ -135,6 +143,7 @@ export default function SalesTerminal() {
   });
   const fetchProductsRequestIdRef = useRef(0);
   const customerLookupRequestIdRef = useRef(0);
+  const customerNameLookupRequestIdRef = useRef(0);
 
   // Variation picker state
   const [variationDialogOpen, setVariationDialogOpen] = useState(false);
@@ -145,6 +154,8 @@ export default function SalesTerminal() {
   const [selectedUnit, setSelectedUnit] = useState<string>("piece");
   const [quantityForVariation, setQuantityForVariation] = useState<number>(1);
   const [variationDiscount, setVariationDiscount] = useState<number>(0);
+  const [variationUnitPrice, setVariationUnitPrice] = useState<string>("");
+  const [variationPriceOverrideEnabled, setVariationPriceOverrideEnabled] = useState(false);
 
   // Unit picker state (for products without variations but with multiple units)
   const [unitDialogOpen, setUnitDialogOpen] = useState(false);
@@ -154,6 +165,8 @@ export default function SalesTerminal() {
     useState<string>("piece");
   const [quantityForUnit, setQuantityForUnit] = useState<number>(1);
   const [unitDiscount, setUnitDiscount] = useState<number>(0);
+  const [unitPriceOverride, setUnitPriceOverride] = useState<string>("");
+  const [unitPriceOverrideEnabled, setUnitPriceOverrideEnabled] = useState(false);
 
   // Parse quantity from search query (e.g., "milk x 3", "milk 3", "3 milk")
   const parseQuantityFromSearch = (
@@ -192,7 +205,9 @@ export default function SalesTerminal() {
     if (!token) {
       router.push("/login");
       return;
-    }    fetchTodayStats();
+    }
+    fetchTodayStats();
+    fetchHeldSales();
   }, [token, isLoading]);
 
   useEffect(() => {
@@ -251,6 +266,15 @@ export default function SalesTerminal() {
       }
     } catch (error) {
       console.error("Failed to fetch today stats:", error);
+    }
+  };
+
+  const fetchHeldSales = async () => {
+    try {
+      const data = await holdSalesApi.list();
+      setHeldSales(data || []);
+    } catch (error) {
+      console.error("Failed to fetch held sales:", error);
     }
   };
 
@@ -326,6 +350,13 @@ export default function SalesTerminal() {
     }
   };
 
+  const updateLocalProduct = (productId: number, updater: (p: Product) => Product) => {
+    setProducts((prev) => prev.map((p) => (p.id === productId ? updater(p) : p)));
+    setFilteredProducts((prev) => prev.map((p) => (p.id === productId ? updater(p) : p)));
+    setSelectedProductForVariation((prev) => (prev && prev.id === productId ? updater(prev) : prev));
+    setSelectedProductForUnit((prev) => (prev && prev.id === productId ? updater(prev) : prev));
+  };
+
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showAutocomplete || filteredProducts.length === 0) return;
 
@@ -357,6 +388,7 @@ export default function SalesTerminal() {
       setSelectedProductForVariation(product);
       setQuantityForVariation(quantity);
       setSelectedUnit(product.base_unit);
+      setVariationPriceOverrideEnabled(false);
       setVariationDialogOpen(true);
       return;
     }
@@ -366,6 +398,7 @@ export default function SalesTerminal() {
       setSelectedProductForUnit(product);
       setQuantityForUnit(quantity);
       setSelectedUnitForRegular(product.base_unit);
+      setUnitPriceOverrideEnabled(false);
       setUnitDialogOpen(true);
       return;
     }
@@ -455,7 +488,7 @@ export default function SalesTerminal() {
     }
   };
 
-  const addVariationToCart = () => {
+  const addVariationToCart = async () => {
     if (!selectedProductForVariation || !selectedVariation) {
       alert("Please select a variation");
       return;
@@ -500,13 +533,64 @@ export default function SalesTerminal() {
       }
     }
 
+    const parsedUnitPrice = parseFloat(variationUnitPrice);
+    const unitPriceValue = variationPriceOverrideEnabled && Number.isFinite(parsedUnitPrice)
+      ? parsedUnitPrice
+      : undefined;
+
+    if (variationPriceOverrideEnabled) {
+      if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice < 0) {
+        alert("Please enter a valid selling price");
+        return;
+      }
+
+      try {
+        if (unit !== selectedProductForVariation.base_unit) {
+          const updatedUnits = selectedProductForVariation.selling_units.map((u) =>
+            u.unit === unit ? { ...u, price: parsedUnitPrice } : u
+          );
+          await api.put(`/products/${selectedProductForVariation.id}`, {
+            selling_units: updatedUnits,
+          });
+
+          updateLocalProduct(selectedProductForVariation.id, (p) => ({
+            ...p,
+            selling_units: updatedUnits,
+          }));
+        } else {
+          const newAdjustment = parsedUnitPrice - selectedProductForVariation.selling_price;
+          await api.put(`/products/variations/${selectedVariation.id}`, {
+            price_adjustment: newAdjustment,
+          });
+
+          updateLocalProduct(selectedProductForVariation.id, (p) => ({
+            ...p,
+            variations: p.variations?.map((v) =>
+              v.id === selectedVariation.id
+                ? { ...v, price_adjustment: newAdjustment }
+                : v
+            ),
+          }));
+        }
+      } catch (error) {
+        console.error("Failed to update selling price", error);
+        alert("Failed to update selling price in database");
+        return;
+      }
+    }
+
     if (existingItem) {
       setCart(
         cart.map((item) =>
           item.product.id === selectedProductForVariation.id &&
             item.variation?.id === selectedVariation.id &&
             item.unit === unit
-            ? { ...item, quantity: item.quantity + quantityForVariation, item_discount: (item.item_discount || 0) + variationDiscount }
+            ? {
+              ...item,
+              quantity: item.quantity + quantityForVariation,
+              item_discount: (item.item_discount || 0) + variationDiscount,
+              unit_price: unitPriceValue ?? item.unit_price,
+            }
             : item
         )
       );
@@ -519,6 +603,7 @@ export default function SalesTerminal() {
           variation: selectedVariation,
           unit: unit,
           item_discount: variationDiscount,
+          unit_price: unitPriceValue,
         },
       ]);
     }
@@ -529,9 +614,11 @@ export default function SalesTerminal() {
     setQuantityForVariation(1);
     setSelectedUnit("piece");
     setVariationDiscount(0);
+    setVariationUnitPrice("");
+    setVariationPriceOverrideEnabled(false);
   };
 
-  const addUnitToCart = () => {
+  const addUnitToCart = async () => {
     if (!selectedProductForUnit) return;
 
     // Warn if product is out of stock, but allow adding
@@ -573,20 +660,72 @@ export default function SalesTerminal() {
       }
     }
 
+    const parsedUnitPrice = parseFloat(unitPriceOverride);
+    const unitPriceValue = unitPriceOverrideEnabled && Number.isFinite(parsedUnitPrice)
+      ? parsedUnitPrice
+      : undefined;
+
+    if (unitPriceOverrideEnabled) {
+      if (!Number.isFinite(parsedUnitPrice) || parsedUnitPrice < 0) {
+        alert("Please enter a valid selling price");
+        return;
+      }
+
+      try {
+        if (unit !== selectedProductForUnit.base_unit) {
+          const updatedUnits = selectedProductForUnit.selling_units.map((u) =>
+            u.unit === unit ? { ...u, price: parsedUnitPrice } : u
+          );
+          await api.put(`/products/${selectedProductForUnit.id}`, {
+            selling_units: updatedUnits,
+          });
+
+          updateLocalProduct(selectedProductForUnit.id, (p) => ({
+            ...p,
+            selling_units: updatedUnits,
+          }));
+        } else {
+          await api.put(`/products/${selectedProductForUnit.id}`, {
+            selling_price: parsedUnitPrice,
+          });
+
+          updateLocalProduct(selectedProductForUnit.id, (p) => ({
+            ...p,
+            selling_price: parsedUnitPrice,
+          }));
+        }
+      } catch (error) {
+        console.error("Failed to update selling price", error);
+        alert("Failed to update selling price in database");
+        return;
+      }
+    }
+
     if (existingItem) {
       setCart(
         cart.map((item) =>
           item.product.id === selectedProductForUnit.id &&
             !item.variation &&
             item.unit === unit
-            ? { ...item, quantity: item.quantity + quantityForUnit, item_discount: (item.item_discount || 0) + unitDiscount }
+            ? {
+              ...item,
+              quantity: item.quantity + quantityForUnit,
+              item_discount: (item.item_discount || 0) + unitDiscount,
+              unit_price: unitPriceValue ?? item.unit_price,
+            }
             : item
         )
       );
     } else {
       setCart([
         ...cart,
-        { product: selectedProductForUnit, quantity: quantityForUnit, unit: unit, item_discount: unitDiscount },
+        {
+          product: selectedProductForUnit,
+          quantity: quantityForUnit,
+          unit: unit,
+          item_discount: unitDiscount,
+          unit_price: unitPriceValue,
+        },
       ]);
     }
 
@@ -595,6 +734,8 @@ export default function SalesTerminal() {
     setQuantityForUnit(1);
     setSelectedUnitForRegular("piece");
     setUnitDiscount(0);
+    setUnitPriceOverride("");
+    setUnitPriceOverrideEnabled(false);
   };
 
   const updateQuantity = (index: number, newQuantity: number) => {
@@ -648,6 +789,123 @@ export default function SalesTerminal() {
     setDiscount(0);
     setTax(0);
     setDeliveryCharges(0);
+    setAmountPaid("");
+  };
+
+  const holdCurrentSale = async () => {
+    if (cart.length === 0) {
+      alert("Cart is empty");
+      return;
+    }
+
+    const labelParts = [
+      customerName.trim(),
+      customerPhone.trim(),
+      customerId.trim().toUpperCase(),
+    ].filter(Boolean);
+    const label = labelParts.length > 0 ? labelParts.join(" • ") : "Walk-in";
+
+    const payload = {
+      cart: cart.map((item) => ({
+        product_id: item.product.id,
+        variation_id: item.variation?.id || null,
+        unit: item.unit,
+        quantity: item.quantity,
+        item_discount: item.item_discount || 0,
+        unit_price: typeof item.unit_price === "number" ? item.unit_price : undefined,
+      })),
+      customerId,
+      customerPhone,
+      customerName,
+      selectedCustomer,
+      paymentMethod,
+      discount,
+      tax,
+      deliveryCharges,
+      amountPaid,
+    };
+
+    try {
+      await holdSalesApi.create({ label, payload });
+      clearCart();
+      fetchHeldSales();
+    } catch (error) {
+      console.error("Failed to hold sale:", error);
+      alert("Failed to hold sale");
+    }
+  };
+
+  const resumeHeldSale = async (hold: HoldSaleResponse) => {
+    const payload = hold.payload;
+
+    const getProductById = async (productId: number) => {
+      const existing = products.find((p) => p.id === productId);
+      if (existing) return existing;
+      const response = await api.get(`/products/${productId}`);
+      const product = response.data as Product;
+      setProducts((prev) => [...prev, product]);
+      return product;
+    };
+
+    const cartItems: CartItem[] = [];
+    for (const item of payload.cart || []) {
+      try {
+        const product = await getProductById(item.product_id);
+        let variation = item.variation_id
+          ? product.variations?.find((v) => v.id === item.variation_id)
+          : undefined;
+
+        if (item.variation_id && !variation) {
+          const variationsRes = await api.get(`/products/${product.id}/variations`);
+          const variations = variationsRes.data as ProductVariation[];
+          variation = variations.find((v) => v.id === item.variation_id);
+          if (variations.length > 0) {
+            updateLocalProduct(product.id, (p) => ({
+              ...p,
+              variations,
+            }));
+          }
+        }
+
+        cartItems.push({
+          product,
+          quantity: item.quantity,
+          variation,
+          unit: item.unit,
+          item_discount: item.item_discount || 0,
+          unit_price: item.unit_price,
+        });
+      } catch (error) {
+        console.error("Failed to restore item:", error);
+      }
+    }
+
+    setCart(cartItems);
+    setCustomerId(payload.customerId || "");
+    setCustomerPhone(payload.customerPhone || "");
+    setCustomerName(payload.customerName || "");
+    setSelectedCustomer(payload.selectedCustomer || null);
+    setPaymentMethod(payload.paymentMethod || "cash");
+    setDiscount(payload.discount || 0);
+    setTax(payload.tax || 0);
+    setDeliveryCharges(payload.deliveryCharges || 0);
+    setAmountPaid(payload.amountPaid || "");
+
+    try {
+      await holdSalesApi.delete(hold.id);
+      fetchHeldSales();
+    } catch (error) {
+      console.error("Failed to remove hold sale:", error);
+    }
+  };
+
+  const deleteHeldSale = async (holdId: number) => {
+    try {
+      await holdSalesApi.delete(holdId);
+      fetchHeldSales();
+    } catch (error) {
+      console.error("Failed to delete hold sale:", error);
+    }
   };
 
   // ✅ Customer lookup with BOTH fields
@@ -719,15 +977,104 @@ export default function SalesTerminal() {
     return () => clearTimeout(t);
   }, [customerPhone, customerId, checkoutOpen]);
 
+  useEffect(() => {
+    if (!selectedProductForVariation) {
+      setVariationUnitPrice("");
+      return;
+    }
+
+    let basePrice = selectedProductForVariation.selling_price;
+    if (selectedVariation) {
+      basePrice += selectedVariation.price_adjustment;
+    }
+
+    if (selectedUnit !== selectedProductForVariation.base_unit) {
+      const sellingUnit = selectedProductForVariation.selling_units.find(
+        (u) => u.unit === selectedUnit
+      );
+      if (sellingUnit) {
+        basePrice = sellingUnit.price;
+      }
+    }
+
+    setVariationUnitPrice(basePrice.toFixed(2));
+  }, [selectedProductForVariation, selectedVariation, selectedUnit]);
+
+  useEffect(() => {
+    if (!selectedProductForVariation) return;
+    setVariationPriceOverrideEnabled(false);
+  }, [selectedProductForVariation]);
+
+  useEffect(() => {
+    if (!selectedProductForUnit) {
+      setUnitPriceOverride("");
+      return;
+    }
+
+    let basePrice = selectedProductForUnit.selling_price;
+    if (selectedUnitForRegular !== selectedProductForUnit.base_unit) {
+      const sellingUnit = selectedProductForUnit.selling_units.find(
+        (u) => u.unit === selectedUnitForRegular
+      );
+      if (sellingUnit) {
+        basePrice = sellingUnit.price;
+      }
+    }
+
+    setUnitPriceOverride(basePrice.toFixed(2));
+  }, [selectedProductForUnit, selectedUnitForRegular]);
+
+  useEffect(() => {
+    if (!selectedProductForUnit) return;
+    setUnitPriceOverrideEnabled(false);
+  }, [selectedProductForUnit]);
+
+  // ✅ Debounced name search for customers
+  useEffect(() => {
+    if (!checkoutOpen) return;
+
+    const query = customerName.trim();
+    if (query.length < 2) {
+      setCustomerNameResults([]);
+      setShowCustomerNameResults(false);
+      return;
+    }
+
+    const requestId = ++customerNameLookupRequestIdRef.current;
+    setCustomerNameLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const results = await customerApi.getCustomers({ search: query, limit: 8 });
+        if (requestId !== customerNameLookupRequestIdRef.current) return;
+        setCustomerNameResults(results || []);
+        setShowCustomerNameResults(true);
+      } catch (error) {
+        console.error("Customer name search failed:", error);
+        if (requestId !== customerNameLookupRequestIdRef.current) return;
+        setCustomerNameResults([]);
+        setShowCustomerNameResults(false);
+      } finally {
+        if (requestId === customerNameLookupRequestIdRef.current) {
+          setCustomerNameLoading(false);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(t);
+  }, [customerName, checkoutOpen]);
+
   const calculateSubtotal = () => {
     return cart.reduce((sum, item) => {
-      let itemPrice = item.product.selling_price;
+      let itemPrice =
+        typeof item.unit_price === "number"
+          ? item.unit_price
+          : item.product.selling_price;
 
-      if (item.variation) {
+      if (item.variation && typeof item.unit_price !== "number") {
         itemPrice += item.variation.price_adjustment;
       }
 
-      if (item.unit !== item.product.base_unit) {
+      if (item.unit !== item.product.base_unit && typeof item.unit_price !== "number") {
         const sellingUnit = item.product.selling_units.find(
           (u) => u.unit === item.unit
         );
@@ -736,7 +1083,7 @@ export default function SalesTerminal() {
         }
       }
 
-      return sum + (itemPrice * item.quantity);
+      return sum + itemPrice * item.quantity;
     }, 0);
   };
 
@@ -806,6 +1153,7 @@ export default function SalesTerminal() {
           variation_id: item.variation?.id || null,
           unit: item.unit,
           item_discount: item.item_discount || 0,
+          unit_price: typeof item.unit_price === "number" ? item.unit_price : undefined,
         })),
       };
 
@@ -836,6 +1184,15 @@ export default function SalesTerminal() {
     setSuccessOpen(false);
     setSaleId(null);
     clearCart();
+  };
+
+  const handleSelectCustomerByName = (customer: CustomerSimple) => {
+    setSelectedCustomer(customer);
+    setCustomerName(customer.name || "");
+    setCustomerPhone(customer.phone || "");
+    setCustomerId(customer.customer_id || "");
+    setCustomerNameResults([]);
+    setShowCustomerNameResults(false);
   };
 
   // Get unique categories
@@ -1113,7 +1470,7 @@ export default function SalesTerminal() {
           </Card>
         </div>
 
-        {/* Right: Cart & Checkout */}
+        {/* Right: Cart & Held Bills */}
         <div className="space-y-4">
           <Card>
             <CardHeader>
@@ -1131,9 +1488,14 @@ export default function SalesTerminal() {
                 <>
                   <div className="space-y-3 max-h-[300px] overflow-y-auto">
                     {cart.map((item, index) => {
-                      let itemPrice = item.product.selling_price;
-                      if (item.variation) itemPrice += item.variation.price_adjustment;
-                      if (item.unit !== item.product.base_unit) {
+                      let itemPrice =
+                        typeof item.unit_price === "number"
+                          ? item.unit_price
+                          : item.product.selling_price;
+                      if (item.variation && typeof item.unit_price !== "number") {
+                        itemPrice += item.variation.price_adjustment;
+                      }
+                      if (item.unit !== item.product.base_unit && typeof item.unit_price !== "number") {
                         const sellingUnit = item.product.selling_units.find(
                           (u) => u.unit === item.unit
                         );
@@ -1156,9 +1518,6 @@ export default function SalesTerminal() {
                               </p>
                             )}
                             <div className="flex flex-wrap items-center gap-3 mt-2">
-                              <div className="text-xs text-muted-foreground bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                                Buy: rs {item.product.cost_price?.toFixed(2) || "0.00"}
-                              </div>
                               <div className="flex items-center gap-2">
                                 <Label className="text-xs font-medium">Disc:</Label>
                                 <div className="relative">
@@ -1187,6 +1546,9 @@ export default function SalesTerminal() {
                             </span>
                             <span className="text-xs text-muted-foreground">
                               rs {itemPrice.toFixed(2)}/{item.unit}
+                              {typeof item.unit_price === "number" && (
+                                <span className="ml-1 text-[10px] text-blue-600">(override)</span>
+                              )}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1257,6 +1619,9 @@ export default function SalesTerminal() {
                       <DollarSign className="h-5 w-5 mr-2" />
                       Checkout
                     </Button>
+                    <Button variant="secondary" className="w-full" onClick={holdCurrentSale}>
+                      Hold Sale
+                    </Button>
                     <Button variant="outline" className="w-full" onClick={clearCart}>
                       Clear Cart
                     </Button>
@@ -1264,6 +1629,61 @@ export default function SalesTerminal() {
                 </>
               )}
             </CardContent>
+          </Card>
+
+          <Card className="border-dashed">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  Held Bills
+                </span>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">{heldSales.length}</Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setHeldOpen((prev) => !prev)}
+                  >
+                    {heldOpen ? "Hide" : "Show"}
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            {heldOpen && (
+              <CardContent className="space-y-3 max-h-[260px] overflow-y-auto">
+                {heldSales.length === 0 ? (
+                  <div className="text-center text-muted-foreground text-sm py-6">
+                    No held bills
+                  </div>
+                ) : (
+                  heldSales.map((hold) => (
+                    <div key={hold.id} className="border rounded-md p-3 bg-background/50">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-medium">{hold.label || "Walk-in"}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(hold.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => resumeHeldSale(hold)}>
+                            Resume
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => deleteHeldSale(hold.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            )}
           </Card>
         </div>
       </div>
@@ -1333,14 +1753,62 @@ export default function SalesTerminal() {
               </div>
             )}
 
-            <div className="space-y-1">
-              <Label htmlFor="customer" className="text-sm">Customer Name (Optional)</Label>
+            <div className="space-y-1 relative">
+              <Label htmlFor="customer" className="text-sm">Customer Name (Search / Optional)</Label>
               <Input
                 id="customer"
-                placeholder="Enter customer name"
+                placeholder="Type a name to search"
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setCustomerName(value);
+                  if (selectedCustomer && value !== (selectedCustomer.name || "")) {
+                    setSelectedCustomer(null);
+                  }
+                  if (value.trim().length >= 2) {
+                    setShowCustomerNameResults(true);
+                  } else {
+                    setShowCustomerNameResults(false);
+                  }
+                }}
+                onFocus={() => {
+                  if (customerName.trim().length >= 2) {
+                    setShowCustomerNameResults(true);
+                  }
+                }}
+                onBlur={() => {
+                  setTimeout(() => setShowCustomerNameResults(false), 150);
+                }}
               />
+              {customerNameLoading && (
+                <div className="absolute right-3 top-9">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                </div>
+              )}
+              {showCustomerNameResults && customerNameResults.length > 0 && (
+                <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
+                  {customerNameResults.map((cust) => (
+                    <button
+                      key={cust.id}
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleSelectCustomerByName(cust)}
+                    >
+                      <div className="font-medium text-gray-900">{cust.name || "Customer"}</div>
+                      <div className="text-xs text-gray-500">
+                        {cust.customer_id ? `ID: ${cust.customer_id}` : ""}
+                        {cust.phone ? ` • ${cust.phone}` : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {showCustomerNameResults && customerNameResults.length === 0 && !customerNameLoading && (
+                <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg px-3 py-2 text-xs text-gray-500">
+                  No customers found
+                </div>
+              )}
             </div>
 
             {/* Delivery Charges Input */}
@@ -1676,6 +2144,33 @@ export default function SalesTerminal() {
                 Discount to apply on this item
               </p>
             </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="variationUnitPrice">Selling Price (rs)</Label>
+              <Input
+                id="variationUnitPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={variationUnitPrice}
+                onChange={(e) => setVariationUnitPrice(e.target.value)}
+                disabled={!variationPriceOverrideEnabled}
+              />
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="variationPriceOverrideEnabled"
+                  checked={variationPriceOverrideEnabled}
+                  onCheckedChange={(checked) => setVariationPriceOverrideEnabled(Boolean(checked))}
+                />
+                <Label htmlFor="variationPriceOverrideEnabled" className="text-xs text-muted-foreground">
+                  Update price in database
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Override price for the selected unit
+              </p>
+            </div>
           </div>
 
           <DialogFooter>
@@ -1781,6 +2276,33 @@ export default function SalesTerminal() {
               />
               <p className="text-xs text-muted-foreground">
                 Discount to apply on this item
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="unitPriceOverride">Selling Price (rs)</Label>
+              <Input
+                id="unitPriceOverride"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={unitPriceOverride}
+                onChange={(e) => setUnitPriceOverride(e.target.value)}
+                disabled={!unitPriceOverrideEnabled}
+              />
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="unitPriceOverrideEnabled"
+                  checked={unitPriceOverrideEnabled}
+                  onCheckedChange={(checked) => setUnitPriceOverrideEnabled(Boolean(checked))}
+                />
+                <Label htmlFor="unitPriceOverrideEnabled" className="text-xs text-muted-foreground">
+                  Update price in database
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Override price for the selected unit
               </p>
             </div>
 

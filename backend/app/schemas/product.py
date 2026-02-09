@@ -96,8 +96,39 @@ class ProductBase(BaseModel):
 class ProductCreate(ProductBase):
     pass # Initial quantity is always 0
 
-class ProductUpdate(ProductBase):
-    pass
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    sku: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+    selling_price: Optional[float] = None
+    low_stock_threshold: Optional[int] = None
+    has_variations: Optional[bool] = None
+    variation_attributes: Optional[List[str]] = None
+    base_unit: Optional[str] = None
+    selling_units: Optional[List[SellingUnit]] = None
+
+    @field_validator('variation_attributes', mode='before')
+    @classmethod
+    def parse_variation_attributes(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v) if v else []
+            except:
+                return []
+        return v
+
+    @field_validator('selling_units', mode='before')
+    @classmethod
+    def parse_selling_units(cls, v):
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v) if v else []
+                return [SellingUnit(**unit) if isinstance(unit, dict) else unit for unit in parsed]
+            except:
+                return []
+        return v
 
 class Product(ProductBase):
     id: int

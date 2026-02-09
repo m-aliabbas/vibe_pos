@@ -17,6 +17,19 @@ interface AuthState {
     checkAuth: () => Promise<void>;
 }
 
+const decodeJwt = (token: string): any | null => {
+    try {
+        const payload = token.split('.')[1];
+        if (!payload) return null;
+        const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+        const decoded = atob(padded);
+        return JSON.parse(decoded);
+    } catch {
+        return null;
+    }
+};
+
 export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     token: null,
@@ -33,10 +46,14 @@ export const useAuthStore = create<AuthState>((set) => ({
             });
             const { access_token } = response.data;
             localStorage.setItem('token', access_token);
-            set({ token: access_token });
-
-            const meResponse = await api.get('/auth/me');
-            set({ user: meResponse.data, isLoading: false });
+            const decoded = decodeJwt(access_token);
+            const user = decoded ? {
+                id: decoded.uid,
+                username: decoded.username,
+                role: decoded.role,
+                is_active: decoded.is_active,
+            } : null;
+            set({ token: access_token, user, isLoading: false });
         } catch (error) {
             set({ isLoading: false });
             console.error("Login failed", error);
@@ -52,14 +69,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     checkAuth: async () => {
         const token = localStorage.getItem('token');
         if (token) {
-            set({ token });
-            try {
-                const response = await api.get('/auth/me');
-                set({ user: response.data, isLoading: false });
-            } catch (error) {
+            const decoded = decodeJwt(token);
+            const nowSeconds = Math.floor(Date.now() / 1000);
+            if (!decoded || (decoded.exp && decoded.exp <= nowSeconds)) {
                 localStorage.removeItem('token');
                 set({ token: null, user: null, isLoading: false });
+                return;
             }
+            const user = {
+                id: decoded.uid,
+                username: decoded.username,
+                role: decoded.role,
+                is_active: decoded.is_active,
+            } as User;
+            set({ token, user, isLoading: false });
         } else {
             set({ isLoading: false });
         }

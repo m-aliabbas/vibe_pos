@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api, { vendorReportsApi } from '@/lib/api';
+import { storeConfig } from '@/lib/store-config';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -55,6 +56,15 @@ export default function VendorDetailsPage() {
     const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentResult, setPaymentResult] = useState<any>(null);
+    const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+    const [receiptData, setReceiptData] = useState<{
+        title: string;
+        vendorName: string;
+        amount: number;
+        method?: string;
+        date: string;
+        balance?: number;
+    } | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [editVendor, setEditVendor] = useState({
         name: '',
@@ -112,6 +122,15 @@ export default function VendorDetailsPage() {
             });
             setPaymentResult(response.data);
             setPaymentAmount('');
+            setReceiptData({
+                title: "Vendor Payment Receipt",
+                vendorName: vendor?.name || "Vendor",
+                amount: parseFloat(response.data.total_payment || paymentAmount || "0"),
+                method: "cash",
+                date: new Date().toISOString(),
+                balance: response.data?.new_prepaid_credit ?? undefined,
+            });
+            setReceiptDialogOpen(true);
             // Refresh purchase data
             fetchData();
         } catch (error: any) {
@@ -125,6 +144,47 @@ export default function VendorDetailsPage() {
         setPaymentResult(null);
         setPaymentAmount('');
     };
+
+        const handlePrintReceipt = () => {
+                if (!receiptData) return;
+
+                const content = `
+                    <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
+                        <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
+                            <div style="font-size:16px; font-weight:bold;">${storeConfig.name}</div>
+                            ${storeConfig.address ? `<div>${storeConfig.address}</div>` : ""}
+                            ${storeConfig.city ? `<div>${storeConfig.city}</div>` : ""}
+                            ${storeConfig.phone ? `<div>${storeConfig.phone}</div>` : ""}
+                            ${storeConfig.email ? `<div>${storeConfig.email}</div>` : ""}
+                        </div>
+                        <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
+                        <div style="margin-bottom:8px;">
+                            <div><strong>Vendor:</strong> ${receiptData.vendorName}</div>
+                            <div><strong>Date:</strong> ${new Date(receiptData.date).toLocaleString()}</div>
+                        </div>
+                        <div style="border-top:1px dashed #999; border-bottom:1px dashed #999; padding:8px 0; margin:8px 0;">
+                            <div style="display:flex; justify-content:space-between;"><span>Amount</span><strong>rs ${receiptData.amount.toFixed(2)}</strong></div>
+                            ${receiptData.method ? `<div style="display:flex; justify-content:space-between;"><span>Method</span><span>${receiptData.method}</span></div>` : ""}
+                            ${typeof receiptData.balance === "number" ? `<div style="display:flex; justify-content:space-between; margin-top:6px;"><span>Prepaid Credit</span><strong>rs ${receiptData.balance.toFixed(2)}</strong></div>` : ""}
+                        </div>
+                        <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
+                        ${storeConfig.website ? `<div style="text-align:center; color:#999;">${storeConfig.website}</div>` : ""}
+                    </div>
+                `;
+
+                const printWindow = window.open("", "_blank", "width=400,height=600");
+                if (!printWindow) return;
+                printWindow.document.write(`
+                    <html>
+                        <head><title>Receipt</title></head>
+                        <body>${content}</body>
+                    </html>
+                `);
+                printWindow.document.close();
+                printWindow.focus();
+                printWindow.print();
+                printWindow.close();
+        };
 
     const handleVendorReportExport = async () => {
         if (!id) return;
@@ -144,6 +204,99 @@ export default function VendorDetailsPage() {
         }
     };
 
+    const parseCsv = (text: string) => {
+        const rows: string[][] = [];
+        let row: string[] = [];
+        let current = "";
+        let inQuotes = false;
+
+        const pushCell = () => {
+            row.push(current);
+            current = "";
+        };
+
+        const pushRow = () => {
+            if (row.length > 0 || current.length > 0) {
+                pushCell();
+                rows.push(row);
+                row = [];
+            }
+        };
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const next = text[i + 1];
+
+            if (char === '"') {
+                if (inQuotes && next === '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+                continue;
+            }
+
+            if (char === ',' && !inQuotes) {
+                pushCell();
+                continue;
+            }
+
+            if ((char === '\n' || char === '\r') && !inQuotes) {
+                if (char === '\r' && next === '\n') {
+                    i++;
+                }
+                pushRow();
+                continue;
+            }
+
+            current += char;
+        }
+
+        pushRow();
+        return rows.filter((r) => r.length > 0);
+    };
+
+    const handleVendorReportPdf = async () => {
+        if (!id) return;
+        try {
+            const response = await api.get(`/vendors/${id}/report`, { responseType: "text" });
+            const csvText = response.data as string;
+            const rows = parseCsv(csvText);
+            if (rows.length === 0) {
+                alert("No data to export");
+                return;
+            }
+
+            const headers = rows[0];
+            const body = rows.slice(1);
+
+            const { default: jsPDF } = await import("jspdf");
+            const autoTable = (await import("jspdf-autotable")).default;
+
+            const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+            doc.setFontSize(14);
+            doc.text(storeConfig.name || "Store", 40, 40);
+            doc.setFontSize(12);
+            doc.text(`Vendor Report - ${vendor?.name || "Vendor"}`, 40, 58);
+            doc.setFontSize(10);
+            doc.text(new Date().toLocaleString(), 40, 74);
+
+            autoTable(doc, {
+                startY: 90,
+                head: [headers],
+                body,
+                styles: { fontSize: 9 },
+                headStyles: { fillColor: [33, 33, 33] },
+            });
+
+            doc.save(`vendor_report_${id}.pdf`);
+        } catch (error: any) {
+            console.error("Failed to export vendor report PDF", error);
+            alert(error?.response?.data?.detail || "Failed to export PDF");
+        }
+    };
+
 
     const handleUpdateVendor = async () => {
         if (editVendor.opening_balance < 0) {
@@ -151,7 +304,7 @@ export default function VendorDetailsPage() {
             return;
         }
         try {
-            const { data } = await api.put(`/vendors/${id}`, {
+            await api.put(`/vendors/${id}`, {
                 name: editVendor.name,
                 contact_name: editVendor.contact_name || null,
                 email: editVendor.email || null,
@@ -159,8 +312,8 @@ export default function VendorDetailsPage() {
                 address: editVendor.address || null,
                 opening_balance: editVendor.opening_balance,
             });
-            setVendor(data);
             setEditDialogOpen(false);
+            await fetchData();
         } catch (error: any) {
             console.error("Failed to update vendor", error);
             alert(error?.response?.data?.detail || "Failed to update vendor");
@@ -284,6 +437,9 @@ export default function VendorDetailsPage() {
                     <Button variant="outline" onClick={handleVendorReportExport}>
                         <FileText className="mr-2 h-4 w-4" /> Make Report (CSV)
                     </Button>
+                    <Button variant="outline" onClick={handleVendorReportPdf}>
+                        <FileText className="mr-2 h-4 w-4" /> Download PDF
+                    </Button>
                     <Button variant="outline" onClick={() => router.push(`/inventory/purchase?vendorId=${vendor.id}`)}>
                         <ShoppingCart className="mr-2 h-4 w-4" /> New Purchase
                     </Button>
@@ -322,7 +478,7 @@ export default function VendorDetailsPage() {
                                                 </p>
                                             </div>
                                             <div className="grid gap-2">
-                                                <Label htmlFor="amount">Payment Amount ($)</Label>
+                                                <Label htmlFor="amount">Payment Amount (Rs)</Label>
                                                 <Input
                                                     id="amount"
                                                     type="number"
@@ -411,6 +567,57 @@ export default function VendorDetailsPage() {
                             </DialogContent>
                         </Dialog>
                     )}
+
+                    <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
+                        <DialogContent className="sm:max-w-[420px]">
+                            <DialogHeader>
+                                <DialogTitle>{receiptData?.title || "Receipt"}</DialogTitle>
+                                <DialogDescription>
+                                    Vendor payment receipt.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            {receiptData && (
+                                <div className="space-y-3 text-sm">
+                                    <div className="text-center border-b border-dashed pb-2">
+                                        <div className="text-base font-semibold">{storeConfig.name}</div>
+                                        {storeConfig.address && <div>{storeConfig.address}</div>}
+                                        {storeConfig.city && <div>{storeConfig.city}</div>}
+                                        {storeConfig.phone && <div>{storeConfig.phone}</div>}
+                                    </div>
+                                    <div>
+                                        <div><span className="font-medium">Vendor:</span> {receiptData.vendorName}</div>
+                                        <div><span className="font-medium">Date:</span> {new Date(receiptData.date).toLocaleString()}</div>
+                                    </div>
+                                    <div className="border-t border-b border-dashed py-2">
+                                        <div className="flex justify-between">
+                                            <span>Amount</span>
+                                            <span className="font-semibold">rs {receiptData.amount.toFixed(2)}</span>
+                                        </div>
+                                        {receiptData.method && (
+                                            <div className="flex justify-between">
+                                                <span>Method</span>
+                                                <span>{receiptData.method}</span>
+                                            </div>
+                                        )}
+                                        {typeof receiptData.balance === "number" && (
+                                            <div className="flex justify-between mt-2">
+                                                <span>Prepaid Credit</span>
+                                                <span className="font-semibold">rs {receiptData.balance.toFixed(2)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setReceiptDialogOpen(false)}>
+                                    Close
+                                </Button>
+                                <Button onClick={handlePrintReceipt}>Print Receipt</Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                     <Button variant="destructive" disabled title="Delete disabled for safety">
                         <Trash2 className="h-4 w-4" />
                     </Button>

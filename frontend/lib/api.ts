@@ -130,6 +130,35 @@ export interface LedgerReport {
     entries: LedgerEntry[];
 }
 
+export interface HoldSalePayload {
+    cart: Array<{
+        product_id: number;
+        variation_id?: number | null;
+        unit: string;
+        quantity: number;
+        item_discount?: number;
+        unit_price?: number;
+    }>;
+    customerId: string;
+    customerPhone: string;
+    customerName: string;
+    selectedCustomer: CustomerSimple | null;
+    paymentMethod: string;
+    discount: number;
+    tax: number;
+    deliveryCharges: number;
+    amountPaid: string;
+}
+
+export interface HoldSaleResponse {
+    id: number;
+    user_id: number;
+    label?: string;
+    payload: HoldSalePayload;
+    created_at: string;
+    updated_at?: string;
+}
+
 // Customer API functions
 export const customerApi = {
     // List customers with optional search
@@ -316,6 +345,22 @@ export const customerApi = {
     }> => {
         const response = await api.get(`/customers/${id}/financial-summary`);
         return response.data;
+    },
+};
+
+// ============ HOLD SALES API FUNCTIONS ============
+
+export const holdSalesApi = {
+    list: async (): Promise<HoldSaleResponse[]> => {
+        const response = await api.get('/hold-sales/');
+        return response.data;
+    },
+    create: async (payload: { label?: string; payload: HoldSalePayload }): Promise<HoldSaleResponse> => {
+        const response = await api.post('/hold-sales/', payload);
+        return response.data;
+    },
+    delete: async (id: number): Promise<void> => {
+        await api.delete(`/hold-sales/${id}`);
     },
 };
 

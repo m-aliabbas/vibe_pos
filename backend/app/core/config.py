@@ -21,7 +21,7 @@ class Settings(BaseSettings):
         return f"sqlite:///{self.DATA_DIR}/pos.db"
     
     # Security
-    SECRET_KEY: str = "your-super-secret-key-change-this-in-production"
+    SECRET_KEY: str = "vibe_pos_1234"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: Optional[str] = 'vibepos-4d412'
     FIREBASE_LICENSE_COLLECTION: str = "lisence_pos"
     LICENSE_AUTO_REGISTER: bool = True
+    LICENSE_CACHE_PATH: Optional[str] = None
+    LICENSE_CACHE_KEY: Optional[str] = None
     
     class Config:
         env_file = ".env"

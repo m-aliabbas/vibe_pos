@@ -32,6 +32,13 @@ def normalize_phone(phone: str) -> str:
     return digits
 
 
+def normalize_email(email: Optional[str]) -> Optional[str]:
+    if email is None:
+        return None
+    normalized = email.strip()
+    return normalized or None
+
+
 def build_phone_variants(phone: str) -> List[str]:
     base = normalize_phone(phone)
     if not base:
@@ -183,6 +190,15 @@ def create_customer(
                 status_code=400,
                 detail="A customer with this phone number already exists"
             )
+
+    normalized_email = normalize_email(customer_in.email)
+    if normalized_email:
+        existing = db.query(Customer).filter(Customer.email == normalized_email).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail="A customer with this email already exists"
+            )
     
     # Check for duplicate customer_id
     if customer_in.customer_id:
@@ -201,7 +217,7 @@ def create_customer(
     customer = Customer(
         customer_id=final_customer_id,
         phone=normalize_phone(customer_in.phone) if customer_in.phone else None,
-        email=customer_in.email,
+        email=normalized_email,
         name=customer_in.name,
         address=customer_in.address,
         current_mileage=customer_in.current_mileage,
@@ -244,7 +260,7 @@ async def bulk_import_customers(
         try:
             phone_raw = (row.get("phone") or "").strip()
             customer_id_raw = (row.get("customer_id") or "").strip().upper()
-            email = (row.get("email") or "").strip() or None
+            email = normalize_email(row.get("email"))
             name = (row.get("name") or "").strip() or None
             address = (row.get("address") or "").strip() or None
 
@@ -270,6 +286,12 @@ async def bulk_import_customers(
 
             if customer_id_raw:
                 existing = db.query(Customer).filter(Customer.customer_id == customer_id_raw).first()
+                if existing:
+                    skipped += 1
+                    continue
+
+            if email:
+                existing = db.query(Customer).filter(Customer.email == email).first()
                 if existing:
                     skipped += 1
                     continue
@@ -336,10 +358,19 @@ def find_or_create_customer(
     # Create new customer
     final_customer_id = customer_in.customer_id.strip().upper() if customer_in.customer_id else generate_customer_id(db)
     
+    normalized_email = normalize_email(customer_in.email)
+    if normalized_email:
+        existing = db.query(Customer).filter(Customer.email == normalized_email).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail="A customer with this email already exists"
+            )
+
     customer = Customer(
         customer_id=final_customer_id,
         phone=normalize_phone(customer_in.phone) if customer_in.phone else None,
-        email=customer_in.email,
+        email=normalized_email,
         name=customer_in.name,
         address=customer_in.address,
         current_mileage=customer_in.current_mileage,
@@ -412,7 +443,18 @@ def update_customer(
     
     # Update other fields
     if customer_in.email is not None:
-        customer.email = customer_in.email
+        normalized_email = normalize_email(customer_in.email)
+        if normalized_email and normalized_email != customer.email:
+            existing = db.query(Customer).filter(
+                Customer.email == normalized_email,
+                Customer.id != id,
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A customer with this email already exists",
+                )
+        customer.email = normalized_email
     if customer_in.name is not None:
         customer.name = customer_in.name
     if customer_in.address is not None:

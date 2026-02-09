@@ -4,17 +4,11 @@ import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { storeConfig } from "@/lib/store-config";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from "@/components/ui/dialog";
 import { Trash2, ArrowRight, Plus } from "lucide-react";
 
 function PurchasePageContent() {
@@ -38,6 +32,15 @@ function PurchasePageContent() {
     
     const [items, setItems] = useState<any[]>([]);
     const [amountPaid, setAmountPaid] = useState<string>('');
+    const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+    const [receiptData, setReceiptData] = useState<{
+        title: string;
+        vendorName: string;
+        total: number;
+        paid: number;
+        date: string;
+        status: string;
+    } | null>(null);
     
     // Item input state
     const [productSearch, setProductSearch] = useState('');
@@ -282,7 +285,7 @@ function PurchasePageContent() {
         }
 
         try {
-            await api.post('/purchases/', {
+                        const response = await api.post('/purchases/', {
                 vendor_id: parseInt(vendorId),
                 amount_paid: amountPaid ? parseFloat(amountPaid) : 0,
                 items: items.map(i => ({
@@ -294,12 +297,62 @@ function PurchasePageContent() {
                     update_selling_price: i.update_selling_price
                 }))
             });
-            router.push(`/vendors/${vendorId}`);
+                        const vendor = vendors.find(v => v.id.toString() === vendorId);
+                        setReceiptData({
+                                title: "Purchase Receipt",
+                                vendorName: vendor?.name || "Vendor",
+                                total: response.data.total_amount || totalAmount,
+                                paid: response.data.amount_paid || (amountPaid ? parseFloat(amountPaid) : 0),
+                                date: response.data.created_at || new Date().toISOString(),
+                                status: response.data.status || "unpaid",
+                        });
+                        setReceiptDialogOpen(true);
         } catch (error) {
             console.error("Failed to submit purchase", error);
             alert("Failed to submit purchase");
         }
     };
+
+        const handlePrintReceipt = () => {
+                if (!receiptData) return;
+
+                const content = `
+                    <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
+                        <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
+                            <div style="font-size:16px; font-weight:bold;">${storeConfig.name}</div>
+                            ${storeConfig.address ? `<div>${storeConfig.address}</div>` : ""}
+                            ${storeConfig.city ? `<div>${storeConfig.city}</div>` : ""}
+                            ${storeConfig.phone ? `<div>${storeConfig.phone}</div>` : ""}
+                            ${storeConfig.email ? `<div>${storeConfig.email}</div>` : ""}
+                        </div>
+                        <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
+                        <div style="margin-bottom:8px;">
+                            <div><strong>Vendor:</strong> ${receiptData.vendorName}</div>
+                            <div><strong>Date:</strong> ${new Date(receiptData.date).toLocaleString()}</div>
+                        </div>
+                        <div style="border-top:1px dashed #999; border-bottom:1px dashed #999; padding:8px 0; margin:8px 0;">
+                            <div style="display:flex; justify-content:space-between;"><span>Total</span><strong>rs ${receiptData.total.toFixed(2)}</strong></div>
+                            <div style="display:flex; justify-content:space-between;"><span>Paid</span><strong>rs ${receiptData.paid.toFixed(2)}</strong></div>
+                            <div style="display:flex; justify-content:space-between;"><span>Status</span><span>${receiptData.status}</span></div>
+                        </div>
+                        <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
+                        ${storeConfig.website ? `<div style="text-align:center; color:#999;">${storeConfig.website}</div>` : ""}
+                    </div>
+                `;
+
+                const printWindow = window.open("", "_blank", "width=400,height=600");
+                if (!printWindow) return;
+                printWindow.document.write(`
+                    <html>
+                        <head><title>Receipt</title></head>
+                        <body>${content}</body>
+                    </html>
+                `);
+                printWindow.document.close();
+                printWindow.focus();
+                printWindow.print();
+                printWindow.close();
+        };
 
     return (
         <div className="container mx-auto p-6 max-w-[1400px]">
@@ -338,6 +391,58 @@ function PurchasePageContent() {
                             </div>
                         )}
                     </div>
+
+                    <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
+                        <DialogContent className="sm:max-w-[420px]">
+                            <DialogHeader>
+                                <DialogTitle>{receiptData?.title || "Receipt"}</DialogTitle>
+                                <DialogDescription>
+                                    Purchase receipt.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            {receiptData && (
+                                <div className="space-y-3 text-sm">
+                                    <div className="text-center border-b border-dashed pb-2">
+                                        <div className="text-base font-semibold">{storeConfig.name}</div>
+                                        {storeConfig.address && <div>{storeConfig.address}</div>}
+                                        {storeConfig.city && <div>{storeConfig.city}</div>}
+                                        {storeConfig.phone && <div>{storeConfig.phone}</div>}
+                                    </div>
+                                    <div>
+                                        <div><span className="font-medium">Vendor:</span> {receiptData.vendorName}</div>
+                                        <div><span className="font-medium">Date:</span> {new Date(receiptData.date).toLocaleString()}</div>
+                                    </div>
+                                    <div className="border-t border-b border-dashed py-2">
+                                        <div className="flex justify-between">
+                                            <span>Total</span>
+                                            <span className="font-semibold">rs {receiptData.total.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Paid</span>
+                                            <span className="font-semibold">rs {receiptData.paid.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span>Status</span>
+                                            <span>{receiptData.status}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => {
+                                    setReceiptDialogOpen(false);
+                                    if (vendorId) {
+                                        router.push(`/vendors/${vendorId}`);
+                                    }
+                                }}>
+                                    Close
+                                </Button>
+                                <Button onClick={handlePrintReceipt}>Print Receipt</Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
 
                 {/* 2. Add Items */}

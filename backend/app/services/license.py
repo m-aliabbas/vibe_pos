@@ -5,6 +5,7 @@ import os
 import platform
 import sys
 import uuid
+import base64
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -22,6 +23,7 @@ class LicenseError(RuntimeError):
 
 
 DEFAULT_ENC_FILENAME = "k1.json.enc"
+DEFAULT_LICENSE_CACHE_FILENAME = "license_cache.enc"
 
 
 def _normalize_fingerprint_payload() -> dict:
@@ -106,6 +108,82 @@ def _resolve_resource_path(path_or_name: Optional[str]) -> Tuple[Path, List[Path
 
     # Nothing found
     return Path(filename), candidates
+
+
+def _get_license_cache_path() -> Path:
+    raw = (settings.LICENSE_CACHE_PATH or "").strip()
+    if raw:
+        p = Path(raw)
+        if p.is_absolute():
+            return p
+        return Path(settings.DATA_DIR) / p
+    return Path(settings.DATA_DIR) / DEFAULT_LICENSE_CACHE_FILENAME
+
+
+def _get_license_cache_key() -> Optional[bytes]:
+    key = (settings.LICENSE_CACHE_KEY or "").strip()
+    if not key:
+        key = (settings.SECRET_KEY or "").strip()
+    if not key:
+        return None
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+def _load_local_license_cache(expected_fingerprint: str) -> Optional[dict]:
+    key = _get_license_cache_key()
+    if not key:
+        return None
+
+    cache_path = _get_license_cache_path()
+    if not cache_path.exists():
+        return None
+
+    try:
+        encrypted = cache_path.read_bytes()
+        fernet = Fernet(key)
+        decrypted = fernet.decrypt(encrypted)
+        payload = json.loads(decrypted.decode("utf-8"))
+    except Exception:
+        return None
+
+    if payload.get("fingerprint") != expected_fingerprint:
+        return None
+
+    expires_at = payload.get("expires_at")
+    if isinstance(expires_at, str):
+        try:
+            expires_at = datetime.fromisoformat(expires_at)
+        except ValueError:
+            expires_at = None
+
+    if _is_expired(expires_at if isinstance(expires_at, datetime) else None):
+        return None
+
+    return payload
+
+
+def _save_local_license_cache(fingerprint: str, expires_at: Optional[datetime]) -> None:
+    key = _get_license_cache_key()
+    if not key:
+        return
+
+    cache_path = _get_license_cache_path()
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "fingerprint": fingerprint,
+        "approved": True,
+        "expires_at": expires_at.isoformat() if isinstance(expires_at, datetime) else None,
+        "cached_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        fernet = Fernet(key)
+        encrypted = fernet.encrypt(json.dumps(payload).encode("utf-8"))
+        cache_path.write_bytes(encrypted)
+    except Exception:
+        return
 
 
 def _load_firebase_credentials() -> dict:
@@ -195,6 +273,13 @@ def check_license_or_exit() -> str:
 
     fingerprint = get_device_fingerprint()
 
+    print("🔐 Doing local license verification...")
+    cached = _load_local_license_cache(fingerprint)
+    if cached and cached.get("approved") is True:
+        print("✅ Local license verification approved")
+        return fingerprint
+
+    print("🌐 Doing online license verification...")
     try:
         _ensure_firebase_initialized()
         db = firestore.client()
@@ -245,6 +330,11 @@ def check_license_or_exit() -> str:
         raise LicenseError("License not approved for this device")
     if _is_expired(expires_at if isinstance(expires_at, datetime) else None):
         raise LicenseError("License expired for this device")
+
+    _save_local_license_cache(
+        fingerprint,
+        expires_at if isinstance(expires_at, datetime) else None,
+    )
 
     return fingerprint
 

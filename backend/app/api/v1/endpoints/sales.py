@@ -459,14 +459,17 @@ def create_sale(
         else:
             base_price = product.selling_price
         
-        # Get unit price
-        unit_price = base_price
-        if item.unit != product.base_unit:
-            selling_units = parse_json_field(product.selling_units)
-            for su in selling_units:
-                if su.get('unit') == item.unit:
-                    unit_price = su['price']
-                    break
+        # Get unit price (allow override)
+        if item.unit_price is not None:
+            unit_price = item.unit_price
+        else:
+            unit_price = base_price
+            if item.unit != product.base_unit:
+                selling_units = parse_json_field(product.selling_units)
+                for su in selling_units:
+                    if su.get('unit') == item.unit:
+                        unit_price = su['price']
+                        break
         
         item_discount = item.item_discount if item.item_discount is not None else 0.0
         item_total = (unit_price * item.quantity) - item_discount
@@ -582,15 +585,16 @@ def create_sale(
         else:
             base_price = product.selling_price
         
-        # Get unit price
-        unit_price = base_price
+        # Get unit price (allow override)
+        unit_price = item.unit_price if item.unit_price is not None else base_price
         quantity_in_base_units = item.quantity
-        
+
         if item.unit != product.base_unit:
             selling_units = parse_json_field(product.selling_units)
             for su in selling_units:
                 if su.get('unit') == item.unit:
-                    unit_price = su['price']
+                    if item.unit_price is None:
+                        unit_price = su['price']
                     quantity_in_base_units = item.quantity * su['conversion']
                     break
         

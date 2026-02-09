@@ -9,6 +9,13 @@ from app.schemas import user as user_schema
 
 router = APIRouter()
 
+
+def normalize_email(email: str | None) -> str | None:
+    if email is None:
+        return None
+    normalized = email.strip()
+    return normalized or None
+
 @router.get("/", response_model=List[user_schema.User])
 def read_users(
     db: Session = Depends(deps.get_db),
@@ -32,9 +39,14 @@ def create_user(
             status_code=400,
             detail="The user with this username already exists in the system.",
         )
+    normalized_email = normalize_email(user_in.email)
+    if normalized_email:
+        existing = db.query(User).filter(User.email == normalized_email).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already taken")
     user = User(
         username=user_in.username,
-        email=user_in.email,
+        email=normalized_email,
         hashed_password=security.get_password_hash(user_in.password),
         role=user_in.role,
         is_active=user_in.is_active,
@@ -70,7 +82,14 @@ def update_current_user(
             raise HTTPException(status_code=400, detail="Username already taken")
     
     user.username = user_in.username or user.username
-    user.email = user_in.email or user.email
+
+    if user_in.email is not None:
+        normalized_email = normalize_email(user_in.email)
+        if normalized_email and normalized_email != user.email:
+            existing = db.query(User).filter(User.email == normalized_email).first()
+            if existing and existing.id != user.id:
+                raise HTTPException(status_code=400, detail="Email already taken")
+        user.email = normalized_email
     
     # Update password if provided
     if user_in.password:
@@ -120,7 +139,14 @@ def update_user(
     
     # Update fields
     user.username = user_in.username or user.username
-    user.email = user_in.email or user.email
+
+    if user_in.email is not None:
+        normalized_email = normalize_email(user_in.email)
+        if normalized_email and normalized_email != user.email:
+            existing = db.query(User).filter(User.email == normalized_email).first()
+            if existing and existing.id != user.id:
+                raise HTTPException(status_code=400, detail="Email already taken")
+        user.email = normalized_email
     user.role = user_in.role or user.role
     user.is_active = user_in.is_active if user_in.is_active is not None else user.is_active
     

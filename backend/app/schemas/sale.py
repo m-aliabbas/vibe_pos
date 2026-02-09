@@ -16,6 +16,7 @@ class SaleItemBase(BaseModel):
     variation_id: Optional[int] = None  # Optional variation
     unit: str = "piece"  # Unit of sale (piece, dozen, kg, etc.)
     item_discount: float = 0.0 # Discount on this specific item
+    unit_price: Optional[float] = None  # Optional override per unit
 
 class SaleItemCreate(SaleItemBase):
     pass
