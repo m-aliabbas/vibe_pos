@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Select,
     SelectContent,
@@ -56,6 +57,7 @@ export default function PurchaseDetailPage() {
     const [savingEdit, setSavingEdit] = useState(false);
     const [editableItems, setEditableItems] = useState<EditablePurchaseItem[]>([]);
     const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
+    const [allowDecimals, setAllowDecimals] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -215,9 +217,9 @@ export default function PurchaseDetailPage() {
                     <h1 className="text-3xl font-bold text-gray-900">Purchase #{purchase.id}</h1>
                     <p className="text-gray-500 mt-2">
                         <Calendar className="inline h-4 w-4 mr-1" />
-                        {new Date(purchase.created_at).toLocaleDateString('en-US', { 
-                            year: 'numeric', 
-                            month: 'long', 
+                        {new Date(purchase.created_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
                             day: 'numeric',
                             hour: '2-digit',
                             minute: '2-digit'
@@ -233,13 +235,12 @@ export default function PurchaseDetailPage() {
                     <Button variant="outline" onClick={openEditDialog}>
                         <Pencil className="mr-2 h-4 w-4" /> Edit Purchase
                     </Button>
-                    <Badge 
-                        variant="outline" 
-                        className={`text-lg px-4 py-2 ${
-                            purchase.status === 'paid' ? 'bg-green-100 text-green-700 border-green-200' :
+                    <Badge
+                        variant="outline"
+                        className={`text-lg px-4 py-2 ${purchase.status === 'paid' ? 'bg-green-100 text-green-700 border-green-200' :
                             purchase.status === 'partial' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
-                            'bg-red-100 text-red-700 border-red-200'
-                        }`}
+                                'bg-red-100 text-red-700 border-red-200'
+                            }`}
                     >
                         {purchase.status.toUpperCase()}
                     </Badge>
@@ -310,17 +311,17 @@ export default function PurchaseDetailPage() {
                                 <div className="grid gap-4 py-4">
                                     <div className="grid gap-2">
                                         <Label htmlFor="payment">Total Amount Paid ($)</Label>
-                                        <Input 
-                                            id="payment" 
-                                            type="number" 
-                                            step="0.01" 
+                                        <Input
+                                            id="payment"
+                                            type="number"
+                                            step="0.01"
                                             value={paymentAmount}
                                             onChange={e => setPaymentAmount(e.target.value)}
                                             placeholder={purchase.amount_paid.toFixed(2)}
                                         />
                                         <p className="text-xs text-gray-500">
-                                            Current: ${purchase.amount_paid.toFixed(2)} | 
-                                            Total: ${purchase.total_amount.toFixed(2)} | 
+                                            Current: ${purchase.amount_paid.toFixed(2)} |
+                                            Total: ${purchase.total_amount.toFixed(2)} |
                                             Balance: ${balance.toFixed(2)}
                                         </p>
                                     </div>
@@ -398,7 +399,7 @@ export default function PurchaseDetailPage() {
             </Card>
 
             <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-                <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                <DialogContent className="w-[95vw] sm:max-w-7xl max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>Edit Purchase #{purchase.id}</DialogTitle>
                         <DialogDescription>
@@ -408,7 +409,19 @@ export default function PurchaseDetailPage() {
 
                     <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                            <h3 className="font-semibold">Items</h3>
+                            <div className="flex items-center gap-4">
+                                <h3 className="font-semibold">Items</h3>
+                                <div className="flex items-center space-x-2">
+                                    <Checkbox
+                                        id="allowDecimals"
+                                        checked={allowDecimals}
+                                        onCheckedChange={(checked) => setAllowDecimals(checked as boolean)}
+                                    />
+                                    <Label htmlFor="allowDecimals" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                        Allow Decimals?
+                                    </Label>
+                                </div>
+                            </div>
                             <Button type="button" variant="outline" onClick={addEditableItem}>
                                 <Plus className="mr-2 h-4 w-4" /> Add Product
                             </Button>
@@ -417,103 +430,109 @@ export default function PurchaseDetailPage() {
                         <div className="space-y-3">
                             {editableItems.map((item, index) => (
                                 <div
-  key={index}
-  className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end border rounded-md p-4"
->
-  {/* Product */}
-  <div className="md:col-span-5 relative">
-    <Label className="text-xs">Product</Label>
-    <Input
-      value={item.product_search}
-      placeholder="Type product name or SKU..."
-      onFocus={() => setActiveProductRow(index)}
-      onChange={(e) => updateEditableItem(index, "product_search", e.target.value)}
-    />
+                                    key={index}
+                                    className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end border rounded-md p-4"
+                                >
+                                    {/* Product */}
+                                    <div className="md:col-span-5 relative">
+                                        <Label className="text-xs">Product</Label>
+                                        <Input
+                                            value={item.product_search}
+                                            placeholder="Type product name or SKU..."
+                                            onFocus={() => setActiveProductRow(index)}
+                                            onChange={(e) => updateEditableItem(index, "product_search", e.target.value)}
+                                        />
 
-    {activeProductRow === index && (
-      <div className="absolute z-20 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
-        {getFilteredProducts(item.product_search).map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b last:border-b-0"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setEditableItems((prev) => {
-                const next = [...prev];
-                next[index] = {
-                  ...next[index],
-                  product_id: p.id,
-                  product_search: p.name,
-                };
-                return next;
-              });
-              setActiveProductRow(null);
-            }}
-          >
-            <div className="font-medium">{p.name}</div>
-            <div className="text-xs text-muted-foreground">SKU: {p.sku || "N/A"}</div>
-          </button>
-        ))}
-        {getFilteredProducts(item.product_search).length === 0 && (
-          <div className="px-3 py-2 text-xs text-muted-foreground">No products found</div>
-        )}
-      </div>
-    )}
-  </div>
+                                        {activeProductRow === index && (
+                                            <div className="absolute z-20 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
+                                                {getFilteredProducts(item.product_search).map((p) => (
+                                                    <button
+                                                        key={p.id}
+                                                        type="button"
+                                                        className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b last:border-b-0"
+                                                        onMouseDown={(e) => e.preventDefault()}
+                                                        onClick={() => {
+                                                            setEditableItems((prev) => {
+                                                                const next = [...prev];
+                                                                next[index] = {
+                                                                    ...next[index],
+                                                                    product_id: p.id,
+                                                                    product_search: p.name,
+                                                                };
+                                                                return next;
+                                                            });
+                                                            setActiveProductRow(null);
+                                                        }}
+                                                    >
+                                                        <div className="font-medium">{p.name}</div>
+                                                        <div className="text-xs text-muted-foreground">SKU: {p.sku || "N/A"}</div>
+                                                    </button>
+                                                ))}
+                                                {getFilteredProducts(item.product_search).length === 0 && (
+                                                    <div className="px-3 py-2 text-xs text-muted-foreground">No products found</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
 
-  {/* Qty */}
-  <div className="md:col-span-1">
-    <Label className="text-xs">Qty</Label>
-    <Input
-      type="number"
-      min="1"
-      value={item.quantity}
-      onChange={(e) =>
-        updateEditableItem(index, "quantity", Math.max(1, parseInt(e.target.value) || 1))
-      }
-    />
-  </div>
+                                    {/* Qty */}
+                                    <div className="md:col-span-1">
+                                        <Label className="text-xs">Qty</Label>
+                                        <Input
+                                            type="number"
+                                            min={allowDecimals ? "0.001" : "1"}
+                                            step={allowDecimals ? "0.01" : "1"}
+                                            value={item.quantity}
+                                            onChange={(e) => {
+                                                const val = parseFloat(e.target.value);
+                                                updateEditableItem(
+                                                    index,
+                                                    "quantity",
+                                                    allowDecimals ? (isNaN(val) ? 0 : val) : Math.max(1, parseInt(e.target.value) || 1)
+                                                );
+                                            }}
+                                        />
+                                    </div>
 
-  {/* Unit Cost */}
-  <div className="md:col-span-2">
-    <Label className="text-xs">Unit Cost</Label>
-    <Input
-      type="number"
-      min="0"
-      step="0.01"
-      value={item.unit_cost}
-      onChange={(e) =>
-        updateEditableItem(index, "unit_cost", Math.max(0, parseFloat(e.target.value) || 0))
-      }
-    />
-  </div>
+                                    {/* Unit Cost */}
+                                    <div className="md:col-span-2">
+                                        <Label className="text-xs">Unit Cost</Label>
+                                        <Input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={item.unit_cost}
+                                            onChange={(e) =>
+                                                updateEditableItem(index, "unit_cost", Math.max(0, parseFloat(e.target.value) || 0))
+                                            }
+                                        />
+                                    </div>
 
-  {/* Expiry */}
-  <div className="md:col-span-2">
-    <Label className="text-xs">Expiry</Label>
-    <Input
-      type="date"
-      value={item.expiry_date || ""}
-      onChange={(e) => updateEditableItem(index, "expiry_date", e.target.value || null)}
-    />
-  </div>
+                                    {/* Expiry */}
+                                    <div className="md:col-span-2">
+                                        <Label className="text-xs">Expiry</Label>
+                                        <Input
+                                            type="date"
+                                            value={item.expiry_date || ""}
+                                            onChange={(e) => updateEditableItem(index, "expiry_date", e.target.value || null)}
+                                        />
+                                    </div>
 
-  {/* Line Total (read-only) */}
-  <div className="md:col-span-1">
-    <Label className="text-xs">Total</Label>
-    <div className="h-10 px-3 flex items-center justify-end rounded-md border bg-muted/30 text-sm font-medium">
-      ${(Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2)}
-    </div>
-  </div>
+                                    {/* Line Total (read-only) */}
+                                    <div className="md:col-span-1">
+                                        <Label className="text-xs">Total</Label>
+                                        <div className="h-10 px-3 flex items-center justify-end rounded-md border bg-muted/30 text-sm font-medium">
+                                            ${(Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2)}
+                                        </div>
+                                    </div>
 
-  {/* Remove */}
-  <div className="md:col-span-1 flex justify-end">
-    <Button type="button" variant="ghost" size="icon" onClick={() => removeEditableItem(index)}>
-      <Trash2 className="h-4 w-4 text-red-600" />
-    </Button>
-  </div>
-</div>
+                                    {/* Remove */}
+                                    <div className="md:col-span-1 flex justify-end">
+                                        <Button type="button" variant="ghost" size="icon" onClick={() => removeEditableItem(index)}>
+                                            <Trash2 className="h-4 w-4 text-red-600" />
+                                        </Button>
+                                    </div>
+                                </div>
 
                             ))}
                         </div>

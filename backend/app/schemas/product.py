@@ -12,7 +12,7 @@ class ProductVariationBase(BaseModel):
     attributes: Dict[str, str]  # e.g., {"Size": "M", "Color": "Red"}
     sku: Optional[str] = None
     price_adjustment: float = 0.0
-    quantity: int = 0
+    quantity: float = 0.0
     barcode: Optional[str] = None
     
     @field_validator('attributes', mode='before')
@@ -32,7 +32,7 @@ class ProductVariationUpdate(BaseModel):
     attributes: Optional[Dict[str, str]] = None
     sku: Optional[str] = None
     price_adjustment: Optional[float] = None
-    quantity: Optional[int] = None
+    quantity: Optional[float] = None
     barcode: Optional[str] = None
     
     @field_validator('attributes', mode='before')
@@ -132,7 +132,7 @@ class ProductUpdate(BaseModel):
 
 class Product(ProductBase):
     id: int
-    quantity: int
+    quantity: float
     cost_price: float
     variations: List[ProductVariation] = []
 

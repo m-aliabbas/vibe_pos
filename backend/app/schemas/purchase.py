@@ -10,7 +10,7 @@ class PurchaseStatus(str, Enum):
 
 class PurchaseItemBase(BaseModel):
     product_id: int
-    quantity: int
+    quantity: float
     unit_cost: float
     expiry_date: Optional[datetime] = None
     variation_id: Optional[int] = None  # For products with variations

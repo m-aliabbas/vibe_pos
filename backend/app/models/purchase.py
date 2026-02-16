@@ -31,7 +31,7 @@ class PurchaseItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"))
     variation_id = Column(Integer, ForeignKey("product_variations.id"), nullable=True)
     
-    quantity = Column(Integer)
+    quantity = Column(Float)
     unit_cost = Column(Float)
     total_cost = Column(Float) # quantity * unit_cost
     expiry_date = Column(DateTime, nullable=True)

@@ -52,7 +52,7 @@ class SaleItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"))
     variation_id = Column(Integer, ForeignKey("product_variations.id"), nullable=True)  # Optional variation
     
-    quantity = Column(Integer)
+    quantity = Column(Float)
     unit = Column(String, default="piece")  # Unit of sale (piece, dozen, kg, etc.)
     unit_price = Column(Float)  # Price at time of sale (snapshot)
     item_discount = Column(Float, default=0.0) # Discount on this specific item

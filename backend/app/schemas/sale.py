@@ -12,7 +12,7 @@ class PaymentMethod(str, Enum):
 # Sale Item Schemas
 class SaleItemBase(BaseModel):
     product_id: int
-    quantity: int
+    quantity: float
     variation_id: Optional[int] = None  # Optional variation
     unit: str = "piece"  # Unit of sale (piece, dozen, kg, etc.)
     item_discount: float = 0.0 # Discount on this specific item

@@ -15,7 +15,7 @@ class Product(Base):
     
     selling_price = Column(Float, default=0.0)
     cost_price = Column(Float, default=0.0) # Updated via purchase
-    quantity = Column(Integer, default=0)
+    quantity = Column(Float, default=0.0)
     low_stock_threshold = Column(Integer, default=10)
     
     # Variation fields
@@ -41,7 +41,7 @@ class ProductVariation(Base):
     
     sku = Column(String, index=True, unique=True, nullable=True)  # Unique SKU per variation
     price_adjustment = Column(Float, default=0.0)  # +/- from base product price
-    quantity = Column(Integer, default=0)
+    quantity = Column(Float, default=0.0)
     barcode = Column(String, index=True, unique=True, nullable=True)
     
     # Timestamps

@@ -135,7 +135,7 @@ export default function InventoryPage() {
             }
             setTotalCount(countData?.total || 0);
             const { data } = await api.get('/products/', {
-                params: { 
+                params: {
                     search: search || undefined,
                     category: categoryFilter !== 'All' ? categoryFilter : undefined,
                     skip: (page - 1) * pageSize,
@@ -145,7 +145,7 @@ export default function InventoryPage() {
             if (requestId !== fetchRequestIdRef.current) {
                 return;
             }
-            
+
             // Apply stock filter on frontend
             let filtered = data;
             if (stockFilter === 'low') {
@@ -155,7 +155,7 @@ export default function InventoryPage() {
             } else if (stockFilter === 'in') {
                 filtered = data.filter((p: Product) => p.quantity > 0);
             }
-            
+
             setProducts(filtered);
         } catch (error) {
             console.error("Failed to fetch products", error);
@@ -165,7 +165,7 @@ export default function InventoryPage() {
             }
         }
     };
-    
+
     // Get unique categories
     const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
 
@@ -248,7 +248,7 @@ export default function InventoryPage() {
     const handleEditProduct = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedProduct) return;
-        
+
         try {
             await api.put(`/products/${selectedProduct.id}`, {
                 name,
@@ -277,7 +277,7 @@ export default function InventoryPage() {
 
     const handleDeleteProduct = async () => {
         if (!selectedProduct) return;
-        
+
         try {
             await api.delete(`/products/${selectedProduct.id}`);
             setDeleteDialogOpen(false);
@@ -396,124 +396,125 @@ export default function InventoryPage() {
                             </Button>
                         </DialogTrigger>
                         <DialogContent className="sm:max-w-[500px]">
-                        <DialogHeader>
-                            <DialogTitle>Define New Product</DialogTitle>
-                            <DialogDescription>
-                                Create a new item definition. Stock is added separately in "Purchases".
-                            </DialogDescription>
-                        </DialogHeader>
-                        <form onSubmit={handleCreateProduct} className="grid gap-4 py-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="name">Product Name</Label>
-                                <Input id="name" value={name} onChange={e => setName(e.target.value)} required placeholder="e.g. Coca Cola Can" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
+                            <DialogHeader>
+                                <DialogTitle>Define New Product</DialogTitle>
+                                <DialogDescription>
+                                    Create a new item definition. Stock is added separately in "Purchases".
+                                </DialogDescription>
+                            </DialogHeader>
+                            <form onSubmit={handleCreateProduct} className="grid gap-4 py-4">
                                 <div className="grid gap-2">
-                                    <Label htmlFor="sku">SKU / Barcode</Label>
-                                    <Input id="sku" value={sku} onChange={e => setSku(e.target.value)} placeholder="Leave blank for auto-generated SKU" />
-                                    <p className="text-xs text-gray-500">If left empty, SKU is auto-generated from product name.</p>
+                                    <Label htmlFor="name">Product Name</Label>
+                                    <Input id="name" value={name} onChange={e => setName(e.target.value)} required placeholder="e.g. Coca Cola Can" />
                                 </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="category">Category</Label>
-                                    <Input id="category" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Beverages" />
-                                </div>
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="price">Selling Price (rs)</Label>
-                                <Input id="price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required placeholder="0.00" />
-                            </div>
-
-                            {/* Unit of Measure */}
-                            <div className="grid gap-2">
-                                <Label htmlFor="base-unit">Base Unit</Label>
-                                <Input id="base-unit" value={baseUnit} onChange={e => setBaseUnit(e.target.value)} placeholder="piece, kg, liter" />
-                                <p className="text-xs text-gray-500">Unit for inventory tracking</p>
-                            </div>
-
-                            {/* Selling Units */}
-                            <div className="grid gap-2">
-                                <Label>Additional Selling Units</Label>
-                                <div className="flex gap-2">
-                                    <Input 
-                                        placeholder="Unit (dozen)" 
-                                        value={newUnit.unit}
-                                        onChange={e => setNewUnit({...newUnit, unit: e.target.value})}
-                                        className="flex-1"
-                                    />
-                                    <Input 
-                                        placeholder="Conv (12)" 
-                                        type="number"
-                                        value={newUnit.conversion}
-                                        onChange={e => setNewUnit({...newUnit, conversion: e.target.value})}
-                                        className="w-24"
-                                    />
-                                    <Input 
-                                        placeholder="Price" 
-                                        type="number"
-                                        step="0.01"
-                                        value={newUnit.price}
-                                        onChange={e => setNewUnit({...newUnit, price: e.target.value})}
-                                        className="w-24"
-                                    />
-                                    <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {sellingUnits.map((unit, idx) => (
-                                        <Badge key={idx} variant="secondary" className="gap-2">
-                                            {unit.unit} (×{unit.conversion}) rs {unit.price}
-                                            <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
-                                        </Badge>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Variations */}
-                            <div className="border-t pt-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <input 
-                                        type="checkbox" 
-                                        id="has-variations"
-                                        checked={hasVariations}
-                                        onChange={e => setHasVariations(e.target.checked)}
-                                    />
-                                    <Label htmlFor="has-variations">This product has variations (Size, Color, etc.)</Label>
-                                </div>
-                                
-                                {hasVariations && (
-                                    <div className="grid gap-2 mt-2">
-                                        <Label>Variation Attributes</Label>
-                                        <div className="flex gap-2">
-                                            <Input 
-                                                placeholder="e.g. Size, Color, Material"
-                                                value={newAttribute}
-                                                onChange={e => setNewAttribute(e.target.value)}
-                                                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addAttribute())}
-                                            />
-                                            <Button type="button" size="sm" onClick={addAttribute}>Add</Button>
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {variationAttributes.map(attr => (
-                                                <Badge key={attr} variant="secondary" className="gap-2">
-                                                    {attr}
-                                                    <button type="button" onClick={() => removeAttribute(attr)} className="ml-1">×</button>
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                        <p className="text-xs text-gray-500">
-                                            After creating the product, use "Manage Variations" to define specific options
-                                        </p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="sku">SKU / Barcode</Label>
+                                        <Input id="sku" value={sku} onChange={e => setSku(e.target.value)} placeholder="Leave blank for auto-generated SKU" />
+                                        <p className="text-xs text-gray-500">If left empty, SKU is auto-generated from product name.</p>
                                     </div>
-                                )}
-                            </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="category">Category</Label>
+                                        <Input id="category" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Beverages" />
+                                    </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="price">Selling Price (rs)</Label>
+                                    <Input id="price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required placeholder="0.00" />
+                                </div>
 
-                            <div className="bg-yellow-50 p-3 rounded-md text-xs text-yellow-700 border border-yellow-200">
-                                Note: Initial quantity will be 0. Use the <strong>Purchases</strong> module to add stock from a vendor.
-                            </div>
+                                {/* Unit of Measure */}
+                                <div className="grid gap-2">
+                                    <Label htmlFor="base-unit">Base Unit</Label>
+                                    <Input id="base-unit" value={baseUnit} onChange={e => setBaseUnit(e.target.value)} placeholder="piece, kg, liter" />
+                                    <p className="text-xs text-gray-500">Unit for inventory tracking</p>
+                                </div>
 
-                            <DialogFooter>
-                                <Button type="submit">Save Definition</Button>
-                            </DialogFooter>
-                        </form>
+                                {/* Selling Units */}
+                                <div className="grid gap-2">
+                                    <Label>Additional Selling Units</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            placeholder="Unit (dozen)"
+                                            value={newUnit.unit}
+                                            onChange={e => setNewUnit({ ...newUnit, unit: e.target.value })}
+                                            className="flex-1"
+                                        />
+                                        <Input
+                                            placeholder="Conv (12)"
+                                            type="number"
+                                            step="any"
+                                            value={newUnit.conversion}
+                                            onChange={e => setNewUnit({ ...newUnit, conversion: e.target.value })}
+                                            className="w-24"
+                                        />
+                                        <Input
+                                            placeholder="Price"
+                                            type="number"
+                                            step="0.01"
+                                            value={newUnit.price}
+                                            onChange={e => setNewUnit({ ...newUnit, price: e.target.value })}
+                                            className="w-24"
+                                        />
+                                        <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {sellingUnits.map((unit, idx) => (
+                                            <Badge key={idx} variant="secondary" className="gap-2">
+                                                {unit.unit} (×{unit.conversion}) rs {unit.price}
+                                                <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Variations */}
+                                <div className="border-t pt-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <input
+                                            type="checkbox"
+                                            id="has-variations"
+                                            checked={hasVariations}
+                                            onChange={e => setHasVariations(e.target.checked)}
+                                        />
+                                        <Label htmlFor="has-variations">This product has variations (Size, Color, etc.)</Label>
+                                    </div>
+
+                                    {hasVariations && (
+                                        <div className="grid gap-2 mt-2">
+                                            <Label>Variation Attributes</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    placeholder="e.g. Size, Color, Material"
+                                                    value={newAttribute}
+                                                    onChange={e => setNewAttribute(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addAttribute())}
+                                                />
+                                                <Button type="button" size="sm" onClick={addAttribute}>Add</Button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {variationAttributes.map(attr => (
+                                                    <Badge key={attr} variant="secondary" className="gap-2">
+                                                        {attr}
+                                                        <button type="button" onClick={() => removeAttribute(attr)} className="ml-1">×</button>
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                            <p className="text-xs text-gray-500">
+                                                After creating the product, use "Manage Variations" to define specific options
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-yellow-50 p-3 rounded-md text-xs text-yellow-700 border border-yellow-200">
+                                    Note: Initial quantity will be 0. Use the <strong>Purchases</strong> module to add stock from a vendor.
+                                </div>
+
+                                <DialogFooter>
+                                    <Button type="submit">Save Definition</Button>
+                                </DialogFooter>
+                            </form>
                         </DialogContent>
                     </Dialog>
                 </div>
@@ -596,8 +597,8 @@ export default function InventoryPage() {
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-2">
                                                 {product.has_variations && (
-                                                    <Button 
-                                                        variant="ghost" 
+                                                    <Button
+                                                        variant="ghost"
                                                         size="sm"
                                                         onClick={() => openVariationBuilder(product)}
                                                         className="hover:bg-purple-50 hover:text-purple-600"
@@ -606,16 +607,16 @@ export default function InventoryPage() {
                                                         <Grid3x3 className="h-4 w-4" />
                                                     </Button>
                                                 )}
-                                                <Button 
-                                                    variant="ghost" 
+                                                <Button
+                                                    variant="ghost"
                                                     size="sm"
                                                     onClick={() => openEditDialog(product)}
                                                     className="hover:bg-blue-50 hover:text-blue-600"
                                                 >
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
-                                                <Button 
-                                                    variant="ghost" 
+                                                <Button
+                                                    variant="ghost"
                                                     size="sm"
                                                     onClick={() => openDeleteDialog(product)}
                                                     className="hover:bg-red-50 hover:text-red-600"

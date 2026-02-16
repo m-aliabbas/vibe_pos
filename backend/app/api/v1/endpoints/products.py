@@ -250,7 +250,7 @@ async def bulk_import_products(
             cost_price = float(cost_price_value) if cost_price_value not in (None, "") else 0.0
 
             quantity_value = row.get("quantity")
-            quantity = int(float(quantity_value)) if quantity_value not in (None, "") else 0
+            quantity = float(quantity_value) if quantity_value not in (None, "") else 0.0
 
             has_variations_raw = (row.get("has_variations") or "").strip().lower()
             has_variations = has_variations_raw in ("true", "1", "yes", "y")
