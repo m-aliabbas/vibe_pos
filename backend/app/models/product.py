@@ -17,6 +17,7 @@ class Product(Base):
     cost_price = Column(Float, default=0.0) # Updated via purchase
     quantity = Column(Float, default=0.0)
     low_stock_threshold = Column(Integer, default=10)
+    allow_decimal_qty = Column(Boolean, default=False)
     
     # Variation fields
     has_variations = Column(Boolean, default=False)

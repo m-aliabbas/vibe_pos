@@ -350,7 +350,7 @@ def create_return(
                 selling_units = parse_json_field(product.selling_units)
                 for su in selling_units:
                     if su.get('unit') == unit_used:
-                        quantity_in_base_units = quantity_returned * su['conversion']
+                        quantity_in_base_units = quantity_returned * float(su['conversion'])
                         break
             
             # Add back to inventory
@@ -360,9 +360,9 @@ def create_return(
                     ProductVariation.id == variation_id
                 ).first()
                 if variation:
-                    variation.quantity += int(quantity_in_base_units)
+                    variation.quantity += quantity_in_base_units
             else:
-                product.quantity += int(quantity_in_base_units)
+                product.quantity += quantity_in_base_units
     
     ar_reduction = 0.0
     cash_refund = refund_amount

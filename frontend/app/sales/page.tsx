@@ -69,6 +69,7 @@ interface Product {
   selling_price: number;
   cost_price: number;
   quantity: number;
+  allow_decimal_qty: boolean;
   vendor_id: number;
   has_variations: boolean;
   variation_attributes: string[];
@@ -153,9 +154,6 @@ export default function SalesTerminal() {
   const customerNameLookupRequestIdRef = useRef(0);
   const productSearchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Desi Mode for Decimals
-  const [allowDecimals, setAllowDecimals] = useState(false);
-
   const latestSaleSnapshotRef = useRef<{
     cart: CartItem[];
     customerId: string;
@@ -192,7 +190,7 @@ export default function SalesTerminal() {
   );
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>("piece");
-  const [quantityForVariation, setQuantityForVariation] = useState<number>(1);
+  const [quantityForVariation, setQuantityForVariation] = useState<string>("1");
   const [variationDiscount, setVariationDiscount] = useState<number>(0);
   const [variationUnitPrice, setVariationUnitPrice] = useState<string>("");
   const [variationPriceOverrideEnabled, setVariationPriceOverrideEnabled] = useState(false);
@@ -201,7 +199,7 @@ export default function SalesTerminal() {
   const [unitDialogOpen, setUnitDialogOpen] = useState(false);
   const [selectedProductForUnit, setSelectedProductForUnit] = useState<Product | null>(null);
   const [selectedUnitForRegular, setSelectedUnitForRegular] = useState<string>("piece");
-  const [quantityForUnit, setQuantityForUnit] = useState<number>(1);
+  const [quantityForUnit, setQuantityForUnit] = useState<string>("1");
   const [unitDiscount, setUnitDiscount] = useState<number>(0);
   const [unitPriceOverride, setUnitPriceOverride] = useState<string>("");
   const [unitPriceOverrideEnabled, setUnitPriceOverrideEnabled] = useState(false);
@@ -212,6 +210,19 @@ export default function SalesTerminal() {
       maximumFractionDigits: 2,
     }).format(amount || 0);
     return `rs ${formatted}`;
+  }, []);
+
+  const normalizeQuantityForProduct = useCallback((product: Product, quantity: number): number => {
+    if (!Number.isFinite(quantity) || quantity <= 0) return 0;
+    if (product.allow_decimal_qty) return Math.max(0, quantity);
+    return Math.max(0, Math.round(quantity));
+  }, []);
+
+  const parseDraftQuantity = useCallback((draft: string): number | null => {
+    const trimmed = (draft || "").trim();
+    if (trimmed === "") return null;
+    const parsed = parseFloat(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
   }, []);
 
   // Parse quantity from search query (e.g., "milk x 3", "milk 3", "3 milk")
@@ -226,7 +237,7 @@ export default function SalesTerminal() {
         const qty = parseFloat(match1[2]);
         return {
           searchTerm: match1[1].trim(),
-          quantity: allowDecimals ? qty : Math.max(1, Math.round(qty)),
+          quantity: Number.isFinite(qty) ? qty : 1,
         };
       }
 
@@ -237,7 +248,7 @@ export default function SalesTerminal() {
         const qty = parseFloat(match2[2]);
         return {
           searchTerm: match2[1].trim(),
-          quantity: allowDecimals ? qty : Math.max(1, Math.round(qty)),
+          quantity: Number.isFinite(qty) ? qty : 1,
         };
       }
 
@@ -248,13 +259,13 @@ export default function SalesTerminal() {
         const qty = parseFloat(match3[1]);
         return {
           searchTerm: match3[2].trim(),
-          quantity: allowDecimals ? qty : Math.max(1, Math.round(qty)),
+          quantity: Number.isFinite(qty) ? qty : 1,
         };
       }
 
       return { searchTerm: trimmed, quantity: 1 };
     },
-    [allowDecimals]
+    []
   );
 
   const fetchProducts = useCallback(
@@ -422,29 +433,30 @@ export default function SalesTerminal() {
 
       const item = cart[index];
       if (!item) return;
+      const normalizedQuantity = normalizeQuantityForProduct(item.product, newQuantity);
 
       const availableStock = item.variation ? item.variation.quantity : item.product.quantity;
 
-      let quantityInBaseUnits = newQuantity;
+      let quantityInBaseUnits = normalizedQuantity;
       if (item.unit !== item.product.base_unit) {
         const sellingUnit = item.product.selling_units.find((u) => u.unit === item.unit);
-        if (sellingUnit) quantityInBaseUnits = newQuantity * sellingUnit.conversion;
+        if (sellingUnit) quantityInBaseUnits = normalizedQuantity * sellingUnit.conversion;
       }
 
       if (quantityInBaseUnits > availableStock) {
         const willGoNegative = quantityInBaseUnits - availableStock;
         if (
           !confirm(
-            `⚠️ Warning: Only ${availableStock} ${item.product.base_unit} in stock!\nSetting quantity to ${newQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+            `⚠️ Warning: Only ${availableStock} ${item.product.base_unit} in stock!\nSetting quantity to ${normalizedQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
           )
         ) {
           return;
         }
       }
 
-      setCart((prev) => prev.map((cartItem, idx) => (idx === index ? { ...cartItem, quantity: newQuantity } : cartItem)));
+      setCart((prev) => prev.map((cartItem, idx) => (idx === index ? { ...cartItem, quantity: normalizedQuantity } : cartItem)));
     },
-    [cart, removeFromCart]
+    [cart, normalizeQuantityForProduct, removeFromCart]
   );
 
   const clearCart = useCallback(() => {
@@ -723,9 +735,10 @@ export default function SalesTerminal() {
 
   const addToCartWithQuantity = useCallback(
     (product: Product, quantity: number) => {
+      const normalizedQuantity = normalizeQuantityForProduct(product, quantity);
       if (product.has_variations) {
         setSelectedProductForVariation(product);
-        setQuantityForVariation(quantity);
+        setQuantityForVariation(String(normalizedQuantity));
         setSelectedUnit(product.base_unit);
         setVariationPriceOverrideEnabled(false);
         setVariationDialogOpen(true);
@@ -734,10 +747,15 @@ export default function SalesTerminal() {
 
       if (product.selling_units && product.selling_units.length > 0) {
         setSelectedProductForUnit(product);
-        setQuantityForUnit(quantity);
+        setQuantityForUnit(String(normalizedQuantity));
         setSelectedUnitForRegular(product.base_unit);
         setUnitPriceOverrideEnabled(false);
         setUnitDialogOpen(true);
+        return;
+      }
+
+      if (normalizedQuantity <= 0) {
+        alert("Please enter a valid quantity");
         return;
       }
 
@@ -746,13 +764,13 @@ export default function SalesTerminal() {
       );
 
       const currentCartQuantity = existingItem ? existingItem.quantity : 0;
-      const newTotalQuantity = currentCartQuantity + quantity;
+      const newTotalQuantity = currentCartQuantity + normalizedQuantity;
 
       if (newTotalQuantity > product.quantity) {
         const willGoNegative = newTotalQuantity - product.quantity;
         if (
           !confirm(
-            `⚠️ Warning: Only ${product.quantity} units in stock!\nAdding ${quantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+            `⚠️ Warning: Only ${product.quantity} units in stock!\nAdding ${normalizedQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
           )
         ) {
           return;
@@ -768,17 +786,17 @@ export default function SalesTerminal() {
           )
         );
       } else {
-        setCart((prev) => [...prev, { product, quantity, unit: product.base_unit }]);
+        setCart((prev) => [...prev, { product, quantity: normalizedQuantity, unit: product.base_unit }]);
       }
     },
-    [cart]
+    [cart, normalizeQuantityForProduct]
   );
 
   const addToCart = useCallback(
     (product: Product) => {
       if (product.has_variations) {
         setSelectedProductForVariation(product);
-        setQuantityForVariation(1);
+        setQuantityForVariation("1");
         setSelectedUnit(product.base_unit);
         setVariationDialogOpen(true);
         return;
@@ -786,7 +804,7 @@ export default function SalesTerminal() {
 
       if (product.selling_units && product.selling_units.length > 0) {
         setSelectedProductForUnit(product);
-        setQuantityForUnit(1);
+        setQuantityForUnit("1");
         setSelectedUnitForRegular(product.base_unit);
         setUnitDialogOpen(true);
         return;
@@ -827,12 +845,23 @@ export default function SalesTerminal() {
       return;
     }
 
+    const draftQuantity = parseDraftQuantity(quantityForVariation);
+    if (draftQuantity === null) {
+      alert("Please enter quantity");
+      return;
+    }
+    const normalizedQuantity = normalizeQuantityForProduct(selectedProductForVariation, draftQuantity);
+    if (normalizedQuantity <= 0) {
+      alert("Please enter a valid quantity");
+      return;
+    }
+
     const unit = selectedUnit;
-    let quantityInBaseUnits = quantityForVariation;
+    let quantityInBaseUnits = normalizedQuantity;
 
     if (unit !== selectedProductForVariation.base_unit) {
       const sellingUnit = selectedProductForVariation.selling_units.find((u) => u.unit === unit);
-      if (sellingUnit) quantityInBaseUnits = quantityForVariation * sellingUnit.conversion;
+      if (sellingUnit) quantityInBaseUnits = normalizedQuantity * sellingUnit.conversion;
     }
 
     const existingItem = cart.find(
@@ -845,7 +874,7 @@ export default function SalesTerminal() {
     const currentCartQuantity = existingItem ? existingItem.quantity : 0;
 
     const newTotalQuantityInBase = existingItem
-      ? (currentCartQuantity + quantityForVariation) *
+      ? (currentCartQuantity + normalizedQuantity) *
       (unit !== selectedProductForVariation.base_unit
         ? selectedProductForVariation.selling_units.find((u) => u.unit === unit)?.conversion || 1
         : 1)
@@ -912,7 +941,7 @@ export default function SalesTerminal() {
             item.unit === unit
             ? {
               ...item,
-              quantity: item.quantity + quantityForVariation,
+              quantity: item.quantity + normalizedQuantity,
               item_discount: (item.item_discount || 0) + variationDiscount,
               unit_price: unitPriceValue ?? item.unit_price,
             }
@@ -924,7 +953,7 @@ export default function SalesTerminal() {
         ...prev,
         {
           product: selectedProductForVariation,
-          quantity: quantityForVariation,
+          quantity: normalizedQuantity,
           variation: selectedVariation,
           unit,
           item_discount: variationDiscount,
@@ -936,7 +965,7 @@ export default function SalesTerminal() {
     setVariationDialogOpen(false);
     setSelectedProductForVariation(null);
     setSelectedVariation(null);
-    setQuantityForVariation(1);
+    setQuantityForVariation("1");
     setSelectedUnit("piece");
     setVariationDiscount(0);
     setVariationUnitPrice("");
@@ -946,6 +975,8 @@ export default function SalesTerminal() {
     selectedVariation,
     selectedUnit,
     quantityForVariation,
+    parseDraftQuantity,
+    normalizeQuantityForProduct,
     cart,
     variationDiscount,
     variationUnitPrice,
@@ -956,12 +987,23 @@ export default function SalesTerminal() {
   const addUnitToCart = useCallback(async () => {
     if (!selectedProductForUnit) return;
 
+    const draftQuantity = parseDraftQuantity(quantityForUnit);
+    if (draftQuantity === null) {
+      alert("Please enter quantity");
+      return;
+    }
+    const normalizedQuantity = normalizeQuantityForProduct(selectedProductForUnit, draftQuantity);
+    if (normalizedQuantity <= 0) {
+      alert("Please enter a valid quantity");
+      return;
+    }
+
     const unit = selectedUnitForRegular;
-    let quantityInBaseUnits = quantityForUnit;
+    let quantityInBaseUnits = normalizedQuantity;
 
     if (unit !== selectedProductForUnit.base_unit) {
       const sellingUnit = selectedProductForUnit.selling_units.find((u) => u.unit === unit);
-      if (sellingUnit) quantityInBaseUnits = quantityForUnit * sellingUnit.conversion;
+      if (sellingUnit) quantityInBaseUnits = normalizedQuantity * sellingUnit.conversion;
     }
 
     const existingItem = cart.find(
@@ -971,7 +1013,7 @@ export default function SalesTerminal() {
     const currentCartQuantity = existingItem ? existingItem.quantity : 0;
 
     const newTotalQuantityInBase = existingItem
-      ? (currentCartQuantity + quantityForUnit) *
+      ? (currentCartQuantity + normalizedQuantity) *
       (unit !== selectedProductForUnit.base_unit
         ? selectedProductForUnit.selling_units.find((u) => u.unit === unit)?.conversion || 1
         : 1)
@@ -1029,7 +1071,7 @@ export default function SalesTerminal() {
           item.product.id === selectedProductForUnit.id && !item.variation && item.unit === unit
             ? {
               ...item,
-              quantity: item.quantity + quantityForUnit,
+              quantity: item.quantity + normalizedQuantity,
               item_discount: (item.item_discount || 0) + unitDiscount,
               unit_price: unitPriceValue ?? item.unit_price,
             }
@@ -1041,7 +1083,7 @@ export default function SalesTerminal() {
         ...prev,
         {
           product: selectedProductForUnit,
-          quantity: quantityForUnit,
+          quantity: normalizedQuantity,
           unit,
           item_discount: unitDiscount,
           unit_price: unitPriceValue,
@@ -1051,7 +1093,7 @@ export default function SalesTerminal() {
 
     setUnitDialogOpen(false);
     setSelectedProductForUnit(null);
-    setQuantityForUnit(1);
+    setQuantityForUnit("1");
     setSelectedUnitForRegular("piece");
     setUnitDiscount(0);
     setUnitPriceOverride("");
@@ -1060,6 +1102,8 @@ export default function SalesTerminal() {
     selectedProductForUnit,
     selectedUnitForRegular,
     quantityForUnit,
+    parseDraftQuantity,
+    normalizeQuantityForProduct,
     cart,
     unitDiscount,
     unitPriceOverride,
@@ -1624,24 +1668,10 @@ export default function SalesTerminal() {
 
               {/* Search Input */}
               <div className="space-y-4">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="allowDecimals"
-                    checked={allowDecimals}
-                    onCheckedChange={(checked) => setAllowDecimals(checked as boolean)}
-                  />
-                  <Label
-                    htmlFor="allowDecimals"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                  >
-                    Ashariya / Points mein quantity (e.g. 0.5)?
-                  </Label>
-                </div>
-
                 <div className="relative">
                   <Input
                     ref={productSearchInputRef}
-                    placeholder={`Search by name, SKU... (Try: milk x ${allowDecimals ? "1.5" : "3"})`}
+                    placeholder="Search by name, SKU... (Try: milk x 1.5)"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={handleSearchKeyDown}
@@ -1653,14 +1683,19 @@ export default function SalesTerminal() {
                     <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
                       {(() => {
                         const { searchTerm, quantity } = parseQuantityFromSearch(searchQuery);
-                        const showQuantityHint = quantity > 1 && searchTerm !== searchQuery;
+                        const selectedProduct = filteredProducts[selectedProductIndex];
+                        const hintQty = selectedProduct
+                          ? normalizeQuantityForProduct(selectedProduct, quantity)
+                          : quantity;
+                        const showQuantityHint =
+                          searchTerm !== searchQuery && Math.abs(hintQty - 1) > 0.000001;
 
                         return (
                           <>
                             {showQuantityHint && (
                               <div className="bg-primary/10 px-3 py-2 border-b border-primary/20">
                                 <p className="text-sm font-semibold text-primary">
-                                  📦 Press Enter to add {quantity} units of selected item
+                                  📦 Press Enter to add {hintQty} units of selected item
                                 </p>
                               </div>
                             )}
@@ -1869,7 +1904,9 @@ export default function SalesTerminal() {
                               size="icon"
                               variant="outline"
                               className="h-8 w-8"
-                              onClick={() => updateQuantity(index, item.quantity - 1)}
+                              onClick={() =>
+                                updateQuantity(index, item.quantity - (item.product.allow_decimal_qty ? 0.25 : 1))
+                              }
                             >
                               <Minus className="h-3 w-3" />
                             </Button>
@@ -1880,7 +1917,9 @@ export default function SalesTerminal() {
                               size="icon"
                               variant="outline"
                               className="h-8 w-8"
-                              onClick={() => updateQuantity(index, item.quantity + 1)}
+                              onClick={() =>
+                                updateQuantity(index, item.quantity + (item.product.allow_decimal_qty ? 0.25 : 1))
+                              }
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
@@ -2407,26 +2446,36 @@ export default function SalesTerminal() {
             <div className="grid gap-2">
               <Label>Quantity</Label>
               <div className="flex items-center gap-2">
+                <Checkbox
+                  id="variationDecimalEnabled"
+                  checked={Boolean(selectedProductForVariation?.allow_decimal_qty)}
+                  disabled
+                />
+                <Label htmlFor="variationDecimalEnabled" className="text-xs text-muted-foreground">
+                  Points/decimal quantity enabled for this product
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => setQuantityForVariation(Math.max(1, quantityForVariation - 1))}
+                  onClick={() => {
+                    const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
+                    const current = parseDraftQuantity(quantityForVariation) ?? 0;
+                    const next = Math.max(0, current - step);
+                    setQuantityForVariation(String(next));
+                  }}
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
 
                 <Input
                   type="number"
-                  min={allowDecimals ? "0.001" : "1"}
-                  step={allowDecimals ? "0.01" : "1"}
+                  min="0"
+                  step={selectedProductForVariation?.allow_decimal_qty ? "0.25" : "1"}
                   value={quantityForVariation}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setQuantityForVariation(
-                      allowDecimals ? (isNaN(val) ? 0 : val) : Math.max(1, parseInt(e.target.value) || 1)
-                    );
-                  }}
+                  onChange={(e) => setQuantityForVariation(e.target.value)}
                   className="text-center"
                 />
 
@@ -2434,7 +2483,11 @@ export default function SalesTerminal() {
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => setQuantityForVariation(quantityForVariation + 1)}
+                  onClick={() => {
+                    const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
+                    const current = parseDraftQuantity(quantityForVariation) ?? 0;
+                    setQuantityForVariation(String(current + step));
+                  }}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -2541,26 +2594,36 @@ export default function SalesTerminal() {
             <div className="grid gap-2">
               <Label>Quantity</Label>
               <div className="flex items-center gap-2">
+                <Checkbox
+                  id="unitDecimalEnabled"
+                  checked={Boolean(selectedProductForUnit?.allow_decimal_qty)}
+                  disabled
+                />
+                <Label htmlFor="unitDecimalEnabled" className="text-xs text-muted-foreground">
+                  Points/decimal quantity enabled for this product
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => setQuantityForUnit(Math.max(1, quantityForUnit - 1))}
+                  onClick={() => {
+                    const step = selectedProductForUnit?.allow_decimal_qty ? 0.25 : 1;
+                    const current = parseDraftQuantity(quantityForUnit) ?? 0;
+                    const next = Math.max(0, current - step);
+                    setQuantityForUnit(String(next));
+                  }}
                 >
                   <Minus className="h-4 w-4" />
                 </Button>
 
                 <Input
                   type="number"
-                  min={allowDecimals ? "0.001" : "1"}
-                  step={allowDecimals ? "0.01" : "1"}
+                  min="0"
+                  step={selectedProductForUnit?.allow_decimal_qty ? "0.25" : "1"}
                   value={quantityForUnit}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    setQuantityForUnit(
-                      allowDecimals ? (isNaN(val) ? 0 : val) : Math.max(1, parseInt(e.target.value) || 1)
-                    );
-                  }}
+                  onChange={(e) => setQuantityForUnit(e.target.value)}
                   className="text-center"
                 />
 
@@ -2568,7 +2631,11 @@ export default function SalesTerminal() {
                   type="button"
                   variant="outline"
                   size="icon"
-                  onClick={() => setQuantityForUnit(quantityForUnit + 1)}
+                  onClick={() => {
+                    const step = selectedProductForUnit?.allow_decimal_qty ? 0.25 : 1;
+                    const current = parseDraftQuantity(quantityForUnit) ?? 0;
+                    setQuantityForUnit(String(current + step));
+                  }}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -2624,7 +2691,7 @@ export default function SalesTerminal() {
                 {selectedUnitForRegular !== selectedProductForUnit.base_unit && (
                   <div className="text-xs text-muted-foreground mt-1">
                     {quantityForUnit} {selectedUnitForRegular} ={" "}
-                    {quantityForUnit *
+                    {(parseDraftQuantity(quantityForUnit) || 0) *
                       (selectedProductForUnit.selling_units.find((u) => u.unit === selectedUnitForRegular)?.conversion ||
                         1)}{" "}
                     {selectedProductForUnit.base_unit}

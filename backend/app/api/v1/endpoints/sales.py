@@ -312,8 +312,26 @@ def normalize_phone_number(phone: Optional[str]) -> Optional[str]:
     return phone if phone else None
 
 
-def get_quantity_in_base_units(product: Product, unit: str, quantity: int) -> int:
-    quantity_in_base_units = quantity
+def is_effectively_integer(value: float) -> bool:
+    return abs(value - round(value)) < 1e-9
+
+
+def validate_item_quantity_rules(product: Product, quantity: float) -> None:
+    if quantity <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Quantity must be greater than 0 for product {product.name}",
+        )
+
+    if not getattr(product, "allow_decimal_qty", False) and not is_effectively_integer(quantity):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Decimal quantity is not allowed for product {product.name}",
+        )
+
+
+def get_quantity_in_base_units(product: Product, unit: str, quantity: float) -> float:
+    quantity_in_base_units = float(quantity)
     if unit != product.base_unit:
         selling_units = parse_json_field(product.selling_units)
         selling_unit = None
@@ -328,9 +346,9 @@ def get_quantity_in_base_units(product: Product, unit: str, quantity: int) -> in
                 detail=f"Unit '{unit}' not configured for product {product.name}"
             )
 
-        quantity_in_base_units = quantity * int(selling_unit['conversion'])
+        quantity_in_base_units = quantity * float(selling_unit['conversion'])
 
-    return int(quantity_in_base_units)
+    return quantity_in_base_units
 
 
 def resolve_sale_customer(db: Session, sale_in: SaleCreate):
@@ -462,6 +480,7 @@ def create_sale(
             )
         
         products_dict[item.product_id] = product
+        validate_item_quantity_rules(product, item.quantity)
         
         # Check if variation is specified
         if item.variation_id:
@@ -505,7 +524,7 @@ def create_sale(
                 )
             
             # Convert to base units for stock check
-            quantity_in_base_units = item.quantity * selling_unit['conversion']
+            quantity_in_base_units = item.quantity * float(selling_unit['conversion'])
             unit_price = selling_unit['price']
         
         # # Check stock availability
@@ -631,9 +650,9 @@ def create_sale(
         # Deduct from inventory (always in base units)
         if item.variation_id:
             variation = variations_dict[item.variation_id]
-            variation.quantity -= int(quantity_in_base_units)
+            variation.quantity -= quantity_in_base_units
         else:
-            product.quantity -= int(quantity_in_base_units)
+            product.quantity -= quantity_in_base_units
     
     # Update customer statistics if linked
     if customer and customer_ref_id:
@@ -731,6 +750,7 @@ def update_sale(
         if not product:
             raise HTTPException(status_code=404, detail=f"Product with id {item.product_id} not found")
         products_dict[item.product_id] = product
+        validate_item_quantity_rules(product, item.quantity)
 
         if item.variation_id:
             if not product.has_variations:
@@ -830,10 +850,10 @@ def update_sale(
 
         if item.variation_id:
             variation = variations_dict[item.variation_id]
-            variation.quantity -= int(quantity_in_base_units)
+            variation.quantity -= quantity_in_base_units
             db.add(variation)
         else:
-            product.quantity -= int(quantity_in_base_units)
+            product.quantity -= quantity_in_base_units
             db.add(product)
 
     if customer and customer_ref_id:

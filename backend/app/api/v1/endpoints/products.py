@@ -254,6 +254,8 @@ async def bulk_import_products(
 
             has_variations_raw = (row.get("has_variations") or "").strip().lower()
             has_variations = has_variations_raw in ("true", "1", "yes", "y")
+            allow_decimal_qty_raw = (row.get("allow_decimal_qty") or "").strip().lower()
+            allow_decimal_qty = allow_decimal_qty_raw in ("true", "1", "yes", "y")
 
             variation_attributes_raw = row.get("variation_attributes")
             variation_attributes = json.loads(variation_attributes_raw) if variation_attributes_raw else []
@@ -271,6 +273,7 @@ async def bulk_import_products(
                 "quantity": quantity,
                 "base_unit": base_unit,
                 "has_variations": has_variations,
+                "allow_decimal_qty": allow_decimal_qty,
                 "variation_attributes": variation_attributes,
                 "selling_units": selling_units,
             })

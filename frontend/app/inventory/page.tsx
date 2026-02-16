@@ -68,6 +68,7 @@ interface Product {
     selling_price: number;
     cost_price: number;
     quantity: number;
+    allow_decimal_qty: boolean;
     has_variations: boolean;
     variation_attributes: string[];
     base_unit: string;
@@ -102,6 +103,7 @@ export default function InventoryPage() {
     const [category, setCategory] = useState('');
     const [sellingPrice, setSellingPrice] = useState('');
     const [hasVariations, setHasVariations] = useState(false);
+    const [allowDecimalQty, setAllowDecimalQty] = useState(false);
     const [variationAttributes, setVariationAttributes] = useState<string[]>([]);
     const [newAttribute, setNewAttribute] = useState('');
     const [baseUnit, setBaseUnit] = useState('piece');
@@ -179,6 +181,7 @@ export default function InventoryPage() {
                 category: category || "Uncategorized",
                 selling_price: parseFloat(sellingPrice),
                 has_variations: hasVariations,
+                allow_decimal_qty: allowDecimalQty,
                 variation_attributes: variationAttributes,
                 base_unit: baseUnit,
                 selling_units: sellingUnits,
@@ -199,6 +202,7 @@ export default function InventoryPage() {
         setCategory('');
         setSellingPrice('');
         setHasVariations(false);
+        setAllowDecimalQty(false);
         setVariationAttributes([]);
         setNewAttribute('');
         setBaseUnit('piece');
@@ -239,6 +243,7 @@ export default function InventoryPage() {
         setCategory(product.category);
         setSellingPrice(product.selling_price.toString());
         setHasVariations(product.has_variations);
+        setAllowDecimalQty(product.allow_decimal_qty);
         setVariationAttributes(product.variation_attributes || []);
         setBaseUnit(product.base_unit);
         setSellingUnits(product.selling_units || []);
@@ -256,6 +261,7 @@ export default function InventoryPage() {
                 category: category || "Uncategorized",
                 selling_price: parseFloat(sellingPrice),
                 has_variations: hasVariations,
+                allow_decimal_qty: allowDecimalQty,
                 variation_attributes: variationAttributes,
                 base_unit: baseUnit,
                 selling_units: sellingUnits,
@@ -348,7 +354,7 @@ export default function InventoryPage() {
                             <DialogHeader>
                                 <DialogTitle>Bulk Import Products</DialogTitle>
                                 <DialogDescription>
-                                    Upload a CSV file with columns: name, sku, category, description, selling_price, cost_price, quantity, base_unit, has_variations, variation_attributes, selling_units_json
+                                    Upload a CSV file with columns: name, sku, category, description, selling_price, cost_price, quantity, base_unit, has_variations, allow_decimal_qty, variation_attributes, selling_units_json
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="grid gap-4 py-4">
@@ -421,6 +427,15 @@ export default function InventoryPage() {
                                 <div className="grid gap-2">
                                     <Label htmlFor="price">Selling Price (rs)</Label>
                                     <Input id="price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required placeholder="0.00" />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="allow-decimal-qty"
+                                        checked={allowDecimalQty}
+                                        onChange={e => setAllowDecimalQty(e.target.checked)}
+                                    />
+                                    <Label htmlFor="allow-decimal-qty">Allow decimal quantity (points, e.g. 0.5)</Label>
                                 </div>
 
                                 {/* Unit of Measure */}
@@ -696,6 +711,15 @@ export default function InventoryPage() {
                         <div className="grid gap-2">
                             <Label htmlFor="edit-price">Selling Price (rs)</Label>
                             <Input id="edit-price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="edit-allow-decimal-qty"
+                                checked={allowDecimalQty}
+                                onChange={e => setAllowDecimalQty(e.target.checked)}
+                            />
+                            <Label htmlFor="edit-allow-decimal-qty">Allow decimal quantity (points, e.g. 0.5)</Label>
                         </div>
 
                         <div className="border-t pt-4">
