@@ -16,7 +16,7 @@ export default function Home() {
       await checkAuth();
       
       // If no token, redirect to login
-      if (!localStorage.getItem('token')) {
+      if (!sessionStorage.getItem('token')) {
         setHasRedirected(true);
         router.replace('/login');
         return;

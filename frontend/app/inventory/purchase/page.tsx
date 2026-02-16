@@ -163,8 +163,8 @@ function PurchasePageContent() {
     };
     
     const createNewProduct = async () => {
-        if (!newProductName || !newProductSku || !newProductSellingPrice) {
-            alert('Please fill in required fields: Name, SKU, and Selling Price');
+        if (!newProductName || !newProductSellingPrice) {
+            alert('Please fill in required fields: Name and Selling Price');
             return;
         }
         
@@ -172,7 +172,7 @@ function PurchasePageContent() {
             setSavingProduct(true);
             const response = await api.post('/products/', {
                 name: newProductName,
-                sku: newProductSku,
+                sku: newProductSku.trim() || null,
                 category: newProductCategory || 'General',
                 selling_price: parseFloat(newProductSellingPrice),
                 cost_price: newProductCostPrice ? parseFloat(newProductCostPrice) : parseFloat(newProductSellingPrice),
@@ -696,14 +696,17 @@ function PurchasePageContent() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="productSku">
-                                    SKU <span className="text-red-500">*</span>
+                                    SKU (Optional)
                                 </Label>
                                 <Input
                                     id="productSku"
                                     value={newProductSku}
                                     onChange={(e) => setNewProductSku(e.target.value)}
-                                    placeholder="e.g., COFFEE-001"
+                                    placeholder="Leave blank for auto-generated SKU"
                                 />
+                                <p className="text-xs text-muted-foreground">
+                                    If left empty, SKU is auto-generated from product name.
+                                </p>
                             </div>
                         </div>
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, DollarSign, Package, Calendar, FileText } from "lucide-react";
+import { ArrowLeft, DollarSign, Package, Calendar, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
     Table,
@@ -26,6 +26,22 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+
+interface EditablePurchaseItem {
+    product_id: number;
+    product_search: string;
+    variation_id?: number | null;
+    quantity: number;
+    unit_cost: number;
+    expiry_date?: string | null;
+}
 
 export default function PurchaseDetailPage() {
     const { id } = useParams();
@@ -36,6 +52,10 @@ export default function PurchaseDetailPage() {
     const [loading, setLoading] = useState(true);
     const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [savingEdit, setSavingEdit] = useState(false);
+    const [editableItems, setEditableItems] = useState<EditablePurchaseItem[]>([]);
+    const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
 
     useEffect(() => {
         if (id) {
@@ -55,17 +75,10 @@ export default function PurchaseDetailPage() {
             setVendor(vendorData);
 
             // Fetch product details for items
-            const productIds: number[] = Array.from(
-                new Set((purchaseRes.data.items || []).map((item: any) => item.product_id as number))
-            );
-            if (productIds.length > 0) {
-                const productResponses = await Promise.all(
-                    productIds.map((productId) => api.get(`/products/${productId}`))
-                );
-                setProducts(productResponses.map((res) => res.data));
-            } else {
-                setProducts([]);
-            }
+            const productsRes = await api.get('/products/', {
+                params: { limit: 1000 }
+            });
+            setProducts(productsRes.data || []);
         } catch (error) {
             console.error("Failed to fetch purchase details", error);
         } finally {
@@ -89,6 +102,101 @@ export default function PurchaseDetailPage() {
             console.error("Failed to update payment", error);
             alert("Failed to update payment");
         }
+    };
+
+    const openEditDialog = () => {
+        if (!purchase) return;
+        setEditableItems(
+            (purchase.items || []).map((item: any) => ({
+                product_id: item.product_id,
+                product_search: getProductName(item.product_id),
+                variation_id: item.variation_id || null,
+                quantity: item.quantity,
+                unit_cost: item.unit_cost,
+                expiry_date: item.expiry_date ? new Date(item.expiry_date).toISOString().slice(0, 10) : null,
+            }))
+        );
+        setEditDialogOpen(true);
+    };
+
+    const updateEditableItem = (index: number, field: keyof EditablePurchaseItem, value: any) => {
+        setEditableItems((prev) => {
+            const next = [...prev];
+            next[index] = { ...next[index], [field]: value };
+            return next;
+        });
+    };
+
+    const removeEditableItem = (index: number) => {
+        setEditableItems((prev) => prev.filter((_, idx) => idx !== index));
+    };
+
+    const addEditableItem = () => {
+        if (products.length === 0) {
+            alert("No products available. Please create a product first.");
+            return;
+        }
+        setEditableItems((prev) => [
+            ...prev,
+            {
+                product_id: products[0].id,
+                product_search: products[0].name,
+                variation_id: null,
+                quantity: 1,
+                unit_cost: 0,
+                expiry_date: null,
+            }
+        ]);
+    };
+
+    const handleSaveEditedPurchase = async () => {
+        if (!purchase) return;
+        if (editableItems.length === 0) {
+            alert("At least one purchase item is required.");
+            return;
+        }
+
+        const invalidItem = editableItems.find((item) => item.quantity <= 0 || item.unit_cost < 0);
+        if (invalidItem) {
+            alert("Please ensure quantity > 0 and unit cost >= 0 for all items.");
+            return;
+        }
+
+        try {
+            setSavingEdit(true);
+            await api.put(`/purchases/${id}`, {
+                vendor_id: purchase.vendor_id,
+                amount_paid: purchase.amount_paid,
+                items: editableItems.map((item) => ({
+                    product_id: item.product_id,
+                    variation_id: item.variation_id || null,
+                    quantity: item.quantity,
+                    unit_cost: item.unit_cost,
+                    expiry_date: item.expiry_date ? new Date(item.expiry_date).toISOString() : null,
+                    update_selling_price: false,
+                })),
+            });
+
+            setEditDialogOpen(false);
+            await fetchData();
+            alert("Purchase updated successfully.");
+        } catch (error: any) {
+            console.error("Failed to update purchase", error);
+            alert(error?.response?.data?.detail || "Failed to update purchase");
+        } finally {
+            setSavingEdit(false);
+        }
+    };
+
+    const getFilteredProducts = (query: string) => {
+        const q = query.trim().toLowerCase();
+        if (!q) return products.slice(0, 20);
+        return products
+            .filter((p) =>
+                p.name.toLowerCase().includes(q) ||
+                (p.sku || '').toLowerCase().includes(q)
+            )
+            .slice(0, 20);
     };
 
     if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -122,6 +230,9 @@ export default function PurchaseDetailPage() {
                     )}
                 </div>
                 <div className="flex gap-2">
+                    <Button variant="outline" onClick={openEditDialog}>
+                        <Pencil className="mr-2 h-4 w-4" /> Edit Purchase
+                    </Button>
                     <Badge 
                         variant="outline" 
                         className={`text-lg px-4 py-2 ${
@@ -189,7 +300,7 @@ export default function PurchaseDetailPage() {
                                     <DollarSign className="mr-2 h-4 w-4" /> Make Payment
                                 </Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="w-[95vw] max-w-6xl lg:max-w-7xl max-h-[85vh] overflow-y-auto p-6">
                                 <DialogHeader>
                                     <DialogTitle>Update Payment</DialogTitle>
                                     <DialogDescription>
@@ -285,6 +396,139 @@ export default function PurchaseDetailPage() {
                     </div>
                 </CardContent>
             </Card>
+
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+                <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Edit Purchase #{purchase.id}</DialogTitle>
+                        <DialogDescription>
+                            Changes will update stock, vendor accounting, and payable balances.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-semibold">Items</h3>
+                            <Button type="button" variant="outline" onClick={addEditableItem}>
+                                <Plus className="mr-2 h-4 w-4" /> Add Product
+                            </Button>
+                        </div>
+
+                        <div className="space-y-3">
+                            {editableItems.map((item, index) => (
+                                <div
+  key={index}
+  className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end border rounded-md p-4"
+>
+  {/* Product */}
+  <div className="md:col-span-5 relative">
+    <Label className="text-xs">Product</Label>
+    <Input
+      value={item.product_search}
+      placeholder="Type product name or SKU..."
+      onFocus={() => setActiveProductRow(index)}
+      onChange={(e) => updateEditableItem(index, "product_search", e.target.value)}
+    />
+
+    {activeProductRow === index && (
+      <div className="absolute z-20 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
+        {getFilteredProducts(item.product_search).map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b last:border-b-0"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setEditableItems((prev) => {
+                const next = [...prev];
+                next[index] = {
+                  ...next[index],
+                  product_id: p.id,
+                  product_search: p.name,
+                };
+                return next;
+              });
+              setActiveProductRow(null);
+            }}
+          >
+            <div className="font-medium">{p.name}</div>
+            <div className="text-xs text-muted-foreground">SKU: {p.sku || "N/A"}</div>
+          </button>
+        ))}
+        {getFilteredProducts(item.product_search).length === 0 && (
+          <div className="px-3 py-2 text-xs text-muted-foreground">No products found</div>
+        )}
+      </div>
+    )}
+  </div>
+
+  {/* Qty */}
+  <div className="md:col-span-1">
+    <Label className="text-xs">Qty</Label>
+    <Input
+      type="number"
+      min="1"
+      value={item.quantity}
+      onChange={(e) =>
+        updateEditableItem(index, "quantity", Math.max(1, parseInt(e.target.value) || 1))
+      }
+    />
+  </div>
+
+  {/* Unit Cost */}
+  <div className="md:col-span-2">
+    <Label className="text-xs">Unit Cost</Label>
+    <Input
+      type="number"
+      min="0"
+      step="0.01"
+      value={item.unit_cost}
+      onChange={(e) =>
+        updateEditableItem(index, "unit_cost", Math.max(0, parseFloat(e.target.value) || 0))
+      }
+    />
+  </div>
+
+  {/* Expiry */}
+  <div className="md:col-span-2">
+    <Label className="text-xs">Expiry</Label>
+    <Input
+      type="date"
+      value={item.expiry_date || ""}
+      onChange={(e) => updateEditableItem(index, "expiry_date", e.target.value || null)}
+    />
+  </div>
+
+  {/* Line Total (read-only) */}
+  <div className="md:col-span-1">
+    <Label className="text-xs">Total</Label>
+    <div className="h-10 px-3 flex items-center justify-end rounded-md border bg-muted/30 text-sm font-medium">
+      ${(Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2)}
+    </div>
+  </div>
+
+  {/* Remove */}
+  <div className="md:col-span-1 flex justify-end">
+    <Button type="button" variant="ghost" size="icon" onClick={() => removeEditableItem(index)}>
+      <Trash2 className="h-4 w-4 text-red-600" />
+    </Button>
+  </div>
+</div>
+
+                            ))}
+                        </div>
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditDialogOpen(false)} disabled={savingEdit}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleSaveEditedPurchase} disabled={savingEdit}>
+                            {savingEdit ? "Saving..." : "Save Purchase Changes"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

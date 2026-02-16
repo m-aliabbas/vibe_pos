@@ -2,6 +2,9 @@ from typing import Any, List, Optional
 import csv
 import io
 import json
+import random
+import re
+import string
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from sqlalchemy.orm import Session
 from app.api import deps
@@ -19,6 +22,52 @@ def serialize_json_fields(data: dict):
     return data
 
 
+def _sku_prefix_from_name(product_name: str) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", product_name or "")
+    source_word = random.choice(words) if words else "PRD"
+    prefix = source_word.upper()[:3]
+    if len(prefix) < 3:
+        prefix = (prefix + "PRD")[:3]
+    return prefix
+
+
+def generate_unique_product_sku(db: Session, product_name: str) -> str:
+    prefix = _sku_prefix_from_name(product_name)
+
+    for _ in range(200):
+        candidate = f"{prefix}{random.randint(1000, 9999)}"
+        exists = db.query(Product.id).filter(Product.sku == candidate).first()
+        if not exists:
+            return candidate
+
+
+def ensure_product_has_sku(db: Session, product: Product) -> bool:
+    if product.sku and str(product.sku).strip():
+        return False
+    product.sku = generate_unique_product_sku(db, product.name)
+    db.add(product)
+    return True
+
+
+def generate_unique_variation_barcode(db: Session, base_barcode: str) -> str:
+    base = (base_barcode or "VAR").strip()
+    for _ in range(300):
+        candidate = f"{base}{random.randint(10, 99)}"
+        exists = db.query(ProductVariation.id).filter(ProductVariation.barcode == candidate).first()
+        if not exists:
+            return candidate
+    raise HTTPException(
+        status_code=400,
+        detail="Unable to auto-generate unique variation barcode. Please set barcode manually.",
+    )
+
+    while True:
+        candidate = f"{prefix}{''.join(random.choices(string.ascii_uppercase + string.digits, k=6))}"
+        exists = db.query(Product.id).filter(Product.sku == candidate).first()
+        if not exists:
+            return candidate
+
+
 @router.get("/", response_model=List[product_schema.Product])
 def read_products(
     db: Session = Depends(deps.get_db),
@@ -32,8 +81,15 @@ def read_products(
         query = query.filter(Product.name.ilike(f"%{search}%") | Product.sku.ilike(f"%{search}%"))
     if category and category != "All":
         query = query.filter(Product.category == category)
-        
-    return query.offset(skip).limit(limit).all()
+
+    products = query.offset(skip).limit(limit).all()
+    changed = False
+    for product in products:
+        changed = ensure_product_has_sku(db, product) or changed
+    if changed:
+        db.commit()
+
+    return products
 
 @router.get("/count")
 def count_products(
@@ -55,13 +111,18 @@ def create_product(
     db: Session = Depends(deps.get_db),
     product_in: product_schema.ProductCreate,
 ) -> Any:
-    if product_in.sku:
-        product = db.query(Product).filter(Product.sku == product_in.sku).first()
+    sku = product_in.sku.strip() if isinstance(product_in.sku, str) else product_in.sku
+
+    if sku:
+        product = db.query(Product).filter(Product.sku == sku).first()
         if product:
             raise HTTPException(status_code=400, detail="Product with this SKU already exists")
+    else:
+        sku = generate_unique_product_sku(db, product_in.name)
     
     # Convert list fields to JSON strings
     product_data = serialize_json_fields(product_in.dict())
+    product_data["sku"] = sku
     product = Product(**product_data)
     db.add(product)
     db.commit()
@@ -77,6 +138,11 @@ def get_product(
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    if ensure_product_has_sku(db, product):
+        db.commit()
+        db.refresh(product)
+
     return product
 
 @router.put("/{id}", response_model=product_schema.Product)
@@ -89,9 +155,28 @@ def update_product(
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    incoming = product_in.dict(exclude_unset=True)
+
+    if "sku" in incoming:
+        sku_value = incoming.get("sku")
+        sku = sku_value.strip() if isinstance(sku_value, str) else sku_value
+        incoming["sku"] = sku or None
+        if sku:
+            existing = db.query(Product).filter(Product.sku == sku, Product.id != id).first()
+            if existing:
+                raise HTTPException(status_code=400, detail="Product with this SKU already exists")
+
+    if incoming.get("has_variations") is False:
+        existing_variation = db.query(ProductVariation.id).filter(ProductVariation.product_id == id).first()
+        if existing_variation:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot disable variations while variation records exist. Remove variations first.",
+            )
     
     # Convert list fields to JSON strings
-    update_data = serialize_json_fields(product_in.dict(exclude_unset=True))
+    update_data = serialize_json_fields(incoming)
     for field, value in update_data.items():
         setattr(product, field, value)
         
@@ -151,6 +236,8 @@ async def bulk_import_products(
                 if existing:
                     skipped += 1
                     continue
+            else:
+                sku = generate_unique_product_sku(db, name)
 
             category = (row.get("category") or "").strip() or "Uncategorized"
             description = (row.get("description") or "").strip() or None
@@ -234,16 +321,34 @@ def create_product_variation(
     
     if not product.has_variations:
         raise HTTPException(status_code=400, detail="Product does not support variations")
+
+    variation_data = variation_in.dict()
+    sku_value = variation_data.get("sku")
+    barcode_value = variation_data.get("barcode")
+
+    if isinstance(sku_value, str):
+        sku_value = sku_value.strip() or None
+    if isinstance(barcode_value, str):
+        barcode_value = barcode_value.strip() or None
+
+    if ensure_product_has_sku(db, product):
+        db.flush()
+
+    if not barcode_value:
+        barcode_value = generate_unique_variation_barcode(db, product.sku or "VAR")
+
+    variation_data["sku"] = sku_value
+    variation_data["barcode"] = barcode_value
     
     # Check if SKU already exists
-    if variation_in.sku:
-        existing = db.query(ProductVariation).filter(ProductVariation.sku == variation_in.sku).first()
+    if sku_value:
+        existing = db.query(ProductVariation).filter(ProductVariation.sku == sku_value).first()
         if existing:
             raise HTTPException(status_code=400, detail="Variation with this SKU already exists")
     
     # Check if barcode already exists
-    if variation_in.barcode:
-        existing = db.query(ProductVariation).filter(ProductVariation.barcode == variation_in.barcode).first()
+    if barcode_value:
+        existing = db.query(ProductVariation).filter(ProductVariation.barcode == barcode_value).first()
         if existing:
             raise HTTPException(status_code=400, detail="Variation with this barcode already exists")
     
@@ -254,7 +359,6 @@ def create_product_variation(
             raise HTTPException(status_code=400, detail="Variation with these attributes already exists")
     
     # Convert dict fields to JSON strings if needed
-    variation_data = variation_in.dict()
     if isinstance(variation_data.get('attributes'), dict):
         variation_data['attributes'] = json.dumps(variation_data['attributes'])
     
@@ -278,26 +382,46 @@ def update_product_variation(
     variation = db.query(ProductVariation).filter(ProductVariation.id == variation_id).first()
     if not variation:
         raise HTTPException(status_code=404, detail="Variation not found")
+
+    update_data = variation_in.dict(exclude_unset=True)
+
+    if "sku" in update_data and isinstance(update_data["sku"], str):
+        update_data["sku"] = update_data["sku"].strip() or None
+    if "barcode" in update_data and isinstance(update_data["barcode"], str):
+        update_data["barcode"] = update_data["barcode"].strip() or None
+
+    product = db.query(Product).filter(Product.id == variation.product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found for variation")
+
+    if ensure_product_has_sku(db, product):
+        db.flush()
+
+    if ("barcode" in update_data and not update_data.get("barcode")) or ("barcode" not in update_data and not variation.barcode):
+        update_data["barcode"] = generate_unique_variation_barcode(db, product.sku or "VAR")
+
+    new_sku = update_data.get("sku", variation.sku)
+    new_barcode = update_data.get("barcode", variation.barcode)
     
     # Check if updated SKU already exists
-    if variation_in.sku and variation_in.sku != variation.sku:
+    if new_sku and new_sku != variation.sku:
         existing = db.query(ProductVariation).filter(
-            ProductVariation.sku == variation_in.sku,
+            ProductVariation.sku == new_sku,
             ProductVariation.id != variation_id
         ).first()
         if existing:
             raise HTTPException(status_code=400, detail="Variation with this SKU already exists")
     
     # Check if updated barcode already exists
-    if variation_in.barcode and variation_in.barcode != variation.barcode:
+    if new_barcode and new_barcode != variation.barcode:
         existing = db.query(ProductVariation).filter(
-            ProductVariation.barcode == variation_in.barcode,
+            ProductVariation.barcode == new_barcode,
             ProductVariation.id != variation_id
         ).first()
         if existing:
             raise HTTPException(status_code=400, detail="Variation with this barcode already exists")
     
-    for field, value in variation_in.dict(exclude_unset=True).items():
+    for field, value in update_data.items():
         # Convert dict to JSON string if it's attributes
         if field == 'attributes' and isinstance(value, dict):
             value = json.dumps(value)

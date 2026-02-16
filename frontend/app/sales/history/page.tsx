@@ -40,11 +40,15 @@ import {
   CreditCard,
   FileText,
   Filter,
+  Pencil,
 } from "lucide-react";
 
 interface SaleItem {
   id: number;
   product_id: number;
+  variation_id?: number | null;
+  unit?: string;
+  item_discount?: number;
   quantity: number;
   unit_price: number;
   total_price: number;
@@ -71,12 +75,14 @@ interface ReturnRecord {
 interface Sale {
   id: number;
   user_id: number;
+  customer_ref_id?: number | null;
   customer_name: string | null;
   customer_phone: string | null;
   payment_method: string;
   subtotal: number;
   discount: number;
   tax: number;
+  delivery_charges?: number;
   total: number;
   amount_paid: number;
   amount_due: number;
@@ -103,6 +109,9 @@ export default function SalesHistory() {
   const [returnRefundTotal, setReturnRefundTotal] = useState(0);
   const [returnsBySaleId, setReturnsBySaleId] = useState<{ [key: number]: number }>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editSale, setEditSale] = useState<Sale | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
@@ -260,6 +269,86 @@ export default function SalesHistory() {
       setDetailsOpen(true);
     } catch (error) {
       console.error("Failed to fetch sale details:", error);
+    }
+  };
+
+  const openEditSale = async (saleId: number) => {
+    try {
+      const response = await api.get(`/sales/${saleId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setEditSale(response.data);
+      setEditOpen(true);
+    } catch (error) {
+      console.error("Failed to fetch sale for edit:", error);
+      alert("Failed to load sale for editing");
+    }
+  };
+
+  const updateEditItem = (index: number, field: "quantity" | "unit_price" | "item_discount", value: string) => {
+    if (!editSale) return;
+    const next = { ...editSale };
+    const parsed = parseFloat(value);
+    if (field === "quantity") {
+      next.items[index] = {
+        ...next.items[index],
+        quantity: Math.max(1, Math.floor(Number.isFinite(parsed) ? parsed : 1)),
+      };
+    } else if (field === "unit_price") {
+      next.items[index] = {
+        ...next.items[index],
+        unit_price: Number.isFinite(parsed) ? Math.max(0, parsed) : 0,
+      };
+    } else {
+      next.items[index] = {
+        ...next.items[index],
+        item_discount: Number.isFinite(parsed) ? Math.max(0, parsed) : 0,
+      };
+    }
+    setEditSale(next);
+  };
+
+  const saveEditedSale = async () => {
+    if (!editSale) return;
+    try {
+      setSavingEdit(true);
+      await api.put(
+        `/sales/${editSale.id}`,
+        {
+          customer_ref_id: editSale.customer_ref_id || null,
+          customer_name: editSale.customer_name,
+          customer_phone: editSale.customer_phone,
+          payment_method: editSale.payment_method,
+          discount: editSale.discount || 0,
+          tax: editSale.tax || 0,
+          delivery_charges: editSale.delivery_charges || 0,
+          amount_paid: editSale.amount_paid,
+          items: editSale.items.map((item) => ({
+            product_id: item.product_id,
+            variation_id: item.variation_id || null,
+            unit: item.unit || "piece",
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            item_discount: item.item_discount || 0,
+          })),
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      setEditOpen(false);
+      setEditSale(null);
+      await fetchSales();
+      if (selectedSale?.id === editSale.id) {
+        await viewSaleDetails(editSale.id);
+      }
+      alert("Sale updated successfully");
+    } catch (error: any) {
+      console.error("Failed to update sale:", error);
+      alert(error?.response?.data?.detail || "Failed to update sale");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -470,6 +559,17 @@ export default function SalesHistory() {
                           </Button>
                           <Button
                             size="sm"
+                            variant="secondary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditSale(sale.id);
+                            }}
+                          >
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
                             onClick={(e) => {
                               e.stopPropagation();
                               router.push(`/sales/invoice/${sale.id}`);
@@ -661,9 +761,159 @@ export default function SalesHistory() {
                 <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                   Close
                 </Button>
+                <Button variant="secondary" onClick={() => selectedSale && openEditSale(selectedSale.id)}>
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit Sale
+                </Button>
                 <Button onClick={() => router.push(`/sales/invoice/${selectedSale.id}`)}>
                   <FileText className="h-4 w-4 mr-2" />
                   View Invoice
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Sale #{editSale?.id}</DialogTitle>
+            <DialogDescription>
+              Editing a sale updates inventory, accounting, and customer balances automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          {editSale && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Customer Name</label>
+                  <Input
+                    value={editSale.customer_name || ""}
+                    onChange={(e) => setEditSale({ ...editSale, customer_name: e.target.value || null })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Customer Phone</label>
+                  <Input
+                    value={editSale.customer_phone || ""}
+                    onChange={(e) => setEditSale({ ...editSale, customer_phone: e.target.value || null })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Payment</label>
+                  <Select
+                    value={editSale.payment_method}
+                    onValueChange={(value) => setEditSale({ ...editSale, payment_method: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="card">Card</SelectItem>
+                      <SelectItem value="mobile">Mobile</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Discount</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editSale.discount}
+                    onChange={(e) => setEditSale({ ...editSale, discount: Math.max(0, parseFloat(e.target.value) || 0) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Tax</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editSale.tax}
+                    onChange={(e) => setEditSale({ ...editSale, tax: Math.max(0, parseFloat(e.target.value) || 0) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Delivery</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editSale.delivery_charges || 0}
+                    onChange={(e) => setEditSale({ ...editSale, delivery_charges: Math.max(0, parseFloat(e.target.value) || 0) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Amount Paid</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editSale.amount_paid}
+                    onChange={(e) => setEditSale({ ...editSale, amount_paid: Math.max(0, parseFloat(e.target.value) || 0) })}
+                  />
+                </div>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Sale Items</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {editSale.items.map((item, index) => (
+                    <div key={item.id} className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-4">
+                        <p className="text-sm font-medium">{products[item.product_id]?.name || `Product #${item.product_id}`}</p>
+                        <p className="text-xs text-muted-foreground">Unit: {item.unit || "piece"}</p>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-xs">Qty</label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={item.quantity}
+                          onChange={(e) => updateEditItem(index, "quantity", e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-3">
+                        <label className="text-xs">Unit Price</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.unit_price}
+                          onChange={(e) => updateEditItem(index, "unit_price", e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-3">
+                        <label className="text-xs">Item Discount</label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={item.item_discount || 0}
+                          onChange={(e) => updateEditItem(index, "item_discount", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditOpen(false)} disabled={savingEdit}>
+                  Cancel
+                </Button>
+                <Button onClick={saveEditedSale} disabled={savingEdit}>
+                  {savingEdit ? "Saving..." : "Save Changes"}
                 </Button>
               </div>
             </div>

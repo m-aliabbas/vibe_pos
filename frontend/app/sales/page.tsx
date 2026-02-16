@@ -144,6 +144,34 @@ export default function SalesTerminal() {
   const fetchProductsRequestIdRef = useRef(0);
   const customerLookupRequestIdRef = useRef(0);
   const customerNameLookupRequestIdRef = useRef(0);
+  const productSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const latestSaleSnapshotRef = useRef<{
+    cart: CartItem[];
+    customerId: string;
+    customerPhone: string;
+    customerName: string;
+    selectedCustomer: CustomerSimple | null;
+    paymentMethod: string;
+    discount: number;
+    tax: number;
+    deliveryCharges: number;
+    amountPaid: string;
+    token: string | null;
+  }>({
+    cart: [],
+    customerId: "",
+    customerPhone: "",
+    customerName: "",
+    selectedCustomer: null,
+    paymentMethod: "cash",
+    discount: 0,
+    tax: 0,
+    deliveryCharges: 0,
+    amountPaid: "",
+    token: null,
+  });
+  const autoHoldInFlightRef = useRef(false);
+  const lastAutoHoldSignatureRef = useRef<string>("");
 
   // Variation picker state
   const [variationDialogOpen, setVariationDialogOpen] = useState(false);
@@ -223,6 +251,26 @@ export default function SalesTerminal() {
 
     return () => clearTimeout(timer);
   }, [searchQuery, categoryFilter, token, isLoading]);
+
+  useEffect(() => {
+    if (!token || isLoading) return;
+
+    const focusSearch = () => {
+      if (!checkoutOpen && !variationDialogOpen && !unitDialogOpen) {
+        productSearchInputRef.current?.focus();
+      }
+    };
+
+    const timer = window.setTimeout(focusSearch, 50);
+    window.addEventListener("focus", focusSearch);
+    document.addEventListener("visibilitychange", focusSearch);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", focusSearch);
+      document.removeEventListener("visibilitychange", focusSearch);
+    };
+  }, [token, isLoading, checkoutOpen, variationDialogOpen, unitDialogOpen]);
 
   const buildSummary = (sales: any[]): SaleSummary => {
     const summary: SaleSummary = {
@@ -809,21 +857,27 @@ export default function SalesTerminal() {
     setAmountPaid("");
   };
 
-  const holdCurrentSale = async () => {
-    if (cart.length === 0) {
-      alert("Cart is empty");
-      return;
-    }
-
+  const buildHoldRequest = (snapshot: {
+    cart: CartItem[];
+    customerId: string;
+    customerPhone: string;
+    customerName: string;
+    selectedCustomer: CustomerSimple | null;
+    paymentMethod: string;
+    discount: number;
+    tax: number;
+    deliveryCharges: number;
+    amountPaid: string;
+  }) => {
     const labelParts = [
-      customerName.trim(),
-      customerPhone.trim(),
-      customerId.trim().toUpperCase(),
+      snapshot.customerName.trim(),
+      snapshot.customerPhone.trim(),
+      snapshot.customerId.trim().toUpperCase(),
     ].filter(Boolean);
     const label = labelParts.length > 0 ? labelParts.join(" • ") : "Walk-in";
 
     const payload = {
-      cart: cart.map((item) => ({
+      cart: snapshot.cart.map((item) => ({
         product_id: item.product.id,
         variation_id: item.variation?.id || null,
         unit: item.unit,
@@ -831,6 +885,70 @@ export default function SalesTerminal() {
         item_discount: item.item_discount || 0,
         unit_price: typeof item.unit_price === "number" ? item.unit_price : undefined,
       })),
+      customerId: snapshot.customerId,
+      customerPhone: snapshot.customerPhone,
+      customerName: snapshot.customerName,
+      selectedCustomer: snapshot.selectedCustomer,
+      paymentMethod: snapshot.paymentMethod,
+      discount: snapshot.discount,
+      tax: snapshot.tax,
+      deliveryCharges: snapshot.deliveryCharges,
+      amountPaid: snapshot.amountPaid,
+    };
+
+    const signature = JSON.stringify(payload);
+    return { label, payload, signature };
+  };
+
+  const autoHoldCurrentSale = async () => {
+    const snapshot = latestSaleSnapshotRef.current;
+    if (snapshot.cart.length === 0 || autoHoldInFlightRef.current) return;
+
+    const { label, payload, signature } = buildHoldRequest(snapshot);
+    if (signature === lastAutoHoldSignatureRef.current) return;
+
+    autoHoldInFlightRef.current = true;
+    try {
+      await holdSalesApi.create({ label, payload });
+      lastAutoHoldSignatureRef.current = signature;
+    } catch (error) {
+      console.error("Auto-hold failed:", error);
+    } finally {
+      autoHoldInFlightRef.current = false;
+    }
+  };
+
+  const autoHoldWithKeepAlive = () => {
+    const snapshot = latestSaleSnapshotRef.current;
+    if (!snapshot.token || snapshot.cart.length === 0) return;
+
+    const { label, payload, signature } = buildHoldRequest(snapshot);
+    if (signature === lastAutoHoldSignatureRef.current) return;
+
+    const endpoint = "http://127.0.0.1:8000/api/v1/hold-sales/";
+    fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${snapshot.token}`,
+      },
+      body: JSON.stringify({ label, payload }),
+      keepalive: true,
+    }).catch((error) => {
+      console.error("Auto-hold keepalive failed:", error);
+    });
+
+    lastAutoHoldSignatureRef.current = signature;
+  };
+
+  const holdCurrentSale = async () => {
+    if (cart.length === 0) {
+      alert("Cart is empty");
+      return;
+    }
+
+    const { label, payload, signature } = buildHoldRequest({
+      cart,
       customerId,
       customerPhone,
       customerName,
@@ -840,10 +958,11 @@ export default function SalesTerminal() {
       tax,
       deliveryCharges,
       amountPaid,
-    };
+    });
 
     try {
       await holdSalesApi.create({ label, payload });
+      lastAutoHoldSignatureRef.current = signature;
       clearCart();
       fetchHeldSales();
     } catch (error) {
@@ -1184,6 +1303,54 @@ export default function SalesTerminal() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleCheckout, holdCurrentSale]);
 
+  useEffect(() => {
+    latestSaleSnapshotRef.current = {
+      cart,
+      customerId,
+      customerPhone,
+      customerName,
+      selectedCustomer,
+      paymentMethod,
+      discount,
+      tax,
+      deliveryCharges,
+      amountPaid,
+      token,
+    };
+  }, [
+    cart,
+    customerId,
+    customerPhone,
+    customerName,
+    selectedCustomer,
+    paymentMethod,
+    discount,
+    tax,
+    deliveryCharges,
+    amountPaid,
+    token,
+  ]);
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      autoHoldWithKeepAlive();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        autoHoldWithKeepAlive();
+      }
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      void autoHoldCurrentSale();
+    };
+  }, []);
+
   const completeSale = async () => {
     setLoading(true);
     try {
@@ -1402,6 +1569,7 @@ export default function SalesTerminal() {
               {/* Search Input */}
               <div className="relative">
                 <Input
+                  ref={productSearchInputRef}
                   placeholder="Search by name, SKU... (Try: milk x 3, milk 3, or 3 milk)"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}

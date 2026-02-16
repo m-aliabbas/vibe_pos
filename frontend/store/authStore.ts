@@ -45,7 +45,7 @@ export const useAuthStore = create<AuthState>((set) => ({
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
             });
             const { access_token } = response.data;
-            localStorage.setItem('token', access_token);
+            sessionStorage.setItem('token', access_token);
             const decoded = decodeJwt(access_token);
             const user = decoded ? {
                 id: decoded.uid,
@@ -62,17 +62,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     },
 
     logout: () => {
-        localStorage.removeItem('token');
+        sessionStorage.removeItem('token');
         set({ user: null, token: null });
     },
 
     checkAuth: async () => {
-        const token = localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         if (token) {
             const decoded = decodeJwt(token);
             const nowSeconds = Math.floor(Date.now() / 1000);
             if (!decoded || (decoded.exp && decoded.exp <= nowSeconds)) {
-                localStorage.removeItem('token');
+                sessionStorage.removeItem('token');
                 set({ token: null, user: null, isLoading: false });
                 return;
             }

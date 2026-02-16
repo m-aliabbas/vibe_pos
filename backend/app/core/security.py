@@ -12,12 +12,15 @@ def create_access_token(
     expires_delta: Optional[timedelta] = None,
     claims: Optional[Dict[str, Any]] = None,
 ) -> str:
+    to_encode = {"sub": str(subject)}
+
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
-    else:
+        to_encode["exp"] = expire
+    elif settings.ACCESS_TOKEN_EXPIRE_MINUTES > 0:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode = {"exp": expire, "sub": str(subject)}
+        to_encode["exp"] = expire
+
     if claims:
         to_encode.update(claims)
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)

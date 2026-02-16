@@ -34,6 +34,10 @@ class PurchaseBase(BaseModel):
 class PurchaseCreate(PurchaseBase):
     items: List[PurchaseItemCreate]
 
+
+class PurchaseUpdate(PurchaseBase):
+    items: List[PurchaseItemCreate]
+
 class PurchasePaymentUpdate(BaseModel):
     amount_paid: float
 

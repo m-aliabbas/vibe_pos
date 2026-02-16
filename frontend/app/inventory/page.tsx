@@ -175,7 +175,7 @@ export default function InventoryPage() {
         try {
             await api.post('/products/', {
                 name,
-                sku: sku || null,
+                sku: sku.trim() || null,
                 category: category || "Uncategorized",
                 selling_price: parseFloat(sellingPrice),
                 has_variations: hasVariations,
@@ -187,9 +187,9 @@ export default function InventoryPage() {
             setOpen(false);
             resetForm();
             fetchProducts();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to create product", error);
-            alert("Failed to create product. SKU might be taken.");
+            alert(error?.response?.data?.detail || "Failed to create product.");
         }
     };
 
@@ -252,7 +252,7 @@ export default function InventoryPage() {
         try {
             await api.put(`/products/${selectedProduct.id}`, {
                 name,
-                sku: sku || null,
+                sku: sku.trim() || null,
                 category: category || "Uncategorized",
                 selling_price: parseFloat(sellingPrice),
                 has_variations: hasVariations,
@@ -264,9 +264,9 @@ export default function InventoryPage() {
             resetForm();
             setSelectedProduct(null);
             fetchProducts();
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to update product", error);
-            alert("Failed to update product. SKU might be taken.");
+            alert(error?.response?.data?.detail || "Failed to update product.");
         }
     };
 
@@ -410,7 +410,8 @@ export default function InventoryPage() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="grid gap-2">
                                     <Label htmlFor="sku">SKU / Barcode</Label>
-                                    <Input id="sku" value={sku} onChange={e => setSku(e.target.value)} placeholder="e.g. 12345678" />
+                                    <Input id="sku" value={sku} onChange={e => setSku(e.target.value)} placeholder="Leave blank for auto-generated SKU" />
+                                    <p className="text-xs text-gray-500">If left empty, SKU is auto-generated from product name.</p>
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="category">Category</Label>
@@ -694,6 +695,44 @@ export default function InventoryPage() {
                         <div className="grid gap-2">
                             <Label htmlFor="edit-price">Selling Price (rs)</Label>
                             <Input id="edit-price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required />
+                        </div>
+
+                        <div className="border-t pt-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <input
+                                    type="checkbox"
+                                    id="edit-has-variations"
+                                    checked={hasVariations}
+                                    onChange={e => setHasVariations(e.target.checked)}
+                                />
+                                <Label htmlFor="edit-has-variations">This product has variations (Size, Color, etc.)</Label>
+                            </div>
+
+                            {hasVariations && (
+                                <div className="grid gap-2 mt-2">
+                                    <Label>Variation Attributes</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            placeholder="e.g. Size, Color, Material"
+                                            value={newAttribute}
+                                            onChange={e => setNewAttribute(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addAttribute())}
+                                        />
+                                        <Button type="button" size="sm" onClick={addAttribute}>Add</Button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {variationAttributes.map(attr => (
+                                            <Badge key={attr} variant="secondary" className="gap-2">
+                                                {attr}
+                                                <button type="button" onClick={() => removeAttribute(attr)} className="ml-1">×</button>
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                    <p className="text-xs text-gray-500">
+                                        If this product already has variation records, disabling variations will be blocked.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>

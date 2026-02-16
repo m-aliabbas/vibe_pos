@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 import os
 import re
 import json
@@ -20,7 +20,9 @@ from app.models.sale import Sale, SaleItem
 from app.models.product import Product, ProductVariation
 from app.models.user import User, UserRole
 from app.models.customer import Customer
-from app.schemas.sale import SaleCreate, Sale as SaleSchema, SaleStats
+from app.models.pos_return import PosReturn
+from app.models.accounting import JournalEntry
+from app.schemas.sale import SaleCreate, SaleUpdate, Sale as SaleSchema, SaleStats
 from app.services import accounting as accounting_service
 
 router = APIRouter()
@@ -310,6 +312,80 @@ def normalize_phone_number(phone: Optional[str]) -> Optional[str]:
     return phone if phone else None
 
 
+def get_quantity_in_base_units(product: Product, unit: str, quantity: int) -> int:
+    quantity_in_base_units = quantity
+    if unit != product.base_unit:
+        selling_units = parse_json_field(product.selling_units)
+        selling_unit = None
+        for su in selling_units:
+            if su.get('unit') == unit:
+                selling_unit = su
+                break
+
+        if not selling_unit:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unit '{unit}' not configured for product {product.name}"
+            )
+
+        quantity_in_base_units = quantity * int(selling_unit['conversion'])
+
+    return int(quantity_in_base_units)
+
+
+def resolve_sale_customer(db: Session, sale_in: SaleCreate):
+    normalized_phone = normalize_phone_number(sale_in.customer_phone)
+
+    customer_ref_id = None
+    is_walkin = True
+    customer = None
+
+    if sale_in.customer_ref_id:
+        customer = db.query(Customer).filter(Customer.id == sale_in.customer_ref_id).first()
+        if customer:
+            customer_ref_id = customer.id
+            is_walkin = False
+    elif sale_in.customer_id:
+        customer = db.query(Customer).filter(
+            Customer.customer_id == sale_in.customer_id.strip().upper()
+        ).first()
+        if customer:
+            customer_ref_id = customer.id
+            is_walkin = False
+    elif normalized_phone:
+        customer = db.query(Customer).filter(Customer.phone == normalized_phone).first()
+
+        if not customer:
+            last_customer = db.query(Customer).filter(
+                Customer.customer_id.like("CUST%")
+            ).order_by(Customer.id.desc()).first()
+
+            if last_customer and last_customer.customer_id:
+                try:
+                    last_num = int(last_customer.customer_id.replace("CUST", ""))
+                    new_num = last_num + 1
+                except ValueError:
+                    new_num = 1
+            else:
+                new_num = 1
+
+            new_customer_id = f"CUST{new_num:04d}"
+
+            customer = Customer(
+                customer_id=new_customer_id,
+                phone=normalized_phone,
+                name=sale_in.customer_name,
+                member_since=datetime.utcnow(),
+            )
+            db.add(customer)
+            db.flush()
+
+        customer_ref_id = customer.id
+        is_walkin = False
+
+    return customer, customer_ref_id, is_walkin, normalized_phone
+
+
 def generate_and_send_invoice(sale_id: int, phone_number: str):
     """
     Background task to generate invoice image and send via WhatsApp
@@ -492,67 +568,7 @@ def create_sale(
     amount_due = max(0, total - amount_paid)
     change_amount = max(0, amount_paid - total)
     
-    # Normalize phone number
-    normalized_phone = normalize_phone_number(sale_in.customer_phone)
-    
-    # === CUSTOMER LINKING LOGIC ===
-    # Priority: customer_ref_id > customer_id > phone > walk-in
-    customer_ref_id = None
-    is_walkin = True
-    customer = None
-    
-    # 1. If customer_ref_id provided (direct internal ID)
-    if sale_in.customer_ref_id:
-        customer = db.query(Customer).filter(Customer.id == sale_in.customer_ref_id).first()
-        if customer:
-            customer_ref_id = customer.id
-            is_walkin = False
-    
-    # 2. Else if customer_id provided (readable ID like CUST001)
-    elif sale_in.customer_id:
-        customer = db.query(Customer).filter(
-            Customer.customer_id == sale_in.customer_id.strip().upper()
-        ).first()
-        if customer:
-            customer_ref_id = customer.id
-            is_walkin = False
-    
-    # 3. Else if phone provided - find or create customer
-    elif normalized_phone:
-        customer = db.query(Customer).filter(Customer.phone == normalized_phone).first()
-        
-        if not customer:
-            # Auto-create customer with phone number
-            # Generate customer_id
-            last_customer = db.query(Customer).filter(
-                Customer.customer_id.like("CUST%")
-            ).order_by(Customer.id.desc()).first()
-            
-            if last_customer and last_customer.customer_id:
-                try:
-                    last_num = int(last_customer.customer_id.replace("CUST", ""))
-                    new_num = last_num + 1
-                except ValueError:
-                    new_num = 1
-            else:
-                new_num = 1
-            
-            new_customer_id = f"CUST{new_num:04d}"
-            
-            customer = Customer(
-                customer_id=new_customer_id,
-                phone=normalized_phone,
-                name=sale_in.customer_name,
-                member_since=datetime.utcnow(),
-            )
-            db.add(customer)
-            db.flush()  # Get customer ID
-        
-        customer_ref_id = customer.id
-        is_walkin = False
-    
-    # 4. Else - walk-in customer (no linking)
-    # is_walkin remains True, customer_ref_id remains None
+    customer, customer_ref_id, is_walkin, normalized_phone = resolve_sale_customer(db, sale_in)
     
     # Create sale record
     db_sale = Sale(
@@ -648,6 +664,199 @@ def create_sale(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create sale: {str(e)}")
+
+
+@router.put("/{id}", response_model=SaleSchema)
+def update_sale(
+    id: int,
+    sale_in: SaleUpdate,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    sale = db.query(Sale).filter(Sale.id == id).first()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Sale not found")
+
+    has_returns = db.query(PosReturn.id).filter(PosReturn.sale_id == id).first()
+    if has_returns:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit sale that has returns. Please handle via returns workflow.",
+        )
+
+    old_total = sale.total or 0.0
+    old_due = sale.amount_due or 0.0
+    old_customer_id = sale.customer_ref_id
+
+    old_items = list(sale.items)
+
+    for old_item in old_items:
+        product = db.query(Product).filter(Product.id == old_item.product_id).first()
+        if not product:
+            continue
+        qty_base = get_quantity_in_base_units(product, old_item.unit, old_item.quantity)
+        if old_item.variation_id:
+            variation = db.query(ProductVariation).filter(ProductVariation.id == old_item.variation_id).first()
+            if variation:
+                variation.quantity += qty_base
+                db.add(variation)
+        else:
+            product.quantity += qty_base
+            db.add(product)
+
+    for old_item in old_items:
+        db.delete(old_item)
+
+    if old_customer_id:
+        old_customer = db.query(Customer).filter(Customer.id == old_customer_id).first()
+        if old_customer:
+            old_customer.total_purchases = max(0, (old_customer.total_purchases or 0) - 1)
+            old_customer.total_spent = max(0.0, (old_customer.total_spent or 0.0) - old_total)
+            old_customer.outstanding_balance = max(0.0, (old_customer.outstanding_balance or 0.0) - old_due)
+            old_customer.updated_at = datetime.utcnow()
+            db.add(old_customer)
+
+    old_entries = db.query(JournalEntry).filter(
+        JournalEntry.source_type == "sale",
+        JournalEntry.source_id == sale.id,
+    ).all()
+    for entry in old_entries:
+        db.delete(entry)
+
+    products_dict: Dict[int, Product] = {}
+    variations_dict: Dict[int, ProductVariation] = {}
+
+    for item in sale_in.items:
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product with id {item.product_id} not found")
+        products_dict[item.product_id] = product
+
+        if item.variation_id:
+            if not product.has_variations:
+                raise HTTPException(status_code=400, detail=f"Product {product.name} does not support variations")
+
+            variation = db.query(ProductVariation).filter(
+                ProductVariation.id == item.variation_id,
+                ProductVariation.product_id == item.product_id,
+            ).first()
+            if not variation:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Variation with id {item.variation_id} not found for product {product.name}",
+                )
+            variations_dict[item.variation_id] = variation
+
+        get_quantity_in_base_units(product, item.unit, item.quantity)
+
+    subtotal = 0.0
+    for item in sale_in.items:
+        product = products_dict[item.product_id]
+        if item.variation_id:
+            variation = variations_dict[item.variation_id]
+            base_price = product.selling_price + variation.price_adjustment
+        else:
+            base_price = product.selling_price
+
+        if item.unit_price is not None:
+            unit_price = item.unit_price
+        else:
+            unit_price = base_price
+            if item.unit != product.base_unit:
+                selling_units = parse_json_field(product.selling_units)
+                for su in selling_units:
+                    if su.get('unit') == item.unit:
+                        unit_price = su['price']
+                        break
+
+        item_discount = item.item_discount if item.item_discount is not None else 0.0
+        subtotal += (unit_price * item.quantity) - item_discount
+
+    discount = sale_in.discount if sale_in.discount is not None else 0.0
+    tax = sale_in.tax if sale_in.tax is not None else 0.0
+    delivery_charges = sale_in.delivery_charges if sale_in.delivery_charges is not None else 0.0
+    total = subtotal - discount + tax + delivery_charges
+    amount_paid = sale_in.amount_paid if sale_in.amount_paid is not None else total
+    amount_due = max(0, total - amount_paid)
+    change_amount = max(0, amount_paid - total)
+
+    customer, customer_ref_id, is_walkin, normalized_phone = resolve_sale_customer(db, sale_in)
+
+    sale.customer_ref_id = customer_ref_id
+    sale.is_walkin = is_walkin
+    sale.customer_name = sale_in.customer_name or (customer.name if customer else None)
+    sale.customer_phone = normalized_phone
+    sale.payment_method = sale_in.payment_method
+    sale.subtotal = subtotal
+    sale.discount = discount
+    sale.tax = tax
+    sale.delivery_charges = delivery_charges
+    sale.total = total
+    sale.amount_paid = amount_paid
+    sale.amount_due = amount_due
+    sale.change_amount = change_amount
+
+    for item in sale_in.items:
+        product = products_dict[item.product_id]
+
+        if item.variation_id:
+            variation = variations_dict[item.variation_id]
+            base_price = product.selling_price + variation.price_adjustment
+        else:
+            base_price = product.selling_price
+
+        unit_price = item.unit_price if item.unit_price is not None else base_price
+        quantity_in_base_units = get_quantity_in_base_units(product, item.unit, item.quantity)
+
+        if item.unit != product.base_unit and item.unit_price is None:
+            selling_units = parse_json_field(product.selling_units)
+            for su in selling_units:
+                if su.get('unit') == item.unit:
+                    unit_price = su['price']
+                    break
+
+        item_discount = item.item_discount if item.item_discount is not None else 0.0
+        db_sale_item = SaleItem(
+            sale_id=sale.id,
+            product_id=item.product_id,
+            variation_id=item.variation_id,
+            quantity=item.quantity,
+            unit=item.unit,
+            unit_price=unit_price,
+            item_discount=item_discount,
+            total_price=(unit_price * item.quantity) - item_discount,
+        )
+        db.add(db_sale_item)
+
+        if item.variation_id:
+            variation = variations_dict[item.variation_id]
+            variation.quantity -= int(quantity_in_base_units)
+            db.add(variation)
+        else:
+            product.quantity -= int(quantity_in_base_units)
+            db.add(product)
+
+    if customer and customer_ref_id:
+        customer.total_purchases += 1
+        customer.total_spent += total
+        if amount_due > 0:
+            customer.outstanding_balance += amount_due
+        customer.updated_at = datetime.utcnow()
+        db.add(customer)
+
+    try:
+        accounting_service.post_sale_entry(
+            db=db,
+            sale=sale,
+            payment_method=sale.payment_method,
+            created_by=current_user.id,
+        )
+        db.commit()
+        db.refresh(sale)
+        return sale
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update sale: {str(e)}")
 
 
 @router.get("/", response_model=List[SaleSchema])

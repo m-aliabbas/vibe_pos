@@ -48,6 +48,16 @@ class SaleCreate(SaleBase):
     customer_ref_id: Optional[int] = None  # Direct link to customer by internal ID
     customer_id: Optional[str] = None  # Link by readable customer_id (e.g., CUST001)
 
+
+class SaleUpdate(SaleBase):
+    items: List[SaleItemCreate]
+    discount: Optional[float] = 0.0
+    tax: Optional[float] = 0.0
+    delivery_charges: Optional[float] = 0.0
+    amount_paid: Optional[float] = None
+    customer_ref_id: Optional[int] = None
+    customer_id: Optional[str] = None
+
 class Sale(SaleBase):
     id: int
     user_id: int

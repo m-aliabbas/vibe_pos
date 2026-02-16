@@ -321,6 +321,9 @@ export default function ManageVariationsPage() {
                         Step 2: Configure Variations 
                         <span className="text-muted-foreground ml-2">({generatedVariations.length} items)</span>
                     </h2>
+                    <p className="text-sm text-muted-foreground mb-4">
+                        Leave barcode blank to auto-generate: main product barcode + 2 random digits.
+                    </p>
                     
                     {/* Table Header */}
                     <div className="grid grid-cols-12 gap-4 mb-3 pb-3 border-b font-semibold text-sm bg-slate-50 p-4 rounded-t-lg">
@@ -370,7 +373,7 @@ export default function ManageVariationsPage() {
                                 </div>
                                 <div className="col-span-3">
                                     <Input 
-                                        placeholder="Barcode..."
+                                        placeholder="Leave blank for auto barcode"
                                         value={variation.barcode}
                                         onChange={e => updateVariation(idx, 'barcode', e.target.value)}
                                     />
