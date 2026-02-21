@@ -38,6 +38,7 @@ import {
   Eye,
   Edit,
   Trash2,
+  Download,
 } from "lucide-react";
 
 export default function CustomersPage() {
@@ -188,6 +189,23 @@ export default function CustomersPage() {
     }
   };
 
+  const handleDownloadCsv = async () => {
+    try {
+      const blob = await customerApi.exportCustomersCsv();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "customers.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error("Failed to download customers CSV:", error);
+      alert(error?.response?.data?.detail || "Failed to download customers CSV");
+    }
+  };
+
   const handleViewCustomer = (customerId: number) => {
     if (!customerId || isNaN(customerId)) {
       console.error("Invalid customer ID:", customerId);
@@ -245,6 +263,10 @@ export default function CustomersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleDownloadCsv}>
+            <Download className="h-4 w-4 mr-2" />
+            Download CSV
+          </Button>
           <Button
             variant="outline"
             onClick={handleSendAllReminders}

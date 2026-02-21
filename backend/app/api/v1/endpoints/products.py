@@ -6,6 +6,7 @@ import random
 import re
 import string
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.models.product import Product, ProductVariation
@@ -104,6 +105,56 @@ def count_products(
         query = query.filter(Product.category == category)
 
     return {"total": query.count()}
+
+@router.get("/export-csv")
+def export_products_csv(
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    """Export all products as CSV."""
+    products = db.query(Product).order_by(Product.id.asc()).all()
+
+    output = io.StringIO()
+    fieldnames = [
+        "name",
+        "sku",
+        "category",
+        "description",
+        "selling_price",
+        "cost_price",
+        "quantity",
+        "base_unit",
+        "has_variations",
+        "allow_decimal_qty",
+        "variation_attributes",
+        "selling_units_json",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for product in products:
+        writer.writerow(
+            {
+                "name": product.name or "",
+                "sku": product.sku or "",
+                "category": product.category or "",
+                "description": product.description or "",
+                "selling_price": float(product.selling_price or 0),
+                "cost_price": float(product.cost_price or 0),
+                "quantity": float(product.quantity or 0),
+                "base_unit": product.base_unit or "piece",
+                "has_variations": bool(product.has_variations),
+                "allow_decimal_qty": bool(getattr(product, "allow_decimal_qty", False)),
+                "variation_attributes": json.dumps(product.variation_attributes or []),
+                "selling_units_json": json.dumps(product.selling_units or []),
+            }
+        )
+
+    output.seek(0)
+    return StreamingResponse(
+        io.StringIO(output.getvalue()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=products.csv"},
+    )
 
 @router.post("/", response_model=product_schema.Product)
 def create_product(
@@ -220,6 +271,7 @@ async def bulk_import_products(
     reader = csv.DictReader(io.StringIO(text))
     created = 0
     skipped = 0
+    reassigned_sku = 0
     errors: List[str] = []
 
     for row_index, row in enumerate(reader, start=2):
@@ -234,8 +286,8 @@ async def bulk_import_products(
             if sku:
                 existing = db.query(Product).filter(Product.sku == sku).first()
                 if existing:
-                    skipped += 1
-                    continue
+                    sku = generate_unique_product_sku(db, name)
+                    reassigned_sku += 1
             else:
                 sku = generate_unique_product_sku(db, name)
 
@@ -290,6 +342,7 @@ async def bulk_import_products(
     return {
         "created": created,
         "skipped": skipped,
+        "reassigned_sku": reassigned_sku,
         "errors": errors,
     }
 

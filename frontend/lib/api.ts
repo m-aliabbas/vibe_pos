@@ -304,6 +304,14 @@ export const customerApi = {
         return response.data;
     },
 
+    // Export all customers CSV
+    exportCustomersCsv: async (): Promise<Blob> => {
+        const response = await api.get('/customers/export-csv', {
+            responseType: 'blob',
+        });
+        return response.data;
+    },
+
     // Send reminders to all due customers
     sendAllDueReminders: async (): Promise<{ success: boolean; sent: number; skipped: number }> => {
         const response = await api.post('/customers/send-reminders');

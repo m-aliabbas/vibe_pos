@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
-import { Plus, Phone, Mail, MapPin } from "lucide-react";
+import { Plus, Phone, Mail, MapPin, Download } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -142,6 +142,25 @@ export default function VendorsPage() {
         }
     };
 
+    const handleDownloadCsv = async () => {
+        try {
+            const response = await api.get('/vendors/export-csv', {
+                responseType: 'blob',
+            });
+            const url = URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'vendors.csv';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (error: any) {
+            console.error("Failed to download vendors CSV", error);
+            alert(error?.response?.data?.detail || "Failed to download vendors CSV");
+        }
+    };
+
     const resetForm = () => {
         setName('');
         setContactName('');
@@ -159,6 +178,9 @@ export default function VendorsPage() {
                     <p className="text-gray-500 mt-1">Manage your suppliers and partners.</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={handleDownloadCsv}>
+                        <Download className="mr-2 h-4 w-4" /> Download CSV
+                    </Button>
                     <Dialog open={bulkOpen} onOpenChange={(nextOpen) => {
                         setBulkOpen(nextOpen);
                         if (!nextOpen) {

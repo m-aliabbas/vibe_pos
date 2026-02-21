@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter } from "lucide-react";
+import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -319,6 +319,25 @@ export default function InventoryPage() {
         }
     };
 
+    const handleDownloadCsv = async () => {
+        try {
+            const response = await api.get('/products/export-csv', {
+                responseType: 'blob',
+            });
+            const url = URL.createObjectURL(response.data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'products.csv';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+        } catch (error: any) {
+            console.error("Failed to download products CSV", error);
+            alert(error?.response?.data?.detail || "Failed to download products CSV");
+        }
+    };
+
     const openVariationBuilder = async (product: Product) => {
         router.push(`/inventory/variations/${product.id}`);
     };
@@ -338,6 +357,9 @@ export default function InventoryPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={handleDownloadCsv}>
+                        <Download className="mr-2 h-4 w-4" /> Download CSV
+                    </Button>
                     <Dialog open={bulkOpen} onOpenChange={(nextOpen) => {
                         setBulkOpen(nextOpen);
                         if (!nextOpen) {

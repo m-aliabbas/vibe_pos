@@ -323,6 +323,59 @@ async def bulk_import_customers(
         "errors": errors,
     }
 
+@router.get("/export-csv")
+def export_customers_csv(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Export all customers as CSV."""
+    customers = db.query(Customer).order_by(Customer.id.asc()).all()
+
+    output = io.StringIO()
+    fieldnames = [
+        "customer_id",
+        "phone",
+        "name",
+        "email",
+        "address",
+        "opening_balance",
+        "outstanding_balance",
+        "total_purchases",
+        "total_spent",
+        "current_mileage",
+        "oil_change_interval",
+        "next_oil_change_mileage",
+        "member_since",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for customer in customers:
+        writer.writerow(
+            {
+                "customer_id": customer.customer_id or "",
+                "phone": customer.phone or "",
+                "name": customer.name or "",
+                "email": customer.email or "",
+                "address": customer.address or "",
+                "opening_balance": float(customer.opening_balance or 0),
+                "outstanding_balance": float(customer.outstanding_balance or 0),
+                "total_purchases": int(customer.total_purchases or 0),
+                "total_spent": float(customer.total_spent or 0),
+                "current_mileage": customer.current_mileage if customer.current_mileage is not None else "",
+                "oil_change_interval": customer.oil_change_interval if customer.oil_change_interval is not None else "",
+                "next_oil_change_mileage": customer.next_oil_change_mileage if customer.next_oil_change_mileage is not None else "",
+                "member_since": customer.member_since.isoformat() if customer.member_since else "",
+            }
+        )
+
+    output.seek(0)
+    return StreamingResponse(
+        io.StringIO(output.getvalue()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=customers.csv"},
+    )
+
 
 @router.post("/find-or-create", response_model=customer_schema.CustomerSimple)
 def find_or_create_customer(

@@ -86,6 +86,46 @@ def count_vendors(
 
     return {"total": query.count()}
 
+@router.get("/export-csv")
+def export_vendors_csv(
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    """Export all vendors as CSV."""
+    vendors = db.query(Vendor).order_by(Vendor.id.asc()).all()
+
+    output = io.StringIO()
+    fieldnames = [
+        "name",
+        "contact_name",
+        "email",
+        "phone",
+        "address",
+        "opening_balance",
+        "prepaid_credit",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for vendor in vendors:
+        writer.writerow(
+            {
+                "name": vendor.name or "",
+                "contact_name": vendor.contact_name or "",
+                "email": vendor.email or "",
+                "phone": vendor.phone or "",
+                "address": vendor.address or "",
+                "opening_balance": float(vendor.opening_balance or 0),
+                "prepaid_credit": float(vendor.prepaid_credit or 0),
+            }
+        )
+
+    output.seek(0)
+    return StreamingResponse(
+        io.StringIO(output.getvalue()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=vendors.csv"},
+    )
+
 @router.post("/", response_model=vendor_schema.Vendor)
 def create_vendor(
     *,
