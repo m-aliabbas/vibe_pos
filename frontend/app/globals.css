@@ -142,7 +142,7 @@
   .thermal-receipt {
     width: 80mm !important;
     max-width: 80mm !important;
-    margin: 0 !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
@@ -151,15 +151,17 @@
   /* Invoice container adjustments for thermal */
   .invoice-container {
     padding: 0 !important;
-    margin: 0 !important;
-    max-width: 80mm !important;
-    width: 80mm !important;
+    margin: 0 auto !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
   }
   
-  /* Optimize for thermal receipt paper (80mm width, continuous length) */
+  /* Use normal paper size so the 80mm receipt can be centered */
   @page {
-    size: 80mm auto;
-    margin: 0;
+    size: auto;
+    margin: 10mm;
   }
   
   /* Prevent page breaks inside important elements */

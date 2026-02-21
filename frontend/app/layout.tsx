@@ -32,8 +32,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
-          <Navbar />
-          <AutoBreadcrumb />
+          <div className="no-print">
+            <Navbar />
+          </div>
+          <div className="no-print">
+            <AutoBreadcrumb />
+          </div>
           {children}
         </AuthProvider>
       </body>

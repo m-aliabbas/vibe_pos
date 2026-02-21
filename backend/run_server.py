@@ -178,6 +178,14 @@ REQUIRED_TABLES = {
     "product_variations",
 }
 
+LEGACY_PRODUCT_COLUMNS = {
+    "has_variations": "BOOLEAN DEFAULT 0",
+    "variation_attributes": "TEXT DEFAULT '[]'",
+    "base_unit": "TEXT DEFAULT 'piece'",
+    "selling_units": "TEXT DEFAULT '[]'",
+    "allow_decimal_qty": "BOOLEAN DEFAULT 0",
+}
+
 
 def _get_sqlite_tables(db_path: Path) -> set[str]:
     conn = sqlite3.connect(str(db_path))
@@ -185,6 +193,32 @@ def _get_sqlite_tables(db_path: Path) -> set[str]:
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
         return {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def ensure_legacy_product_columns(db_path: Path) -> None:
+    """
+    Add columns expected by current Product model when opening older SQLite DBs.
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='products'")
+        if not cur.fetchone():
+            return
+
+        cur.execute("PRAGMA table_info(products)")
+        existing = {row[1] for row in cur.fetchall()}
+
+        missing = [c for c in LEGACY_PRODUCT_COLUMNS if c not in existing]
+        for column in missing:
+            col_sql = LEGACY_PRODUCT_COLUMNS[column]
+            cur.execute(f"ALTER TABLE products ADD COLUMN {column} {col_sql}")
+            print(f"✅ Added missing products.{column}")
+
+        if missing:
+            conn.commit()
     finally:
         conn.close()
 
@@ -237,6 +271,7 @@ if __name__ == "__main__":
 
     # 3) Ensure schema exists before seeding
     db_path = ensure_schema_ready()
+    ensure_legacy_product_columns(db_path)
 
     # 4) Now seed safely
     from seed import ensure_seeded
