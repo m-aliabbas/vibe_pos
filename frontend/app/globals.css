@@ -186,3 +186,21 @@
     border-color: #000 !important;
   }
 }
+
+/* Print Estimate: hide everything except the estimate area */
+@media print {
+  body.print-estimate * {
+    visibility: hidden;
+  }
+  body.print-estimate #estimate-print-area,
+  body.print-estimate #estimate-print-area * {
+    visibility: visible;
+  }
+  body.print-estimate #estimate-print-area {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 80mm;
+    font-size: 12px;
+  }
+}

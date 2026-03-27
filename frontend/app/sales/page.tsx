@@ -43,7 +43,9 @@ import {
   FileText,
   Filter,
   Package as PackageIcon,
+  Printer,
 } from "lucide-react";
+import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
 
 interface ProductVariation {
@@ -138,6 +140,8 @@ export default function SalesTerminal() {
   const [summaryOpen, setSummaryOpen] = useState<boolean>(false);
   const [heldSales, setHeldSales] = useState<HoldSaleResponse[]>([]);
   const [heldOpen, setHeldOpen] = useState(false);
+  const [estimateOpen, setEstimateOpen] = useState(false);
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>(storeConfig);
 
   const [todayStats, setTodayStats] = useState<SaleSummary>({
     totalRevenue: 0,
@@ -157,6 +161,7 @@ export default function SalesTerminal() {
   const customerLookupRequestIdRef = useRef(0);
   const customerNameLookupRequestIdRef = useRef(0);
   const productSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteListRef = useRef<HTMLDivElement | null>(null);
 
   const latestSaleSnapshotRef = useRef<{
     cart: CartItem[];
@@ -1153,6 +1158,18 @@ export default function SalesTerminal() {
     ]
   );
 
+  // Scroll the highlighted autocomplete item into view on keyboard navigation
+  useEffect(() => {
+    const list = autocompleteListRef.current;
+    if (!list) return;
+    // Each item is a direct child — there may be a hint banner at index 0
+    const items = list.querySelectorAll<HTMLElement>(".autocomplete-item");
+    const target = items[selectedProductIndex];
+    if (target) {
+      target.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedProductIndex]);
+
   const handleCheckout = useCallback(() => {
     if (cart.length === 0) {
       alert("Cart is empty!");
@@ -1191,6 +1208,7 @@ export default function SalesTerminal() {
     void fetchTodayStats();
     void fetchHeldSales();
     void fetchProducts();
+    fetchStoreConfig().then(setStoreInfo);
   }, [token, isLoading, router, fetchTodayStats, fetchHeldSales, fetchProducts]);
 
   // Debounced server search fetch
@@ -1334,7 +1352,8 @@ export default function SalesTerminal() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return;
-      if (e.key.toLowerCase() === "n") {
+      // Use e.code (physical key) so it works on macOS where Ctrl+N may be remapped
+      if (e.code === "KeyN") {
         e.preventDefault();
         void addUnitToCart();
       }
@@ -1344,26 +1363,34 @@ export default function SalesTerminal() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [unitDialogOpen, addUnitToCart]);
 
-  // Ctrl+H hold, Ctrl+M checkout
+  // Ctrl+H hold, Ctrl+M checkout, Ctrl+E estimate
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return;
 
-      if (e.key.toLowerCase() === "h") {
+      // Use e.code (physical key) so shortcuts work on macOS even when an input
+      // is focused (WebKit remaps Ctrl+H→Backspace, Ctrl+M→Enter at the OS level)
+      if (e.code === "KeyH") {
         e.preventDefault();
         void holdCurrentSale();
         return;
       }
 
-      if (e.key.toLowerCase() === "m") {
+      if (e.code === "KeyM") {
         e.preventDefault();
         handleCheckout();
+        return;
+      }
+
+      if (e.code === "KeyE") {
+        e.preventDefault();
+        if (cart.length > 0) setEstimateOpen(true);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleCheckout, holdCurrentSale]);
+  }, [handleCheckout, holdCurrentSale, cart.length]);
 
   // keep snapshot for auto-hold
   useEffect(() => {
@@ -1699,7 +1726,7 @@ export default function SalesTerminal() {
                   />
 
                   {showAutocomplete && filteredProducts.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                    <div ref={autocompleteListRef} className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-y-auto">
                       {(() => {
                         const { searchTerm, quantity } = parseQuantityFromSearch(searchQuery);
                         const selectedProduct = filteredProducts[selectedProductIndex];
@@ -1722,7 +1749,7 @@ export default function SalesTerminal() {
                             {filteredProducts.slice(0, 10).map((product, index) => (
                               <div
                                 key={product.id}
-                                className={`p-3 cursor-pointer border-b last:border-b-0 ${index === selectedProductIndex
+                                className={`autocomplete-item p-3 cursor-pointer border-b last:border-b-0 ${index === selectedProductIndex
                                     ? "bg-primary/10 border-l-4 border-l-primary"
                                     : "hover:bg-muted/50"
                                   }`}
@@ -1993,11 +2020,17 @@ export default function SalesTerminal() {
                   <div className="space-y-2">
                     <Button className="w-full" size="lg" onClick={handleCheckout}>
                       <DollarSign className="h-5 w-5 mr-2" />
-                      Checkout
+                      Checkout (Ctrl+M)
                     </Button>
-                    <Button variant="secondary" className="w-full" onClick={() => void holdCurrentSale()}>
-                      Hold Sale
-                    </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="secondary" className="w-full" onClick={() => void holdCurrentSale()}>
+                        Hold (Ctrl+H)
+                      </Button>
+                      <Button variant="outline" className="w-full" onClick={() => setEstimateOpen(true)}>
+                        <Printer className="h-4 w-4 mr-1" />
+                        Estimate (Ctrl+E)
+                      </Button>
+                    </div>
                     <Button variant="outline" className="w-full" onClick={clearCart}>
                       Clear Cart
                     </Button>
@@ -2745,6 +2778,125 @@ export default function SalesTerminal() {
           attempted={creditLimitAlert.attempted}
         />
       )}
+
+      {/* Estimate / Quotation Dialog */}
+      <Dialog open={estimateOpen} onOpenChange={setEstimateOpen}>
+        <DialogContent className="sm:max-w-[420px] max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Estimate / Quotation</DialogTitle>
+            <DialogDescription>
+              Preview-only quote. Nothing is saved or deducted from stock.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-2">
+            {/* Printable estimate content */}
+            <div id="estimate-print-area" className="text-sm font-mono space-y-1 px-1">
+              {/* Store header */}
+              <div className="text-center border-b-2 border-dashed pb-2 mb-2">
+                <p className="font-bold text-base">{storeInfo.name}</p>
+                {storeInfo.address && <p className="text-xs">{storeInfo.address}</p>}
+                {storeInfo.city && <p className="text-xs">{storeInfo.city}</p>}
+                {storeInfo.phone && <p className="text-xs">{storeInfo.phone}</p>}
+              </div>
+
+              {/* Label */}
+              <div className="text-center mb-2 pb-2 border-b border-dashed">
+                <p className="font-bold text-lg tracking-widest">ESTIMATE</p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date().toLocaleString("en-US", {
+                    year: "numeric", month: "short", day: "numeric",
+                    hour: "2-digit", minute: "2-digit",
+                  })}
+                </p>
+                <p className="text-xs text-muted-foreground">Prepared by: {user?.username}</p>
+              </div>
+
+              {/* Items */}
+              <div className="space-y-2 border-b border-dashed pb-2 mb-2">
+                {cart.map((item) => {
+                  let itemPrice =
+                    typeof item.unit_price === "number"
+                      ? item.unit_price
+                      : item.product.selling_price;
+                  if (item.variation && typeof item.unit_price !== "number")
+                    itemPrice += item.variation.price_adjustment;
+                  if (item.unit !== item.product.base_unit && typeof item.unit_price !== "number") {
+                    const su = item.product.selling_units.find((u) => u.unit === item.unit);
+                    if (su) itemPrice = su.price;
+                  }
+                  const lineTotal = itemPrice * item.quantity - (item.item_discount || 0);
+                  return (
+                    <div key={`${item.product.id}-${item.variation?.id || "base"}-${item.unit}`}>
+                      <div className="flex justify-between">
+                        <span className="font-medium flex-1 pr-2">{item.product.name}</span>
+                        <span>rs {lineTotal.toFixed(2)}</span>
+                      </div>
+                      {item.variation && (
+                        <p className="text-xs text-purple-600 pl-2">
+                          {Object.entries(item.variation.attributes).map(([k, v]) => `${k}: ${v}`).join(", ")}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground pl-2">
+                        {item.quantity} {item.unit} × rs {itemPrice.toFixed(2)}
+                        {(item.item_discount || 0) > 0 && ` – disc rs ${(item.item_discount || 0).toFixed(2)}`}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Totals */}
+              <div className="space-y-1">
+                <div className="flex justify-between">
+                  <span>Subtotal</span>
+                  <span>rs {calculateSubtotal().toFixed(2)}</span>
+                </div>
+                {(discount > 0 || calculateItemDiscounts() > 0) && (
+                  <div className="flex justify-between text-red-600">
+                    <span>Discount</span>
+                    <span>-rs {(discount + calculateItemDiscounts()).toFixed(2)}</span>
+                  </div>
+                )}
+                {tax > 0 && (
+                  <div className="flex justify-between">
+                    <span>Tax</span>
+                    <span>+rs {tax.toFixed(2)}</span>
+                  </div>
+                )}
+                {deliveryCharges > 0 && (
+                  <div className="flex justify-between">
+                    <span>Delivery</span>
+                    <span>+rs {deliveryCharges.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold border-t pt-1 mt-1">
+                  <span>TOTAL</span>
+                  <span>rs {calculateTotal().toFixed(2)}</span>
+                </div>
+              </div>
+
+              <p className="text-center text-xs text-muted-foreground pt-3 border-t border-dashed mt-3">
+                This is an estimate only — not a tax invoice.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="border-t pt-3 gap-2">
+            <Button variant="outline" onClick={() => setEstimateOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={() => {
+              document.body.classList.add("print-estimate");
+              window.print();
+              document.body.classList.remove("print-estimate");
+            }}>
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
