@@ -158,10 +158,10 @@
     justify-content: center !important;
   }
   
-  /* Use normal paper size so the 80mm receipt can be centered */
+  /* Use exact 80mm thermal width; height auto-fits content — prevents blank extra page */
   @page {
-    size: auto;
-    margin: 10mm;
+    size: 80mm auto;
+    margin: 4mm;
   }
   
   /* Prevent page breaks inside important elements */
