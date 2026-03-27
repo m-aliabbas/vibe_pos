@@ -72,13 +72,28 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
         def mm(mm_val):
             return int(mm_val * mm_to_px)
 
-        store_name = "VibePOS"
+        # Fetch store info from DB
+        store_name = "My Store"
+        store_address = ""
+        store_phone = ""
+        try:
+            from app.models.settings import StoreSettings as _SS
+            srow = db.query(_SS).filter(_SS.id == 1).first()
+            if srow and srow.store_name:
+                store_name = srow.store_name
+                parts = [p for p in [srow.store_address, srow.store_city] if p]
+                store_address = ", ".join(parts)
+                store_phone = srow.store_phone or ""
+        except Exception:
+            pass
+
         bbox = draw.textbbox((0, 0), store_name, font=font_bold)
         text_width = bbox[2] - bbox[0]
         draw.text(((width - text_width) // 2, y), store_name, fill='black', font=font_bold)
         y += mm(6)
 
-        for line in ["by vibe.exe", "Return Invoice"]:
+        sub_lines = [l for l in [store_address, store_phone, "Return Invoice"] if l]
+        for line in sub_lines:
             bbox = draw.textbbox((0, 0), line, font=font_small)
             text_width = bbox[2] - bbox[0]
             draw.text(((width - text_width) // 2, y), line, fill='black', font=font_small)

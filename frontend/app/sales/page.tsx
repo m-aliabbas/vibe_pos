@@ -44,6 +44,7 @@ import {
   Filter,
   Package as PackageIcon,
 } from "lucide-react";
+import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
 
 interface ProductVariation {
   id: number;
@@ -126,6 +127,9 @@ export default function SalesTerminal() {
   const [loading, setLoading] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
+  const [creditLimitAlert, setCreditLimitAlert] = useState<{
+    limit: number; current: number; available: number; attempted?: number;
+  } | null>(null);
   const [saleId, setSaleId] = useState<number | null>(null);
   const [completedSaleTotal, setCompletedSaleTotal] = useState<number>(0);
   const [completedAmountPaid, setCompletedAmountPaid] = useState<number>(0);
@@ -189,6 +193,8 @@ export default function SalesTerminal() {
     null
   );
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation | null>(null);
+  const addVariationToCartRef = useRef<() => Promise<void>>(async () => {});
+  const quantityForVariationInputRef = useRef<HTMLInputElement>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>("piece");
   const [quantityForVariation, setQuantityForVariation] = useState<string>("1");
   const [variationDiscount, setVariationDiscount] = useState<number>(0);
@@ -984,6 +990,9 @@ export default function SalesTerminal() {
     updateLocalProduct,
   ]);
 
+  // Keep ref in sync so the keydown listener always has the latest version
+  addVariationToCartRef.current = addVariationToCart;
+
   const addUnitToCart = useCallback(async () => {
     if (!selectedProductForUnit) return;
 
@@ -1505,7 +1514,17 @@ export default function SalesTerminal() {
       void fetchTodayStats();
     } catch (error: any) {
       console.error("Failed to complete sale:", error);
-      alert(error.response?.data?.detail || "Failed to complete sale. Please try again.");
+      const detail: string = error.response?.data?.detail || "";
+      const creditInfo = parseCreditLimitError(detail);
+      if (creditInfo) {
+        const amountDue = Math.max(
+          0,
+          (cart.reduce((s, i) => s + (i.unit_price ?? i.product.selling_price) * i.quantity, 0)) - amountPaidValue
+        );
+        setCreditLimitAlert({ ...creditInfo, attempted: amountDue });
+      } else {
+        alert(detail || "Failed to complete sale. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -2377,7 +2396,7 @@ export default function SalesTerminal() {
                     return (
                       <button
                         key={variation.id}
-                        onClick={() => setSelectedVariation(variation)}
+                        onClick={() => { setSelectedVariation(variation); setTimeout(() => quantityForVariationInputRef.current?.focus(), 0); }}
                         className={`p-3 border rounded text-left transition-all ${selectedVariation?.id === variation.id ? "border-blue-500 bg-blue-50" : "hover:border-gray-400"
                           } ${variation.quantity <= 0 ? "opacity-50" : ""}`}
                         disabled={variation.quantity <= 0}
@@ -2476,7 +2495,10 @@ export default function SalesTerminal() {
                   step={selectedProductForVariation?.allow_decimal_qty ? "0.25" : "1"}
                   value={quantityForVariation}
                   onChange={(e) => setQuantityForVariation(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && selectedVariation) { e.preventDefault(); void addVariationToCart(); } }}
                   className="text-center"
+                  autoFocus
+                  ref={quantityForVariationInputRef}
                 />
 
                 <Button
@@ -2504,6 +2526,7 @@ export default function SalesTerminal() {
                 placeholder="0.00"
                 value={variationDiscount || ""}
                 onChange={(e) => setVariationDiscount(parseFloat(e.target.value) || 0)}
+                onKeyDown={(e) => { if (e.key === "Enter" && selectedVariation) { e.preventDefault(); void addVariationToCart(); } }}
               />
               <p className="text-xs text-muted-foreground">Discount to apply on this item</p>
             </div>
@@ -2518,6 +2541,7 @@ export default function SalesTerminal() {
                 placeholder="0.00"
                 value={variationUnitPrice}
                 onChange={(e) => setVariationUnitPrice(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && selectedVariation) { e.preventDefault(); void addVariationToCart(); } }}
                 disabled={!variationPriceOverrideEnabled}
               />
               <div className="flex items-center gap-2">
@@ -2709,6 +2733,18 @@ export default function SalesTerminal() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Credit Limit Alert */}
+      {creditLimitAlert && (
+        <CreditLimitAlert
+          open={!!creditLimitAlert}
+          onClose={() => setCreditLimitAlert(null)}
+          customerName={selectedCustomer?.name || customerName || undefined}
+          limit={creditLimitAlert.limit}
+          current={creditLimitAlert.current}
+          available={creditLimitAlert.available}
+          attempted={creditLimitAlert.attempted}
+        />
+      )}
     </div>
   );
 }

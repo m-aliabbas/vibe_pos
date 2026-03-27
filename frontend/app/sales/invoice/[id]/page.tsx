@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { storeConfig } from "@/lib/store-config";
+import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,8 @@ interface SaleItem {
   variation_id?: number;
   unit: string;
   item_discount?: number;
+  product_name?: string;
+  variation_attributes?: Record<string, string>;
   product?: Product;
   variation?: ProductVariation;
 }
@@ -108,9 +110,11 @@ export default function InvoicePage() {
   const [saleReturns, setSaleReturns] = useState<ReturnRecord[]>([]);
   const [returnedBySaleItem, setReturnedBySaleItem] = useState<{ [key: number]: number }>({});
   const [returnRefundTotal, setReturnRefundTotal] = useState(0);
+  const [storeInfo, setStoreInfo] = useState<StoreInfo>(storeConfig);
 
   useEffect(() => {
     fetchSaleDetails();
+    fetchStoreConfig().then(setStoreInfo);
   }, [params.id]);
 
   const fetchSaleDetails = async () => {
@@ -159,23 +163,6 @@ export default function InvoicePage() {
         console.error("Failed to fetch users:", err);
       }
 
-      // Fetch all products to map to sale items
-      const productsResponse = await api.get("/products/");
-      const productMap: { [key: number]: any } = {};
-      productsResponse.data.forEach((product: any) => {
-        productMap[product.id] = product;
-      });
-
-      // Build variation map for quick lookup
-      const variationMap: { [key: number]: ProductVariation } = {};
-      for (const product of productsResponse.data) {
-        if (product.variations && product.variations.length > 0) {
-          product.variations.forEach((variation: ProductVariation) => {
-            variationMap[variation.id] = variation;
-          });
-        }
-      }
-
       // Fetch customer data if customer_id is present
       let customerData = null;
       if (saleData.customer_id) {
@@ -187,18 +174,10 @@ export default function InvoicePage() {
         }
       }
 
-      // Map products and variations to sale items
-      const itemsWithProducts = saleData.items.map((item: SaleItem) => ({
-        ...item,
-        product: productMap[item.product_id],
-        variation: item.variation_id ? variationMap[item.variation_id] : undefined
-      }));
-
       setSale({
         ...saleData,
         user: userData,
         customer: customerData,
-        items: itemsWithProducts
       });
     } catch (err: any) {
       setError(err.response?.data?.detail || "Failed to load invoice");
@@ -309,22 +288,22 @@ export default function InvoicePage() {
             {/* Store Header - Centered */}
             <div className="text-center border-b-2 border-dashed border-gray-400 pb-3 mb-3">
               <h1 className="text-xl font-bold text-gray-900 mb-1">
-                {storeConfig.name}
+                {storeInfo.name}
               </h1>
-              {storeConfig.address && (
-                <p className="text-xs text-gray-600">{storeConfig.address}</p>
+              {storeInfo.address && (
+                <p className="text-xs text-gray-600">{storeInfo.address}</p>
               )}
-              {storeConfig.city && (
-                <p className="text-xs text-gray-600">{storeConfig.city}</p>
+              {storeInfo.city && (
+                <p className="text-xs text-gray-600">{storeInfo.city}</p>
               )}
-              {storeConfig.phone && (
-                <p className="text-xs text-gray-600">{storeConfig.phone}</p>
+              {storeInfo.phone && (
+                <p className="text-xs text-gray-600">{storeInfo.phone}</p>
               )}
-              {storeConfig.email && (
-                <p className="text-xs text-gray-600">{storeConfig.email}</p>
+              {storeInfo.email && (
+                <p className="text-xs text-gray-600">{storeInfo.email}</p>
               )}
-              {storeConfig.taxId && (
-                <p className="text-xs text-gray-600">Tax ID: {storeConfig.taxId}</p>
+              {storeInfo.taxId && (
+                <p className="text-xs text-gray-600">Tax ID: {storeInfo.taxId}</p>
               )}
             </div>
 
@@ -382,17 +361,12 @@ export default function InvoicePage() {
                 <div key={item.id} className="mb-3">
                   <div className="flex justify-between items-start mb-1">
                     <span className="text-sm font-medium text-gray-900 flex-1">
-                      {item.product?.name || `Product #${item.product_id}`}
+                      {item.product_name || item.product?.name || `Product #${item.product_id}`}
                     </span>
                   </div>
-                  {item.variation && (
+                  {(item.variation_attributes || item.variation?.attributes) && (
                     <div className="text-xs text-purple-600 mb-1">
-                      {Object.entries(item.variation.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')}
-                    </div>
-                  )}
-                  {item.product?.sku && !item.variation && (
-                    <div className="text-xs text-gray-500 mb-1">
-                      SKU: {item.product.sku}
+                      {Object.entries(item.variation_attributes || item.variation!.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')}
                     </div>
                   )}
                   {item.variation?.sku && (
@@ -528,9 +502,9 @@ export default function InvoicePage() {
               <p className="text-xs text-gray-600 mb-1">
                 Thank you for your business!
               </p>
-              {storeConfig.website && (
+              {storeInfo.website && (
                 <p className="text-xs text-gray-500">
-                  {storeConfig.website}
+                  {storeInfo.website}
                 </p>
               )}
               <p className="text-xs text-gray-400 mt-2">

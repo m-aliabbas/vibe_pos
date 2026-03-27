@@ -26,6 +26,7 @@ class Customer(Base):
     total_spent = Column(Float, default=0.0)  # Total amount spent
     outstanding_balance = Column(Float, default=0.0)  # Credit/udhar amount (positive = customer owes)
     opening_balance = Column(Float, default=0.0)  # Initial balance from legacy/manual system
+    credit_limit = Column(Float, nullable=True, default=None)  # Max allowed outstanding balance (None = unlimited)
     
     # Vehicle Oil Change Tracking (optional)
     current_mileage = Column(Integer, nullable=True)  # Current vehicle mileage

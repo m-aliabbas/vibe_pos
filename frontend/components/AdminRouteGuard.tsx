@@ -50,7 +50,7 @@ const AdminRouteGuard: React.FC<AdminRouteGuardProps> = ({
         <Card className="p-6 max-w-md">
           <h2 className="text-xl font-semibold mb-2">Authentication Required</h2>
           <p className="text-gray-600 mb-4">Please log in to access this page.</p>
-          <Button onClick={() => router.push('/auth/login')} className="w-full">
+          <Button onClick={() => router.push('/login')} className="w-full">
             Go to Login
           </Button>
         </Card>

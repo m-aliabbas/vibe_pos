@@ -52,6 +52,8 @@ interface SaleItem {
   quantity: number;
   unit_price: number;
   total_price: number;
+  product_name?: string;
+  variation_attributes?: Record<string, string>;
 }
 
 interface ReturnItem {
@@ -658,7 +660,7 @@ export default function SalesHistory() {
                           <TableCell>
                             <div>
                               <p className="font-medium">
-                                {products[item.product_id]?.name || "Unknown Product"}
+                                {item.product_name || products[item.product_id]?.name || "Unknown Product"}
                               </p>
                               <p className="text-sm text-muted-foreground">
                                 SKU: {products[item.product_id]?.sku || "N/A"}
@@ -871,7 +873,7 @@ export default function SalesHistory() {
                   {editSale.items.map((item, index) => (
                     <div key={item.id} className="grid grid-cols-12 gap-2 items-end">
                       <div className="col-span-4">
-                        <p className="text-sm font-medium">{products[item.product_id]?.name || `Product #${item.product_id}`}</p>
+                        <p className="text-sm font-medium">{item.product_name || products[item.product_id]?.name || `Product #${item.product_id}`}</p>
                         <p className="text-xs text-muted-foreground">Unit: {item.unit || "piece"}</p>
                       </div>
                       <div className="col-span-2">

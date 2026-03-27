@@ -21,6 +21,22 @@ from app.services import accounting as accounting_service
 router = APIRouter()
 
 
+def _get_store_name() -> str:
+    """Return the configured store name from DB."""
+    from app.db.session import SessionLocal
+    from app.models.settings import StoreSettings
+    db = SessionLocal()
+    try:
+        row = db.query(StoreSettings).filter(StoreSettings.id == 1).first()
+        if row and row.store_name:
+            return row.store_name
+    except Exception:
+        pass
+    finally:
+        db.close()
+    return "My Store"
+
+
 def normalize_phone(phone: str) -> str:
     digits = "".join(ch for ch in phone if ch.isdigit())
     if digits.startswith("92") and len(digits) > 10:
@@ -225,6 +241,7 @@ def create_customer(
         next_oil_change_mileage=customer_in.next_oil_change_mileage,
         opening_balance=customer_in.opening_balance or 0.0,
         outstanding_balance=customer_in.opening_balance or 0.0,
+        credit_limit=customer_in.credit_limit,
         member_since=datetime.utcnow(),
     )
     
@@ -529,7 +546,12 @@ def update_customer(
         customer.oil_change_interval = customer_in.oil_change_interval
     if customer_in.next_oil_change_mileage is not None:
         customer.next_oil_change_mileage = customer_in.next_oil_change_mileage
-    
+    # credit_limit: allow explicit None (unlimited) or a positive value
+    if "credit_limit" in customer_in.model_fields_set:
+        if customer_in.credit_limit is not None and customer_in.credit_limit < 0:
+            raise HTTPException(status_code=400, detail="Credit limit must be a positive value or null (unlimited)")
+        customer.credit_limit = customer_in.credit_limit
+
     customer.updated_at = datetime.utcnow()
     
     db.add(customer)
@@ -755,7 +777,15 @@ def add_customer_advance(
     
     if not description:
         raise HTTPException(status_code=400, detail="Description is required")
-    
+
+    # Enforce credit limit
+    if customer.credit_limit is not None and (customer.outstanding_balance + amount) > customer.credit_limit:
+        available = max(0, customer.credit_limit - customer.outstanding_balance)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Credit limit exceeded. Limit: {customer.credit_limit:.2f}, Current: {customer.outstanding_balance:.2f}, Available: {available:.2f}"
+        )
+
     # Increase customer's outstanding balance
     customer.outstanding_balance += amount
     customer.updated_at = datetime.utcnow()
@@ -870,8 +900,8 @@ def send_payment_notification(phone: str, amount: float, balance: float, payment
                   f"Amount: RS{amount:,.2f}\n" \
                   f"Remaining Balance: RS{balance:,.2f}\n" \
                   f"Payment ID: #{payment_id}\n\n" \
-                  f"Thank you.!"\
-                  f"vibeexe.com"
+                  f"Thank you!\n" \
+                  f"{_get_store_name()}"
                   
         requests.post(
             "http://127.0.0.1:8000/api/v1/whatsapp/send",
@@ -898,14 +928,15 @@ def send_due_reminder_notification(phone: str, name: str, balance: float, custom
         elif len(phone) == 10:
             phone = '92' + phone
 
+        store = _get_store_name()
         message = (
             f"🔔 *Payment Reminder*\n\n"
-            f"Malik D Store.\n"
+            f"{store}\n"
             f"Customer: {name}\n"
             f"Due Amount: RS{balance:,.2f}\n\n"
             f"Please clear your outstanding balance at your earliest convenience.\n"
-            f"Customer ID: #{customer_id}"
-            f"Malik D Store.\n"
+            f"Customer ID: #{customer_id}\n"
+            f"{store}"
         )
 
         requests.post(

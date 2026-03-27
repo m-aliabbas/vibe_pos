@@ -27,7 +27,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import api, { customerApi, CustomerResponse, CustomerNote, CustomerPayment } from "@/lib/api";
-import { storeConfig } from "@/lib/store-config";
+import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
 import {
   User,
   Phone,
@@ -47,6 +47,7 @@ import {
   FileText,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
 
 export default function CustomerDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap params Promise using React.use()
@@ -64,6 +65,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [creditLimitAlert, setCreditLimitAlert] = useState<{
+    limit: number; current: number; available: number; attempted?: number;
+  } | null>(null);
 
   // Form states
   const [newNote, setNewNote] = useState({ note_type: "general", note_text: "" });
@@ -75,6 +79,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     email: "",
     address: "",
     opening_balance: 0,
+    credit_limit: undefined as number | null | undefined,
   });
 
   const [receiptData, setReceiptData] = useState<{
@@ -88,6 +93,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     date: string;
     balance?: number;
   } | null>(null);
+  const [storeInfo, setStoreInfo] = useState(storeConfig);
 
   // Parse customerId with validation
   const customerId = parseInt(unwrappedParams.id);
@@ -111,6 +117,10 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     fetchCustomerData();
   }, [token, isLoading, unwrappedParams.id]);
 
+  useEffect(() => {
+    fetchStoreConfig().then(setStoreInfo);
+  }, []);
+
   const fetchCustomerData = async () => {
     // Double check customerId is valid
     if (!isValidId) {
@@ -132,6 +142,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
         email: customerData.email || "",
         address: customerData.address || "",
         opening_balance: customerData.opening_balance || 0,
+        credit_limit: customerData.credit_limit ?? undefined,
       });
     } catch (error) {
       console.error("Failed to fetch customer:", error);
@@ -236,9 +247,15 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       });
       setReceiptDialogOpen(true);
       fetchCustomerData();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to add advance:", error);
-      alert("Failed to add advance payment");
+      const detail: string = error.response?.data?.detail || "";
+      const creditInfo = parseCreditLimitError(detail);
+      if (creditInfo) {
+        setCreditLimitAlert({ ...creditInfo, attempted: newAdvance.amount });
+      } else {
+        alert(detail || "Failed to add advance payment");
+      }
     }
   };
 
@@ -342,7 +359,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
       const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       doc.setFontSize(14);
-      doc.text(storeConfig.name || "Store", 40, 40);
+      doc.text(storeInfo.name || "Store", 40, 40);
       doc.setFontSize(12);
       doc.text(`Customer Report - ${customer?.name || "Customer"}`, 40, 58);
       doc.setFontSize(10);
@@ -369,11 +386,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     const content = `
       <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
         <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
-          <div style="font-size:16px; font-weight:bold;">${storeConfig.name}</div>
-          ${storeConfig.address ? `<div>${storeConfig.address}</div>` : ""}
-          ${storeConfig.city ? `<div>${storeConfig.city}</div>` : ""}
-          ${storeConfig.phone ? `<div>${storeConfig.phone}</div>` : ""}
-          ${storeConfig.email ? `<div>${storeConfig.email}</div>` : ""}
+          <div style="font-size:16px; font-weight:bold;">${storeInfo.name}</div>
+          ${storeInfo.address ? `<div>${storeInfo.address}</div>` : ""}
+          ${storeInfo.city ? `<div>${storeInfo.city}</div>` : ""}
+          ${storeInfo.phone ? `<div>${storeInfo.phone}</div>` : ""}
+          ${storeInfo.email ? `<div>${storeInfo.email}</div>` : ""}
         </div>
         <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
         <div style="margin-bottom:8px;">
@@ -388,7 +405,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           ${typeof receiptData.balance === "number" ? `<div style="display:flex; justify-content:space-between; margin-top:6px;"><span>Outstanding</span><strong>rs ${receiptData.balance.toFixed(2)}</strong></div>` : ""}
         </div>
         <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
-        ${storeConfig.website ? `<div style="text-align:center; color:#999;">${storeConfig.website}</div>` : ""}
+        ${storeInfo.website ? `<div style="text-align:center; color:#999;">${storeInfo.website}</div>` : ""}
       </div>
     `;
 
@@ -584,6 +601,27 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                   />
                   <p className="text-xs text-muted-foreground">
                     This will adjust the customer outstanding balance.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-credit-limit">Credit Limit (optional)</Label>
+                  <Input
+                    id="edit-credit-limit"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Leave blank for unlimited"
+                    value={editCustomer.credit_limit ?? ""}
+                    onChange={(e) =>
+                      setEditCustomer({
+                        ...editCustomer,
+                        credit_limit: e.target.value === "" ? null : Math.max(0, parseFloat(e.target.value) || 0),
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Max outstanding balance allowed. Leave blank for unlimited.
                   </p>
                 </div>
 
@@ -819,6 +857,17 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
               <Badge variant={customer.outstanding_balance > 0 ? "destructive" : "secondary"}>
                 {formatCurrency(customer.outstanding_balance)}
               </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-muted-foreground">Credit Limit</span>
+              <span className="font-medium">
+                {customer.credit_limit != null
+                  ? <Badge variant={customer.outstanding_balance >= customer.credit_limit ? "destructive" : "outline"}>
+                      {formatCurrency(customer.credit_limit)}
+                    </Badge>
+                  : <span className="text-muted-foreground text-sm">Unlimited</span>
+                }
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -1166,10 +1215,10 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           {receiptData && (
             <div className="space-y-3 text-sm">
               <div className="text-center border-b border-dashed pb-2">
-                <div className="text-base font-semibold">{storeConfig.name}</div>
-                {storeConfig.address && <div>{storeConfig.address}</div>}
-                {storeConfig.city && <div>{storeConfig.city}</div>}
-                {storeConfig.phone && <div>{storeConfig.phone}</div>}
+                <div className="text-base font-semibold">{storeInfo.name}</div>
+                {storeInfo.address && <div>{storeInfo.address}</div>}
+                {storeInfo.city && <div>{storeInfo.city}</div>}
+                {storeInfo.phone && <div>{storeInfo.phone}</div>}
               </div>
               <div>
                 <div><span className="font-medium">Customer:</span> {receiptData.customerName}</div>
@@ -1215,6 +1264,18 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {creditLimitAlert && (
+        <CreditLimitAlert
+          open={!!creditLimitAlert}
+          onClose={() => setCreditLimitAlert(null)}
+          customerName={customer?.name || undefined}
+          limit={creditLimitAlert.limit}
+          current={creditLimitAlert.current}
+          available={creditLimitAlert.available}
+          attempted={creditLimitAlert.attempted}
+        />
+      )}
     </div>
   );
 }

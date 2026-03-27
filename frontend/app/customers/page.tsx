@@ -68,6 +68,7 @@ export default function CustomersPage() {
     email: "",
     address: "",
     opening_balance: 0,
+    credit_limit: undefined,
   });
 
 
@@ -156,6 +157,7 @@ export default function CustomersPage() {
         email: "",
         address: "",
         opening_balance: 0,
+        credit_limit: undefined,
       });
 
       fetchCustomers();
@@ -420,6 +422,27 @@ export default function CustomersPage() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Enter existing credit from manual system
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="credit_limit">Credit Limit (optional)</Label>
+                <Input
+                  id="credit_limit"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Leave blank for unlimited"
+                  value={newCustomer.credit_limit ?? ""}
+                  onChange={(e) =>
+                    setNewCustomer({
+                      ...newCustomer,
+                      credit_limit: e.target.value === "" ? undefined : Math.max(0, parseFloat(e.target.value) || 0),
+                    })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Max outstanding balance allowed. Leave blank for unlimited.
                 </p>
               </div>
 

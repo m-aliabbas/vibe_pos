@@ -24,6 +24,7 @@ export interface CustomerSimple {
     phone?: string;
     name?: string;
     outstanding_balance: number;
+    credit_limit?: number | null;
 }
 
 export interface CustomerResponse {
@@ -45,6 +46,7 @@ export interface CustomerResponse {
     updated_at: string;
     notes: CustomerNote[];
     payments: CustomerPayment[];
+    credit_limit?: number | null;
 }
 
 export interface CustomerCreate {
@@ -57,6 +59,7 @@ export interface CustomerCreate {
     oil_change_interval?: number;
     next_oil_change_mileage?: number;
     opening_balance?: number;
+    credit_limit?: number | null;
 }
 
 export interface CustomerUpdate {
@@ -69,6 +72,7 @@ export interface CustomerUpdate {
     name?: string;
     address?: string;
     opening_balance?: number;
+    credit_limit?: number | null;
 }
 
 export interface CustomerListResponse {
@@ -79,6 +83,7 @@ export interface CustomerListResponse {
     total_purchases: number;
     total_spent: number;
     outstanding_balance: number;
+    credit_limit?: number | null;
     current_mileage?: number;
     next_oil_change_mileage?: number;
     created_at: string;

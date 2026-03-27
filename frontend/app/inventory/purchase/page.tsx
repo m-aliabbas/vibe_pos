@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { storeConfig } from "@/lib/store-config";
+import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -55,6 +55,7 @@ function PurchasePageContent() {
     
     // New Product Dialog
     const [showNewProductDialog, setShowNewProductDialog] = useState(false);
+    const [storeInfo, setStoreInfo] = useState(storeConfig);
     const [newProductName, setNewProductName] = useState('');
     const [newProductSku, setNewProductSku] = useState('');
     const [newProductCategory, setNewProductCategory] = useState('');
@@ -64,6 +65,7 @@ function PurchasePageContent() {
 
     useEffect(() => {
         fetchData();
+        fetchStoreConfig().then(setStoreInfo);
     }, []);
 
     useEffect(() => {
@@ -319,11 +321,11 @@ function PurchasePageContent() {
                 const content = `
                     <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
                         <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
-                            <div style="font-size:16px; font-weight:bold;">${storeConfig.name}</div>
-                            ${storeConfig.address ? `<div>${storeConfig.address}</div>` : ""}
-                            ${storeConfig.city ? `<div>${storeConfig.city}</div>` : ""}
-                            ${storeConfig.phone ? `<div>${storeConfig.phone}</div>` : ""}
-                            ${storeConfig.email ? `<div>${storeConfig.email}</div>` : ""}
+                            <div style="font-size:16px; font-weight:bold;">${storeInfo.name}</div>
+                            ${storeInfo.address ? `<div>${storeInfo.address}</div>` : ""}
+                            ${storeInfo.city ? `<div>${storeInfo.city}</div>` : ""}
+                            ${storeInfo.phone ? `<div>${storeInfo.phone}</div>` : ""}
+                            ${storeInfo.email ? `<div>${storeInfo.email}</div>` : ""}
                         </div>
                         <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
                         <div style="margin-bottom:8px;">
@@ -336,7 +338,7 @@ function PurchasePageContent() {
                             <div style="display:flex; justify-content:space-between;"><span>Status</span><span>${receiptData.status}</span></div>
                         </div>
                         <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
-                        ${storeConfig.website ? `<div style="text-align:center; color:#999;">${storeConfig.website}</div>` : ""}
+                        ${storeInfo.website ? `<div style="text-align:center; color:#999;">${storeInfo.website}</div>` : ""}
                     </div>
                 `;
 
@@ -404,10 +406,10 @@ function PurchasePageContent() {
                             {receiptData && (
                                 <div className="space-y-3 text-sm">
                                     <div className="text-center border-b border-dashed pb-2">
-                                        <div className="text-base font-semibold">{storeConfig.name}</div>
-                                        {storeConfig.address && <div>{storeConfig.address}</div>}
-                                        {storeConfig.city && <div>{storeConfig.city}</div>}
-                                        {storeConfig.phone && <div>{storeConfig.phone}</div>}
+                                        <div className="text-base font-semibold">{storeInfo.name}</div>
+                                        {storeInfo.address && <div>{storeInfo.address}</div>}
+                                        {storeInfo.city && <div>{storeInfo.city}</div>}
+                                        {storeInfo.phone && <div>{storeInfo.phone}</div>}
                                     </div>
                                     <div>
                                         <div><span className="font-medium">Vendor:</span> {receiptData.vendorName}</div>

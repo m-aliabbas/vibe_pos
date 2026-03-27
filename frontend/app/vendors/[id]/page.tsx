@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api, { vendorReportsApi } from '@/lib/api';
-import { storeConfig } from '@/lib/store-config';
+import { storeConfig, fetchStoreConfig } from '@/lib/store-config';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -66,6 +66,7 @@ export default function VendorDetailsPage() {
         balance?: number;
     } | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [storeInfo, setStoreInfo] = useState(storeConfig);
     const [editVendor, setEditVendor] = useState({
         name: '',
         contact_name: '',
@@ -79,6 +80,7 @@ export default function VendorDetailsPage() {
         if (id) {
             fetchData();
         }
+        fetchStoreConfig().then(setStoreInfo);
     }, [id]);
 
     const fetchData = async () => {
@@ -151,11 +153,11 @@ export default function VendorDetailsPage() {
                 const content = `
                     <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
                         <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
-                            <div style="font-size:16px; font-weight:bold;">${storeConfig.name}</div>
-                            ${storeConfig.address ? `<div>${storeConfig.address}</div>` : ""}
-                            ${storeConfig.city ? `<div>${storeConfig.city}</div>` : ""}
-                            ${storeConfig.phone ? `<div>${storeConfig.phone}</div>` : ""}
-                            ${storeConfig.email ? `<div>${storeConfig.email}</div>` : ""}
+                            <div style="font-size:16px; font-weight:bold;">${storeInfo.name}</div>
+                            ${storeInfo.address ? `<div>${storeInfo.address}</div>` : ""}
+                            ${storeInfo.city ? `<div>${storeInfo.city}</div>` : ""}
+                            ${storeInfo.phone ? `<div>${storeInfo.phone}</div>` : ""}
+                            ${storeInfo.email ? `<div>${storeInfo.email}</div>` : ""}
                         </div>
                         <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
                         <div style="margin-bottom:8px;">
@@ -168,7 +170,7 @@ export default function VendorDetailsPage() {
                             ${typeof receiptData.balance === "number" ? `<div style="display:flex; justify-content:space-between; margin-top:6px;"><span>Prepaid Credit</span><strong>rs ${receiptData.balance.toFixed(2)}</strong></div>` : ""}
                         </div>
                         <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
-                        ${storeConfig.website ? `<div style="text-align:center; color:#999;">${storeConfig.website}</div>` : ""}
+                        ${storeInfo.website ? `<div style="text-align:center; color:#999;">${storeInfo.website}</div>` : ""}
                     </div>
                 `;
 
@@ -276,7 +278,7 @@ export default function VendorDetailsPage() {
 
             const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
             doc.setFontSize(14);
-            doc.text(storeConfig.name || "Store", 40, 40);
+            doc.text(storeInfo.name || "Store", 40, 40);
             doc.setFontSize(12);
             doc.text(`Vendor Report - ${vendor?.name || "Vendor"}`, 40, 58);
             doc.setFontSize(10);
@@ -580,10 +582,10 @@ export default function VendorDetailsPage() {
                             {receiptData && (
                                 <div className="space-y-3 text-sm">
                                     <div className="text-center border-b border-dashed pb-2">
-                                        <div className="text-base font-semibold">{storeConfig.name}</div>
-                                        {storeConfig.address && <div>{storeConfig.address}</div>}
-                                        {storeConfig.city && <div>{storeConfig.city}</div>}
-                                        {storeConfig.phone && <div>{storeConfig.phone}</div>}
+                                        <div className="text-base font-semibold">{storeInfo.name}</div>
+                                        {storeInfo.address && <div>{storeInfo.address}</div>}
+                                        {storeInfo.city && <div>{storeInfo.city}</div>}
+                                        {storeInfo.phone && <div>{storeInfo.phone}</div>}
                                     </div>
                                     <div>
                                         <div><span className="font-medium">Vendor:</span> {receiptData.vendorName}</div>

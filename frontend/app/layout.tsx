@@ -20,6 +20,7 @@ export const metadata: Metadata = {
 import { AutoBreadcrumb } from "@/components/AutoBreadcrumb";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
+import { ConfirmCloseGuard } from "@/components/ConfirmCloseGuard";
 
 export default function RootLayout({
   children,
@@ -32,6 +33,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
+          <ConfirmCloseGuard />
           <div className="no-print">
             <Navbar />
           </div>

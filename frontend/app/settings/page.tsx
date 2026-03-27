@@ -5,6 +5,8 @@ import AdminLayout from '@/components/AdminLayout';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -15,7 +17,9 @@ import {
     CheckCircle2,
     Loader2,
     HardDrive,
-    Clock
+    Clock,
+    Store,
+    Save,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { invoke } from '@tauri-apps/api/core';
@@ -33,11 +37,65 @@ interface BackupFile {
     created: string;
 }
 
+interface StoreSettingsForm {
+    store_name: string;
+    store_address: string;
+    store_city: string;
+    store_phone: string;
+    store_email: string;
+    store_tax_id: string;
+    store_website: string;
+}
+
 const BackupRestorePage: React.FC = () => {
     const [dbFiles, setDbFiles] = useState<DatabaseFile[]>([]);
     const [backups, setBackups] = useState<BackupFile[]>([]);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+
+    // Store settings state
+    const [storeForm, setStoreForm] = useState<StoreSettingsForm>({
+        store_name: '',
+        store_address: '',
+        store_city: '',
+        store_phone: '',
+        store_email: '',
+        store_tax_id: '',
+        store_website: '',
+    });
+    const [storeLoading, setStoreLoading] = useState(false);
+    const [storeMessage, setStoreMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+    const fetchStoreSettings = async () => {
+        try {
+            const res = await api.get('/settings/store');
+            const d = res.data;
+            setStoreForm({
+                store_name: d.store_name || '',
+                store_address: d.store_address || '',
+                store_city: d.store_city || '',
+                store_phone: d.store_phone || '',
+                store_email: d.store_email || '',
+                store_tax_id: d.store_tax_id || '',
+                store_website: d.store_website || '',
+            });
+        } catch {
+            // not critical
+        }
+    };
+
+    const handleStoreSave = async () => {
+        setStoreLoading(true);
+        setStoreMessage(null);
+        try {
+            await api.put('/settings/store', storeForm);
+            setStoreMessage({ type: 'success', text: 'Store information saved successfully!' });
+        } catch (err: any) {
+            setStoreMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to save.' });
+        } finally {
+            setStoreLoading(false);
+        }
+    };
 
     const fetchDatabaseFiles = async () => {
         try {
@@ -60,6 +118,7 @@ const BackupRestorePage: React.FC = () => {
     useEffect(() => {
         fetchDatabaseFiles();
         fetchBackups();
+        fetchStoreSettings();
     }, []);
 
     const handleCreateBackup = async () => {
@@ -193,7 +252,111 @@ const BackupRestorePage: React.FC = () => {
                 <div className="space-y-6">
                     {/* Header */}
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Backup & Restore</h1>
+                        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
+                        <p className="text-gray-600 mt-1">Manage store information and database backups</p>
+                    </div>
+
+                    {/* Store Information */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Store className="h-5 w-5" />
+                                Store Information
+                            </CardTitle>
+                            <CardDescription>
+                                This information appears on all receipts, invoices, and WhatsApp messages
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {storeMessage && (
+                                <Alert variant={storeMessage.type === 'error' ? 'destructive' : 'default'}>
+                                    {storeMessage.type === 'success' ? (
+                                        <CheckCircle2 className="h-4 w-4" />
+                                    ) : (
+                                        <AlertCircle className="h-4 w-4" />
+                                    )}
+                                    <AlertDescription>{storeMessage.text}</AlertDescription>
+                                </Alert>
+                            )}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <Label htmlFor="store_name">Store Name *</Label>
+                                    <Input
+                                        id="store_name"
+                                        placeholder="e.g. Malik D Store"
+                                        value={storeForm.store_name}
+                                        onChange={e => setStoreForm(f => ({ ...f, store_name: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="store_phone">Phone Number</Label>
+                                    <Input
+                                        id="store_phone"
+                                        placeholder="e.g. 0311-1234567"
+                                        value={storeForm.store_phone}
+                                        onChange={e => setStoreForm(f => ({ ...f, store_phone: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1 md:col-span-2">
+                                    <Label htmlFor="store_address">Address</Label>
+                                    <Input
+                                        id="store_address"
+                                        placeholder="e.g. Shop #12, Main Bazar"
+                                        value={storeForm.store_address}
+                                        onChange={e => setStoreForm(f => ({ ...f, store_address: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="store_city">City</Label>
+                                    <Input
+                                        id="store_city"
+                                        placeholder="e.g. Islamabad"
+                                        value={storeForm.store_city}
+                                        onChange={e => setStoreForm(f => ({ ...f, store_city: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="store_email">Email</Label>
+                                    <Input
+                                        id="store_email"
+                                        type="email"
+                                        placeholder="e.g. store@example.com"
+                                        value={storeForm.store_email}
+                                        onChange={e => setStoreForm(f => ({ ...f, store_email: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="store_tax_id">Tax ID / NTN</Label>
+                                    <Input
+                                        id="store_tax_id"
+                                        placeholder="e.g. 1234567-8"
+                                        value={storeForm.store_tax_id}
+                                        onChange={e => setStoreForm(f => ({ ...f, store_tax_id: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="store_website">Website</Label>
+                                    <Input
+                                        id="store_website"
+                                        placeholder="e.g. mystore.com"
+                                        value={storeForm.store_website}
+                                        onChange={e => setStoreForm(f => ({ ...f, store_website: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <Button onClick={handleStoreSave} disabled={storeLoading} className="mt-2">
+                                {storeLoading ? (
+                                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
+                                ) : (
+                                    <><Save className="h-4 w-4 mr-2" />Save Store Info</>
+                                )}
+                            </Button>
+                        </CardContent>
+                    </Card>
+
+                    {/* Backup Header */}
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-900">Backup &amp; Restore</h2>
                         <p className="text-gray-600 mt-1">Manage your database backups</p>
                     </div>
 

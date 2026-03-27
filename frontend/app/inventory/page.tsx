@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import JsBarcode from 'jsbarcode';
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download } from "lucide-react";
+import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download, Barcode, Printer } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -96,6 +97,36 @@ export default function InventoryPage() {
     const [pageSize] = useState(100);
     const [totalCount, setTotalCount] = useState(0);
     const fetchRequestIdRef = useRef(0);
+    const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
+    const [barcodeOpen, setBarcodeOpen] = useState(false);
+    const [barcodeCopies, setBarcodeCopies] = useState(1);
+    const barcodeRef = useRef<SVGSVGElement | null>(null);
+
+    const barcodeCallbackRef = useCallback((node: SVGSVGElement | null) => {
+        barcodeRef.current = node;
+        if (!node || !barcodeProduct) return;
+        const value = barcodeProduct.sku || `ID-${barcodeProduct.id}`;
+        try {
+            JsBarcode(node, value, {
+                format: 'CODE128',
+                displayValue: true,
+                fontSize: 13,
+                height: 60,
+                margin: 10,
+                width: 2,
+            });
+        } catch {
+            JsBarcode(node, `ID-${barcodeProduct.id}`, {
+                format: 'CODE128',
+                displayValue: true,
+                fontSize: 13,
+                height: 60,
+                margin: 10,
+                width: 2,
+            });
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [barcodeProduct]);
 
     // Form State
     const [name, setName] = useState('');
@@ -108,6 +139,7 @@ export default function InventoryPage() {
     const [newAttribute, setNewAttribute] = useState('');
     const [baseUnit, setBaseUnit] = useState('piece');
     const [sellingUnits, setSellingUnits] = useState<SellingUnit[]>([]);
+    const [hasSellingUnits, setHasSellingUnits] = useState(false);
     const [newUnit, setNewUnit] = useState({ unit: '', conversion: '1', price: '' });
 
     // Debounce search
@@ -184,7 +216,7 @@ export default function InventoryPage() {
                 allow_decimal_qty: allowDecimalQty,
                 variation_attributes: variationAttributes,
                 base_unit: baseUnit,
-                selling_units: sellingUnits,
+                selling_units: hasSellingUnits ? sellingUnits : [],
                 // cost_price & quantity set via Purchase Flow
             });
             setOpen(false);
@@ -207,6 +239,7 @@ export default function InventoryPage() {
         setNewAttribute('');
         setBaseUnit('piece');
         setSellingUnits([]);
+        setHasSellingUnits(false);
         setNewUnit({ unit: '', conversion: '1', price: '' });
     };
 
@@ -247,6 +280,7 @@ export default function InventoryPage() {
         setVariationAttributes(product.variation_attributes || []);
         setBaseUnit(product.base_unit);
         setSellingUnits(product.selling_units || []);
+        setHasSellingUnits((product.selling_units || []).length > 0);
         setEditOpen(true);
     };
 
@@ -264,7 +298,7 @@ export default function InventoryPage() {
                 allow_decimal_qty: allowDecimalQty,
                 variation_attributes: variationAttributes,
                 base_unit: baseUnit,
-                selling_units: sellingUnits,
+                selling_units: hasSellingUnits ? sellingUnits : [],
             });
             setEditOpen(false);
             resetForm();
@@ -340,6 +374,49 @@ export default function InventoryPage() {
 
     const openVariationBuilder = async (product: Product) => {
         router.push(`/inventory/variations/${product.id}`);
+    };
+
+    const openBarcodeDialog = (product: Product) => {
+        setBarcodeProduct(product);
+        setBarcodeCopies(1);
+        setBarcodeOpen(true);
+    };
+
+    const handlePrintBarcode = () => {
+        if (!barcodeRef.current || !barcodeProduct) return;
+        const svgContent = barcodeRef.current.outerHTML;
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        if (!printWindow) return;
+        const copies = Array(barcodeCopies).fill(null).map(() => `
+            <div class="label">
+                <div class="prod-name">${barcodeProduct.name}</div>
+                ${svgContent}
+                <div class="prod-price">Rs ${barcodeProduct.selling_price.toFixed(2)}</div>
+            </div>
+        `).join('');
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Barcode — ${barcodeProduct.name}</title>
+                <style>
+                    * { box-sizing: border-box; margin: 0; padding: 0; }
+                    body { font-family: sans-serif; padding: 8px; }
+                    .labels { display: flex; flex-wrap: wrap; gap: 6px; }
+                    .label { display: flex; flex-direction: column; align-items: center; border: 1px dashed #ccc; padding: 6px 4px; page-break-inside: avoid; }
+                    .prod-name { font-size: 10px; font-weight: 600; text-align: center; max-width: 180px; margin-bottom: 2px; }
+                    .prod-price { font-size: 12px; font-weight: bold; margin-top: 2px; }
+                    svg { max-width: 180px; }
+                    @media print { body { padding: 0; } }
+                </style>
+            </head>
+            <body>
+                <div class="labels">${copies}</div>
+                <script>window.onload = () => { window.print(); window.close(); }<\/script>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
     };
 
     const isAdmin = user?.role === 'admin';
@@ -468,41 +545,62 @@ export default function InventoryPage() {
                                 </div>
 
                                 {/* Selling Units */}
-                                <div className="grid gap-2">
-                                    <Label>Additional Selling Units</Label>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            placeholder="Unit (dozen)"
-                                            value={newUnit.unit}
-                                            onChange={e => setNewUnit({ ...newUnit, unit: e.target.value })}
-                                            className="flex-1"
+                                <div className="border-t pt-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <input
+                                            type="checkbox"
+                                            id="has-selling-units"
+                                            checked={hasSellingUnits}
+                                            onChange={e => {
+                                                const next = e.target.checked;
+                                                setHasSellingUnits(next);
+                                                if (!next) {
+                                                    setSellingUnits([]);
+                                                    setNewUnit({ unit: '', conversion: '1', price: '' });
+                                                }
+                                            }}
                                         />
-                                        <Input
-                                            placeholder="Conv (12)"
-                                            type="number"
-                                            step="any"
-                                            value={newUnit.conversion}
-                                            onChange={e => setNewUnit({ ...newUnit, conversion: e.target.value })}
-                                            className="w-24"
-                                        />
-                                        <Input
-                                            placeholder="Price"
-                                            type="number"
-                                            step="0.01"
-                                            value={newUnit.price}
-                                            onChange={e => setNewUnit({ ...newUnit, price: e.target.value })}
-                                            className="w-24"
-                                        />
-                                        <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
+                                        <Label htmlFor="has-selling-units">Additional selling units (dozen, pack, etc.)</Label>
                                     </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {sellingUnits.map((unit, idx) => (
-                                            <Badge key={idx} variant="secondary" className="gap-2">
-                                                {unit.unit} (×{unit.conversion}) rs {unit.price}
-                                                <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
-                                            </Badge>
-                                        ))}
-                                    </div>
+
+                                    {hasSellingUnits && (
+                                        <div className="grid gap-2">
+                                            <Label>Additional Selling Units</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    placeholder="Unit (dozen)"
+                                                    value={newUnit.unit}
+                                                    onChange={e => setNewUnit({ ...newUnit, unit: e.target.value })}
+                                                    className="flex-1"
+                                                />
+                                                <Input
+                                                    placeholder="Conv (12)"
+                                                    type="number"
+                                                    step="any"
+                                                    value={newUnit.conversion}
+                                                    onChange={e => setNewUnit({ ...newUnit, conversion: e.target.value })}
+                                                    className="w-24"
+                                                />
+                                                <Input
+                                                    placeholder="Price"
+                                                    type="number"
+                                                    step="0.01"
+                                                    value={newUnit.price}
+                                                    onChange={e => setNewUnit({ ...newUnit, price: e.target.value })}
+                                                    className="w-24"
+                                                />
+                                                <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                {sellingUnits.map((unit, idx) => (
+                                                    <Badge key={idx} variant="secondary" className="gap-2">
+                                                        {unit.unit} (×{unit.conversion}) rs {unit.price}
+                                                        <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Variations */}
@@ -603,7 +701,7 @@ export default function InventoryPage() {
                                 <TableHead>Category</TableHead>
                                 <TableHead className="text-right">Selling Price</TableHead>
                                 <TableHead className="text-center">Current Stock</TableHead>
-                                {isAdmin && <TableHead className="text-right">Actions</TableHead>}
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -630,20 +728,29 @@ export default function InventoryPage() {
                                             {product.quantity > 0 ? product.quantity : `0 - Out of Stock`}
                                         </Badge>
                                     </TableCell>
-                                    {isAdmin && (
-                                        <TableCell className="text-right">
-                                            <div className="flex justify-end gap-2">
-                                                {product.has_variations && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => openVariationBuilder(product)}
-                                                        className="hover:bg-purple-50 hover:text-purple-600"
-                                                        title="Manage Variations"
-                                                    >
-                                                        <Grid3x3 className="h-4 w-4" />
-                                                    </Button>
-                                                )}
+                                    <TableCell className="text-right">
+                                        <div className="flex justify-end gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => openBarcodeDialog(product)}
+                                                className="hover:bg-orange-50 hover:text-orange-600"
+                                                title="Generate Barcode"
+                                            >
+                                                <Barcode className="h-4 w-4" />
+                                            </Button>
+                                            {isAdmin && product.has_variations && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => openVariationBuilder(product)}
+                                                    className="hover:bg-purple-50 hover:text-purple-600"
+                                                    title="Manage Variations"
+                                                >
+                                                    <Grid3x3 className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                            {isAdmin && (
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -652,6 +759,8 @@ export default function InventoryPage() {
                                                 >
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
+                                            )}
+                                            {isAdmin && (
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -660,9 +769,9 @@ export default function InventoryPage() {
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </Button>
-                                            </div>
-                                        </TableCell>
-                                    )}
+                                            )}
+                                        </div>
+                                    </TableCell>
                                 </TableRow>
                             ))}
                             {products.length === 0 && !loading && (
@@ -744,6 +853,65 @@ export default function InventoryPage() {
                             <Label htmlFor="edit-allow-decimal-qty">Allow decimal quantity (points, e.g. 0.5)</Label>
                         </div>
 
+                        {/* Selling Units */}
+                        <div className="border-t pt-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <input
+                                    type="checkbox"
+                                    id="edit-has-selling-units"
+                                    checked={hasSellingUnits}
+                                    onChange={e => {
+                                        const next = e.target.checked;
+                                        setHasSellingUnits(next);
+                                        if (!next) {
+                                            setSellingUnits([]);
+                                            setNewUnit({ unit: '', conversion: '1', price: '' });
+                                        }
+                                    }}
+                                />
+                                <Label htmlFor="edit-has-selling-units">Additional selling units (dozen, pack, etc.)</Label>
+                            </div>
+
+                            {hasSellingUnits && (
+                                <div className="grid gap-2">
+                                    <Label>Additional Selling Units</Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            placeholder="Unit (dozen)"
+                                            value={newUnit.unit}
+                                            onChange={e => setNewUnit({ ...newUnit, unit: e.target.value })}
+                                            className="flex-1"
+                                        />
+                                        <Input
+                                            placeholder="Conv (12)"
+                                            type="number"
+                                            step="any"
+                                            value={newUnit.conversion}
+                                            onChange={e => setNewUnit({ ...newUnit, conversion: e.target.value })}
+                                            className="w-24"
+                                        />
+                                        <Input
+                                            placeholder="Price"
+                                            type="number"
+                                            step="0.01"
+                                            value={newUnit.price}
+                                            onChange={e => setNewUnit({ ...newUnit, price: e.target.value })}
+                                            className="w-24"
+                                        />
+                                        <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {sellingUnits.map((unit, idx) => (
+                                            <Badge key={idx} variant="secondary" className="gap-2">
+                                                {unit.unit} (×{unit.conversion}) rs {unit.price}
+                                                <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="border-t pt-4">
                             <div className="flex items-center gap-2 mb-2">
                                 <input
@@ -788,6 +956,45 @@ export default function InventoryPage() {
                             <Button type="submit">Save Changes</Button>
                         </DialogFooter>
                     </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Barcode Dialog */}
+            <Dialog open={barcodeOpen} onOpenChange={setBarcodeOpen}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Barcode className="h-5 w-5 text-orange-500" />
+                            Barcode Label
+                        </DialogTitle>
+                        <DialogDescription>
+                            {barcodeProduct?.name} — SKU: {barcodeProduct?.sku || `ID-${barcodeProduct?.id}`}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex flex-col items-center gap-4 py-4">
+                        <div className="border rounded-lg p-4 bg-white">
+                            <svg ref={barcodeCallbackRef} />
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Label htmlFor="barcode-copies">Print Copies</Label>
+                            <Input
+                                id="barcode-copies"
+                                type="number"
+                                min={1}
+                                max={200}
+                                value={barcodeCopies}
+                                onChange={e => setBarcodeCopies(Math.max(1, parseInt(e.target.value) || 1))}
+                                className="w-20"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setBarcodeOpen(false)}>Close</Button>
+                        <Button onClick={handlePrintBarcode} className="bg-orange-500 hover:bg-orange-600 text-white">
+                            <Printer className="mr-2 h-4 w-4" />
+                            Print {barcodeCopies > 1 ? `${barcodeCopies} Copies` : 'Label'}
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 

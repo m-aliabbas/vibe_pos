@@ -53,6 +53,7 @@ class CustomerBase(BaseModel):
     email: Optional[str] = None
     name: Optional[str] = None
     address: Optional[str] = None
+    credit_limit: Optional[float] = None  # None = unlimited
     # Vehicle Oil Change Tracking (optional)
     current_mileage: Optional[int] = None
     oil_change_interval: Optional[int] = None
@@ -71,6 +72,7 @@ class CustomerUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
     opening_balance: Optional[float] = None
+    credit_limit: Optional[float] = None  # Set to 0 explicitly to remove limit is not supported; use None for unlimited
     # Vehicle Oil Change Tracking (optional)
     current_mileage: Optional[int] = None
     oil_change_interval: Optional[int] = None
@@ -86,6 +88,7 @@ class CustomerResponse(CustomerBase):
     total_spent: float
     outstanding_balance: float
     opening_balance: float
+    credit_limit: Optional[float] = None
     member_since: datetime
     created_at: datetime
     updated_at: datetime
@@ -103,6 +106,7 @@ class CustomerSimple(BaseModel):
     phone: Optional[str]
     name: Optional[str]
     outstanding_balance: float
+    credit_limit: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -116,6 +120,7 @@ class CustomerListResponse(BaseModel):
     total_purchases: int
     total_spent: float
     outstanding_balance: float
+    credit_limit: Optional[float] = None
     current_mileage: Optional[int] = None
     next_oil_change_mileage: Optional[int] = None
     created_at: datetime

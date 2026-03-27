@@ -1,12 +1,22 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { AutoBreadcrumb } from '@/components/AutoBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   BarChart3,
   Package,
@@ -31,6 +41,7 @@ interface AdminLayoutProps {
 const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   // Check if user is admin
   if (!user || user.role !== 'admin') {
@@ -138,7 +149,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={logout}
+                onClick={() => setLogoutDialogOpen(true)}
                 className="flex items-center"
               >
                 <LogOut className="h-4 w-4 mr-2" />
@@ -182,6 +193,21 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           </div>
         </main>
       </div>
+
+      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Log out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to log out?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No</AlertDialogCancel>
+            <AlertDialogAction onClick={logout}>Yes, log out</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

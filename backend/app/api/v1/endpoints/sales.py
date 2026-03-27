@@ -65,10 +65,27 @@ def _load_system_font(size: int, bold: bool = False):
     return ImageFont.load_default()
 
 
-def _get_store_details() -> tuple[str, str]:
-    store_name = os.getenv("STORE_NAME", "MyStore").strip() or "MyStore"
-    store_address = os.getenv("STORE_ADDRESS", "Gulberg Islamabad").strip() or "Gulberg Islamabad"
-    return store_name, store_address
+def _get_store_details():
+    """Fetch store details from DB, falling back to env vars if not set."""
+    from app.db.session import SessionLocal
+    from app.models.settings import StoreSettings
+    db = SessionLocal()
+    try:
+        row = db.query(StoreSettings).filter(StoreSettings.id == 1).first()
+        if row and row.store_name:
+            name = row.store_name or "My Store"
+            address_parts = [p for p in [row.store_address, row.store_city] if p]
+            address = ", ".join(address_parts) if address_parts else ""
+            phone = row.store_phone or ""
+            return name, address, phone
+    except Exception:
+        pass
+    finally:
+        db.close()
+    # fallback to env vars
+    name = os.getenv("STORE_NAME", "My Store").strip() or "My Store"
+    address = os.getenv("STORE_ADDRESS", "").strip()
+    return name, address, ""
 
 
 def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
@@ -97,7 +114,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
 
     y = 0
 
-    store_name, store_address = _get_store_details()
+    store_name, store_address, store_phone = _get_store_details()
 
     # Header bar
     header_height = mm(10)
@@ -107,7 +124,7 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     draw.text(((width - text_width) // 2, y + mm(2)), store_name, fill="white", font=font_lg)
     y += header_height + mm(2)
 
-    for line in [store_address]:
+    for line in [l for l in [store_address, store_phone] if l]:
         bbox = draw.textbbox((0, 0), line, font=font_sm)
         text_width = bbox[2] - bbox[0]
         draw.text(((width - text_width) // 2, y), line, fill="black", font=font_sm)
@@ -588,7 +605,17 @@ def create_sale(
     change_amount = max(0, amount_paid - total)
     
     customer, customer_ref_id, is_walkin, normalized_phone = resolve_sale_customer(db, sale_in)
-    
+
+    # Enforce credit limit
+    if customer and amount_due > 0:
+        credit_limit = customer.credit_limit
+        if credit_limit is not None and (customer.outstanding_balance + amount_due) > credit_limit:
+            available = max(0, credit_limit - customer.outstanding_balance)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Credit limit exceeded. Limit: {credit_limit:.2f}, Current: {customer.outstanding_balance:.2f}, Available: {available:.2f}"
+            )
+
     # Create sale record
     db_sale = Sale(
         user_id=current_user.id,
@@ -801,6 +828,19 @@ def update_sale(
     change_amount = max(0, amount_paid - total)
 
     customer, customer_ref_id, is_walkin, normalized_phone = resolve_sale_customer(db, sale_in)
+
+    # Enforce credit limit (account for balance reduction from old due on this sale)
+    if customer and amount_due > 0:
+        credit_limit = customer.credit_limit
+        if credit_limit is not None:
+            old_due = sale.amount_due or 0.0
+            projected_balance = customer.outstanding_balance - old_due + amount_due
+            if projected_balance > credit_limit:
+                available = max(0, credit_limit - (customer.outstanding_balance - old_due))
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Credit limit exceeded. Limit: {credit_limit:.2f}, Available credit: {available:.2f}"
+                )
 
     sale.customer_ref_id = customer_ref_id
     sale.is_walkin = is_walkin

@@ -6,6 +6,16 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -30,6 +40,7 @@ import {
   UserCheck,
   RotateCcw,
   Database,
+  Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -38,6 +49,7 @@ export function Navbar() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   // Don't show navbar on login page
   if (pathname === '/login') return null;
@@ -140,8 +152,14 @@ export function Navbar() {
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
+                {user?.role === 'admin' && (
+                  <DropdownMenuItem onClick={() => router.push('/settings')}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    Store Settings
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleLogout} className="text-red-600">
+                <DropdownMenuItem onClick={() => setLogoutDialogOpen(true)} className="text-red-600">
                   <LogOut className="mr-2 h-4 w-4" />
                   Logout
                 </DropdownMenuItem>
@@ -194,6 +212,21 @@ export function Navbar() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Log out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to log out?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>No</AlertDialogCancel>
+            <AlertDialogAction onClick={handleLogout}>Yes, log out</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </nav>
   );
 }
