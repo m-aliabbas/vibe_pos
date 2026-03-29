@@ -3,7 +3,7 @@ import os
 import re
 import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from datetime import datetime, date
 from pathlib import Path
@@ -431,8 +431,11 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
     db = SessionLocal()
     
     try:
-        # Get the sale with all relationships
-        sale = db.query(Sale).filter(Sale.id == sale_id).first()
+        # Get the sale with all relationships eagerly loaded
+        sale = db.query(Sale).options(
+            joinedload(Sale.items).joinedload(SaleItem.product),
+            joinedload(Sale.items).joinedload(SaleItem.variation)
+        ).filter(Sale.id == sale_id).first()
         if not sale:
             print(f"Sale {sale_id} not found")
             return
@@ -935,7 +938,10 @@ def list_sales(
     Cashiers see only their own sales, admins see all sales.
     Search supports: customer name, phone number (in any format)
     """
-    query = db.query(Sale)
+    query = db.query(Sale).options(
+        joinedload(Sale.items).joinedload(SaleItem.product),
+        joinedload(Sale.items).joinedload(SaleItem.variation)
+    )
     
     # Cashiers can only see their own sales
     if current_user.role == UserRole.CASHIER:
@@ -1017,7 +1023,10 @@ def get_sale(
     Get a specific sale by ID.
     Cashiers can only access their own sales.
     """
-    sale = db.query(Sale).filter(Sale.id == id).first()
+    sale = db.query(Sale).options(
+        joinedload(Sale.items).joinedload(SaleItem.product),
+        joinedload(Sale.items).joinedload(SaleItem.variation)
+    ).filter(Sale.id == id).first()
     
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
@@ -1037,8 +1046,11 @@ def send_invoice(
     """
     Generate invoice image using PIL and send via WhatsApp API
     """
-    # Get the sale
-    sale = db.query(Sale).filter(Sale.id == id).first()
+    # Get the sale with product/variation relationships loaded
+    sale = db.query(Sale).options(
+        joinedload(Sale.items).joinedload(SaleItem.product),
+        joinedload(Sale.items).joinedload(SaleItem.variation)
+    ).filter(Sale.id == id).first()
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
     

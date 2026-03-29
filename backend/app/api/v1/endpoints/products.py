@@ -106,6 +106,42 @@ def count_products(
 
     return {"total": query.count()}
 
+@router.get("/barcode/{barcode}")
+def get_product_by_barcode(
+    *,
+    db: Session = Depends(deps.get_db),
+    barcode: str,
+) -> Any:
+    """
+    Search for a product or variation by barcode.
+    Returns product info and variation if barcode matches a variation.
+    """
+    barcode = barcode.strip()
+    if not barcode:
+        raise HTTPException(status_code=400, detail="Barcode cannot be empty")
+    
+    # First, check if it's a product SKU (exact match)
+    product = db.query(Product).filter(Product.sku == barcode).first()
+    if product:
+        return {
+            "product": product,
+            "variation": None,
+            "match_type": "product_sku"
+        }
+    
+    # Second, check if it's a variation barcode
+    variation = db.query(ProductVariation).filter(ProductVariation.barcode == barcode).first()
+    if variation:
+        product = db.query(Product).filter(Product.id == variation.product_id).first()
+        return {
+            "product": product,
+            "variation": variation,
+            "match_type": "variation_barcode"
+        }
+    
+    # Not found
+    raise HTTPException(status_code=404, detail="No product or variation found with this barcode")
+
 @router.get("/export-csv")
 def export_products_csv(
     db: Session = Depends(deps.get_db),

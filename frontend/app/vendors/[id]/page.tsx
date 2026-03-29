@@ -260,39 +260,217 @@ export default function VendorDetailsPage() {
     };
 
     const handleVendorReportPdf = async () => {
-        if (!id) return;
+        if (!id || !vendor) return;
         try {
+            // Fetch the CSV report which includes individual payment transactions
             const response = await api.get(`/vendors/${id}/report`, { responseType: "text" });
             const csvText = response.data as string;
             const rows = parseCsv(csvText);
+            
             if (rows.length === 0) {
                 alert("No data to export");
                 return;
             }
 
-            const headers = rows[0];
-            const body = rows.slice(1);
+            // Build ledger entries
+            interface LedgerEntry {
+                date: Date;
+                description: string;
+                debit: number;
+                credit: number;
+                balance: number;
+            }
 
+            const ledgerEntries: LedgerEntry[] = [];
+            const formatCurrency = (amount: number) => `rs ${amount.toFixed(2)}`;
+            
+            // Opening balance (what we owe vendor from start)
+            let runningBalance = vendor.opening_balance || 0;
+            
+            // Parse CSV rows (skip header row)
+            const transactions: Array<{
+                date: Date;
+                description: string;
+                type: string;
+                amount: number;
+            }> = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (row.length < 4) continue;
+                
+                const type = row[0]; // "Purchase" or "Payment"
+                const dateStr = row[1];
+                const reference = row[2];
+                const amountStr = row[3];
+                
+                if (!dateStr || !amountStr) continue;
+                
+                const date = new Date(dateStr);
+                const amount = parseFloat(amountStr);
+                
+                if (isNaN(amount) || isNaN(date.getTime())) continue;
+                
+                transactions.push({
+                    date: date,
+                    description: reference || type,
+                    type: type,
+                    amount: amount,
+                });
+            }
+
+            // Sort by date (oldest first)
+            transactions.sort((a, b) => {
+                const dateDiff = a.date.getTime() - b.date.getTime();
+                if (dateDiff !== 0) return dateDiff;
+                // On same date, purchases before payments
+                if (a.type === 'Purchase' && b.type === 'Payment') return -1;
+                if (a.type === 'Payment' && b.type === 'Purchase') return 1;
+                return 0;
+            });
+
+            // Calculate running balance and create ledger entries
+            transactions.forEach(txn => {
+                let debit = 0;
+                let credit = 0;
+
+                if (txn.type === 'Purchase') {
+                    credit = txn.amount; // We owe more
+                    runningBalance += txn.amount;
+                } else if (txn.type === 'Payment') {
+                    debit = txn.amount; // We pay and reduce what we owe
+                    runningBalance -= txn.amount;
+                }
+
+                ledgerEntries.push({
+                    date: txn.date,
+                    description: txn.description,
+                    debit: debit,
+                    credit: credit,
+                    balance: runningBalance,
+                });
+            });
+
+            // Generate PDF
             const { default: jsPDF } = await import("jspdf");
             const autoTable = (await import("jspdf-autotable")).default;
 
             const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-            doc.setFontSize(14);
+            
+            // Header
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
             doc.text(storeInfo.name || "Store", 40, 40);
+            
             doc.setFontSize(12);
-            doc.text(`Vendor Report - ${vendor?.name || "Vendor"}`, 40, 58);
+            doc.setFont('helvetica', 'normal');
+            if (storeInfo.address) doc.text(storeInfo.address, 40, 56);
+            if (storeInfo.phone) doc.text(storeInfo.phone, 40, 70);
+            
+            // Title
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.text('VENDOR LEDGER', doc.internal.pageSize.getWidth() / 2, 100, { align: 'center' });
+            
+            // Vendor details
             doc.setFontSize(10);
-            doc.text(new Date().toLocaleString(), 40, 74);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Vendor: ${vendor.name || 'N/A'}`, 40, 120);
+            if (vendor.contact_name) doc.text(`Contact: ${vendor.contact_name}`, 40, 134);
+            if (vendor.phone) doc.text(`Phone: ${vendor.phone}`, 300, 120);
+            doc.text(`Date: ${new Date().toLocaleDateString()}`, 300, 134);
+            
+            // Opening Balance
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`Opening Balance: ${formatCurrency(vendor.opening_balance || 0)}`, 40, 155);
+            
+            // Ledger table
+            const tableData = ledgerEntries.map(entry => [
+                entry.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+                entry.description,
+                entry.debit > 0 ? formatCurrency(entry.debit) : '-',
+                entry.credit > 0 ? formatCurrency(entry.credit) : '-',
+                formatCurrency(entry.balance),
+            ]);
 
             autoTable(doc, {
-                startY: 90,
-                head: [headers],
-                body,
-                styles: { fontSize: 9 },
-                headStyles: { fillColor: [33, 33, 33] },
+                startY: 170,
+                head: [['Date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance']],
+                body: tableData,
+                theme: 'grid',
+                styles: { 
+                    fontSize: 9,
+                    cellPadding: 5,
+                },
+                headStyles: { 
+                    fillColor: [52, 73, 94],
+                    textColor: [255, 255, 255],
+                    fontStyle: 'bold',
+                    halign: 'center',
+                },
+                columnStyles: {
+                    0: { cellWidth: 70, halign: 'left' },
+                    1: { cellWidth: 220, halign: 'left' },
+                    2: { cellWidth: 80, halign: 'right' },
+                    3: { cellWidth: 80, halign: 'right' },
+                    4: { cellWidth: 85, halign: 'right', fontStyle: 'bold' },
+                },
+                alternateRowStyles: {
+                    fillColor: [245, 245, 245],
+                },
+                didDrawPage: (data: any) => {
+                    // Footer
+                    const pageCount = doc.getNumberOfPages();
+                    const pageHeight = doc.internal.pageSize.height;
+                    doc.setFontSize(8);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(
+                        `Page ${data.pageNumber} of ${pageCount}`,
+                        doc.internal.pageSize.width / 2,
+                        pageHeight - 20,
+                        { align: 'center' }
+                    );
+                },
             });
 
-            doc.save(`vendor_report_${id}.pdf`);
+            // Closing Balance Summary
+            const finalY = (doc as any).lastAutoTable.finalY || 170;
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold');
+            
+            // Summary box
+            doc.setDrawColor(52, 73, 94);
+            doc.setLineWidth(1);
+            doc.rect(doc.internal.pageSize.getWidth() - 250, finalY + 20, 210, 60);
+            
+            doc.text('SUMMARY', doc.internal.pageSize.getWidth() - 145, finalY + 38, { align: 'center' });
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            
+            const totalDebit = ledgerEntries.reduce((sum, e) => sum + e.debit, 0);
+            const totalCredit = ledgerEntries.reduce((sum, e) => sum + e.credit, 0);
+            
+            doc.text(`Total Debit:`, doc.internal.pageSize.getWidth() - 240, finalY + 52);
+            doc.text(formatCurrency(totalDebit), doc.internal.pageSize.getWidth() - 50, finalY + 52, { align: 'right' });
+            
+            doc.text(`Total Credit:`, doc.internal.pageSize.getWidth() - 240, finalY + 66);
+            doc.text(formatCurrency(totalCredit), doc.internal.pageSize.getWidth() - 50, finalY + 66, { align: 'right' });
+            
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.text(`Outstanding Balance:`, doc.internal.pageSize.getWidth() - 240, finalY + 80);
+            doc.setTextColor(runningBalance > 0 ? 220 : 0, runningBalance > 0 ? 53 : 0, runningBalance > 0 ? 69 : 0);
+            doc.text(formatCurrency(runningBalance), doc.internal.pageSize.getWidth() - 50, finalY + 80, { align: 'right' });
+            doc.setTextColor(0, 0, 0);
+
+            // Generate filename with store name and vendor name
+            const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').substring(0, 30);
+            const storeName = sanitize(storeInfo.name || 'Store');
+            const vendorName = sanitize(vendor.name || `Vendor_${vendor.id || id}`);
+            const date = new Date().toISOString().split('T')[0];
+            
+            doc.save(`${storeName}_${vendorName}_Ledger_${date}.pdf`);
         } catch (error: any) {
             console.error("Failed to export vendor report PDF", error);
             alert(error?.response?.data?.detail || "Failed to export PDF");

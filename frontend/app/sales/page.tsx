@@ -44,6 +44,7 @@ import {
   Filter,
   Package as PackageIcon,
   Printer,
+  Settings,
 } from "lucide-react";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
@@ -214,6 +215,9 @@ export default function SalesTerminal() {
   const [unitDiscount, setUnitDiscount] = useState<number>(0);
   const [unitPriceOverride, setUnitPriceOverride] = useState<string>("");
   const [unitPriceOverrideEnabled, setUnitPriceOverrideEnabled] = useState(false);
+
+  // Editing mode - tracks if we're editing existing cart item
+  const [editingCartIndex, setEditingCartIndex] = useState<number | null>(null);
 
   const formatCurrency = useCallback((amount: number) => {
     const formatted = new Intl.NumberFormat("en-IN", {
@@ -744,6 +748,27 @@ export default function SalesTerminal() {
     []
   );
 
+  // Determine if we should show unit selection dialog
+  const shouldShowUnitDialog = useCallback((product: Product): boolean => {
+    if (!product.selling_units || product.selling_units.length === 0) {
+      return false;
+    }
+    
+    // 3+ units → always show dialog
+    if (product.selling_units.length >= 3) {
+      return true;
+    }
+    
+    // 2+ units → show dialog only if base_unit is NOT in the list
+    if (product.selling_units.length >= 2) {
+      const hasBaseUnit = product.selling_units.some(u => u.unit === product.base_unit);
+      return !hasBaseUnit; // Show dialog if base unit is missing
+    }
+    
+    // 1 unit → don't show dialog, use base unit
+    return false;
+  }, []);
+
   const addToCartWithQuantity = useCallback(
     (product: Product, quantity: number) => {
       const normalizedQuantity = normalizeQuantityForProduct(product, quantity);
@@ -756,7 +781,7 @@ export default function SalesTerminal() {
         return;
       }
 
-      if (product.selling_units && product.selling_units.length > 0) {
+      if (shouldShowUnitDialog(product)) {
         setSelectedProductForUnit(product);
         setQuantityForUnit(String(normalizedQuantity));
         setSelectedUnitForRegular(product.base_unit);
@@ -800,7 +825,7 @@ export default function SalesTerminal() {
         setCart((prev) => [...prev, { product, quantity: normalizedQuantity, unit: product.base_unit }]);
       }
     },
-    [cart, normalizeQuantityForProduct]
+    [cart, normalizeQuantityForProduct, shouldShowUnitDialog]
   );
 
   const addToCart = useCallback(
@@ -813,7 +838,7 @@ export default function SalesTerminal() {
         return;
       }
 
-      if (product.selling_units && product.selling_units.length > 0) {
+      if (shouldShowUnitDialog(product)) {
         setSelectedProductForUnit(product);
         setQuantityForUnit("1");
         setSelectedUnitForRegular(product.base_unit);
@@ -847,7 +872,7 @@ export default function SalesTerminal() {
         setCart((prev) => [...prev, { product, quantity: 1, unit: product.base_unit }]);
       }
     },
-    [cart]
+    [cart, shouldShowUnitDialog]
   );
 
   const addVariationToCart = useCallback(async () => {
@@ -855,6 +880,9 @@ export default function SalesTerminal() {
       alert("Please select a variation");
       return;
     }
+
+    // Check if we're editing an existing cart item
+    const isEditing = editingCartIndex !== null;
 
     const draftQuantity = parseDraftQuantity(quantityForVariation);
     if (draftQuantity === null) {
@@ -944,7 +972,23 @@ export default function SalesTerminal() {
       }
     }
 
-    if (existingItem) {
+    if (isEditing && editingCartIndex !== null) {
+      // Update existing cart item
+      setCart((prev) =>
+        prev.map((item, idx) =>
+          idx === editingCartIndex
+            ? {
+                ...item,
+                quantity: normalizedQuantity,
+                variation: selectedVariation,
+                unit: unit,
+                item_discount: variationDiscount || 0,
+                unit_price: unitPriceValue,
+              }
+            : item
+        )
+      );
+    } else if (existingItem) {
       setCart((prev) =>
         prev.map((item) =>
           item.product.id === selectedProductForVariation.id &&
@@ -981,6 +1025,7 @@ export default function SalesTerminal() {
     setVariationDiscount(0);
     setVariationUnitPrice("");
     setVariationPriceOverrideEnabled(false);
+    setEditingCartIndex(null);
   }, [
     selectedProductForVariation,
     selectedVariation,
@@ -993,6 +1038,7 @@ export default function SalesTerminal() {
     variationUnitPrice,
     variationPriceOverrideEnabled,
     updateLocalProduct,
+    editingCartIndex,
   ]);
 
   // Keep ref in sync so the keydown listener always has the latest version
@@ -1000,6 +1046,9 @@ export default function SalesTerminal() {
 
   const addUnitToCart = useCallback(async () => {
     if (!selectedProductForUnit) return;
+
+    // Check if we're editing an existing cart item
+    const isEditing = editingCartIndex !== null;
 
     const draftQuantity = parseDraftQuantity(quantityForUnit);
     if (draftQuantity === null) {
@@ -1079,7 +1128,22 @@ export default function SalesTerminal() {
       }
     }
 
-    if (existingItem) {
+    if (isEditing && editingCartIndex !== null) {
+      // Update existing cart item
+      setCart((prev) =>
+        prev.map((item, idx) =>
+          idx === editingCartIndex
+            ? {
+                ...item,
+                quantity: normalizedQuantity,
+                unit: unit,
+                item_discount: unitDiscount || 0,
+                unit_price: unitPriceValue,
+              }
+            : item
+        )
+      );
+    } else if (existingItem) {
       setCart((prev) =>
         prev.map((item) =>
           item.product.id === selectedProductForUnit.id && !item.variation && item.unit === unit
@@ -1112,6 +1176,7 @@ export default function SalesTerminal() {
     setUnitDiscount(0);
     setUnitPriceOverride("");
     setUnitPriceOverrideEnabled(false);
+    setEditingCartIndex(null);
   }, [
     selectedProductForUnit,
     selectedUnitForRegular,
@@ -1123,26 +1188,179 @@ export default function SalesTerminal() {
     unitPriceOverride,
     unitPriceOverrideEnabled,
     updateLocalProduct,
+    editingCartIndex,
   ]);
 
-  const handleSearchKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (!showAutocomplete || filteredProducts.length === 0) return;
+  // Barcode lookup function - searches for exact barcode match and auto-adds to cart
+  const lookupAndAddByBarcode = useCallback(
+    async (barcode: string, quantity: number = 1) => {
+      try {
+        const response = await api.get(`/products/barcode/${encodeURIComponent(barcode)}`);
+        const { product, variation, match_type } = response.data;
 
+        if (!product) return false;
+
+        // Convert backend product to frontend Product type
+        const frontendProduct: Product = {
+          ...product,
+          variations: product.variations || [],
+        };
+
+        const normalizedQuantity = normalizeQuantityForProduct(frontendProduct, quantity);
+
+        if (variation) {
+          // It's a variation barcode - add the specific variation to cart
+          const existingItem = cart.find(
+            (item) =>
+              item.product.id === frontendProduct.id &&
+              item.variation?.id === variation.id &&
+              item.unit === frontendProduct.base_unit
+          );
+
+          const currentCartQuantity = existingItem ? existingItem.quantity : 0;
+          const newTotalQuantity = currentCartQuantity + normalizedQuantity;
+
+          if (newTotalQuantity > variation.quantity) {
+            const willGoNegative = newTotalQuantity - variation.quantity;
+            if (
+              !confirm(
+                `⚠️ Warning: Only ${variation.quantity} units in stock for this variation!\nAdding ${normalizedQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+              )
+            ) {
+              return true; // Still count as handled
+            }
+          }
+
+          if (existingItem) {
+            setCart((prev) =>
+              prev.map((item) =>
+                item.product.id === frontendProduct.id &&
+                item.variation?.id === variation.id &&
+                item.unit === frontendProduct.base_unit
+                  ? { ...item, quantity: newTotalQuantity }
+                  : item
+              )
+            );
+          } else {
+            setCart((prev) => [
+              ...prev,
+              { product: frontendProduct, quantity: normalizedQuantity, variation, unit: frontendProduct.base_unit },
+            ]);
+          }
+
+          // Show success feedback
+          const variationLabel = Object.entries(variation.attributes)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(", ");
+          console.log(`✅ Added ${normalizedQuantity}x ${product.name} (${variationLabel}) via barcode`);
+        } else {
+          // It's a product SKU barcode
+          if (frontendProduct.has_variations) {
+            // Product has variations - open variation picker
+            setSelectedProductForVariation(frontendProduct);
+            setQuantityForVariation(String(normalizedQuantity));
+            setSelectedUnit(frontendProduct.base_unit);
+            setVariationPriceOverrideEnabled(false);
+            setVariationDialogOpen(true);
+          } else if (shouldShowUnitDialog(frontendProduct)) {
+            // Product has multiple units - open unit picker
+            setSelectedProductForUnit(frontendProduct);
+            setQuantityForUnit(String(normalizedQuantity));
+            setSelectedUnitForRegular(frontendProduct.base_unit);
+            setUnitPriceOverrideEnabled(false);
+            setUnitDialogOpen(true);
+          } else {
+            // Regular product - add directly
+            const existingItem = cart.find(
+              (item) =>
+                item.product.id === frontendProduct.id && !item.variation && item.unit === frontendProduct.base_unit
+            );
+
+            const currentCartQuantity = existingItem ? existingItem.quantity : 0;
+            const newTotalQuantity = currentCartQuantity + normalizedQuantity;
+
+            if (newTotalQuantity > frontendProduct.quantity) {
+              const willGoNegative = newTotalQuantity - frontendProduct.quantity;
+              if (
+                !confirm(
+                  `⚠️ Warning: Only ${frontendProduct.quantity} units in stock!\nAdding ${normalizedQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+                )
+              ) {
+                return true; // Still count as handled
+              }
+            }
+
+            if (existingItem) {
+              setCart((prev) =>
+                prev.map((item) =>
+                  item.product.id === frontendProduct.id && !item.variation && item.unit === frontendProduct.base_unit
+                    ? { ...item, quantity: newTotalQuantity }
+                    : item
+                )
+              );
+            } else {
+              setCart((prev) => [
+                ...prev,
+                { product: frontendProduct, quantity: normalizedQuantity, unit: frontendProduct.base_unit },
+              ]);
+            }
+
+            console.log(`✅ Added ${normalizedQuantity}x ${product.name} via barcode`);
+          }
+        }
+
+        return true; // Successfully handled
+      } catch (error: any) {
+        if (error.response?.status === 404) {
+          // Barcode not found - return false to allow normal search
+          return false;
+        }
+        console.error("Barcode lookup error:", error);
+        return false;
+      }
+    },
+    [cart, normalizeQuantityForProduct, shouldShowUnitDialog]
+  );
+
+  const handleSearchKeyDown = useCallback(
+    async (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "ArrowDown") {
+        if (!showAutocomplete || filteredProducts.length === 0) return;
         e.preventDefault();
         setSelectedProductIndex((prev) => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
       } else if (e.key === "ArrowUp") {
+        if (!showAutocomplete || filteredProducts.length === 0) return;
         e.preventDefault();
         setSelectedProductIndex((prev) => (prev > 0 ? prev - 1 : 0));
       } else if (e.key === "Enter") {
         e.preventDefault();
-        const selectedProduct = filteredProducts[selectedProductIndex];
-        if (selectedProduct) {
-          const { quantity } = parseQuantityFromSearch(searchQuery);
-          addToCartWithQuantity(selectedProduct, quantity);
-          setSearchQuery("");
-          setShowAutocomplete(false);
+
+        // First, try barcode lookup if search looks like a barcode (exact match)
+        const trimmedQuery = searchQuery.trim();
+        if (trimmedQuery) {
+          // Extract quantity if present (e.g., "BARCODE123 x 5" or "3 BARCODE123")
+          const { searchTerm, quantity } = parseQuantityFromSearch(trimmedQuery);
+          
+          // Try barcode lookup first
+          const handled = await lookupAndAddByBarcode(searchTerm, quantity);
+          
+          if (handled) {
+            // Barcode found and added to cart
+            setSearchQuery("");
+            setShowAutocomplete(false);
+            return;
+          }
+        }
+
+        // If no barcode match or barcode lookup failed, use normal product selection
+        if (showAutocomplete && filteredProducts.length > 0) {
+          const selectedProduct = filteredProducts[selectedProductIndex];
+          if (selectedProduct) {
+            const { quantity } = parseQuantityFromSearch(searchQuery);
+            addToCartWithQuantity(selectedProduct, quantity);
+            setSearchQuery("");
+            setShowAutocomplete(false);
+          }
         }
       } else if (e.key === "Escape") {
         setShowAutocomplete(false);
@@ -1155,6 +1373,7 @@ export default function SalesTerminal() {
       parseQuantityFromSearch,
       searchQuery,
       addToCartWithQuantity,
+      lookupAndAddByBarcode,
     ]
   );
 
@@ -1346,14 +1565,13 @@ export default function SalesTerminal() {
     setUnitPriceOverrideEnabled(false);
   }, [selectedProductForUnit]);
 
-  // Ctrl+N in Unit dialog
+  // F4 or Space in Unit dialog - Add to cart
   useEffect(() => {
     if (!unitDialogOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.ctrlKey) return;
-      // Use e.code (physical key) so it works on macOS where Ctrl+N may be remapped
-      if (e.code === "KeyN") {
+      // F4 or Space key to add unit to cart
+      if (e.key === "F4" || e.key === " " || e.key === "Spacebar") {
         e.preventDefault();
         void addUnitToCart();
       }
@@ -1362,6 +1580,22 @@ export default function SalesTerminal() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [unitDialogOpen, addUnitToCart]);
+
+  // F4 or Space in Variation dialog - Add to cart
+  useEffect(() => {
+    if (!variationDialogOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // F4 or Space key to add variation to cart
+      if (e.key === "F4" || e.key === " " || e.key === "Spacebar") {
+        e.preventDefault();
+        void addVariationToCart();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [variationDialogOpen, addVariationToCart]);
 
   // Ctrl+H hold, Ctrl+M checkout, Ctrl+E estimate
   useEffect(() => {
@@ -1717,7 +1951,7 @@ export default function SalesTerminal() {
                 <div className="relative">
                   <Input
                     ref={productSearchInputRef}
-                    placeholder="Search by name, SKU... (Try: milk x 1.5)"
+                    placeholder="Search by name, SKU, barcode... (Try: milk x 1.5 or scan barcode)"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     onKeyDown={handleSearchKeyDown}
@@ -1968,6 +2202,39 @@ export default function SalesTerminal() {
                               }
                             >
                               <Plus className="h-3 w-3" />
+                            </Button>
+
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="h-8 w-8"
+                              title="Edit item details"
+                              onClick={() => {
+                                setEditingCartIndex(index);
+                                
+                                if (item.variation) {
+                                  // Open variation dialog for editing
+                                  setSelectedProductForVariation(item.product);
+                                  setSelectedVariation(item.variation);
+                                  setQuantityForVariation(String(item.quantity));
+                                  setSelectedUnit(item.unit);
+                                  setVariationDiscount(item.item_discount || 0);
+                                  setVariationUnitPrice(typeof item.unit_price === "number" ? String(item.unit_price) : "");
+                                  setVariationPriceOverrideEnabled(typeof item.unit_price === "number");
+                                  setVariationDialogOpen(true);
+                                } else {
+                                  // Open unit dialog for editing
+                                  setSelectedProductForUnit(item.product);
+                                  setQuantityForUnit(String(item.quantity));
+                                  setSelectedUnitForRegular(item.unit);
+                                  setUnitDiscount(item.item_discount || 0);
+                                  setUnitPriceOverride(typeof item.unit_price === "number" ? String(item.unit_price) : "");
+                                  setUnitPriceOverrideEnabled(typeof item.unit_price === "number");
+                                  setUnitDialogOpen(true);
+                                }
+                              }}
+                            >
+                              <Settings className="h-3 w-3" />
                             </Button>
 
                             <Button
@@ -2416,7 +2683,7 @@ export default function SalesTerminal() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Select Variation - {selectedProductForVariation?.name}</DialogTitle>
-            <DialogDescription>Choose the specific variation and quantity</DialogDescription>
+            <DialogDescription>Choose the specific variation and quantity (Press F4 or Space to add to cart)</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -2596,7 +2863,7 @@ export default function SalesTerminal() {
               Cancel
             </Button>
             <Button onClick={() => void addVariationToCart()} disabled={!selectedVariation}>
-              Add to Cart
+              Add to Cart <span className="ml-2 text-xs opacity-70">(F4/Space)</span>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2607,7 +2874,7 @@ export default function SalesTerminal() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Select Unit - {selectedProductForUnit?.name}</DialogTitle>
-            <DialogDescription>Choose how you want to sell this product</DialogDescription>
+            <DialogDescription>Choose how you want to sell this product (Press F4 or Space to add to cart)</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -2762,10 +3029,11 @@ export default function SalesTerminal() {
             <Button variant="outline" onClick={() => setUnitDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void addUnitToCart()}>Add to Cart</Button>
+            <Button onClick={() => void addUnitToCart()}>Add to Cart <span className="ml-2 text-xs opacity-70">(F4/Space)</span></Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
       {/* Credit Limit Alert */}
       {creditLimitAlert && (
         <CreditLimitAlert

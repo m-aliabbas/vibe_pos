@@ -341,42 +341,244 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   };
 
   const handleCustomerReportPdf = async () => {
-    if (!isValidId) return;
+    if (!isValidId || !customer) return;
     try {
-      const response = await api.get(`/customers/${customerId}/report`, { responseType: "text" });
-      const csvText = response.data as string;
-      const rows = parseCsv(csvText);
-      if (rows.length === 0) {
-        alert("No data to export");
-        return;
+      // Fetch all transaction data
+      const purchasesData = await customerApi.getCustomerPurchases(customerId);
+      
+      // Build ledger entries
+      interface LedgerEntry {
+        date: Date;
+        description: string;
+        debit: number;
+        credit: number;
+        balance: number;
       }
 
-      const headers = rows[0];
-      const body = rows.slice(1);
+      const ledgerEntries: LedgerEntry[] = [];
+      
+      // Opening balance
+      let runningBalance = customer.opening_balance || 0;
+      
+      // Collect all transactions
+      const transactions: Array<{
+        date: Date;
+        description: string;
+        type: 'sale' | 'sale_payment' | 'payment' | 'advance';
+        amount: number;
+        saleId?: number;
+      }> = [];
 
+      // Add sales (Debit - increases balance owed)
+      if (purchasesData.purchases) {
+        purchasesData.purchases.forEach((sale: any) => {
+          // Always add the full sale amount as Debit
+          transactions.push({
+            date: new Date(sale.created_at),
+            description: `Sale #${sale.id} - ${sale.items_count} items`,
+            type: 'sale',
+            amount: sale.total, // Full sale amount
+            saleId: sale.id,
+          });
+          
+          // If customer paid something at time of sale, add it as Credit
+          if (sale.amount_paid > 0) {
+            transactions.push({
+              date: new Date(sale.created_at),
+              description: `Payment on Sale #${sale.id} - ${sale.payment_method}`,
+              type: 'sale_payment',
+              amount: sale.amount_paid,
+              saleId: sale.id,
+            });
+          }
+        });
+      }
+
+      // Add payments (Credit - reduces balance owed)
+      if (customer.payments) {
+        customer.payments.forEach((payment: CustomerPayment) => {
+          transactions.push({
+            date: new Date(payment.payment_date),
+            description: `Payment received - ${payment.payment_method}${payment.reference_note ? ': ' + payment.reference_note : ''}`,
+            type: 'payment',
+            amount: payment.amount,
+          });
+        });
+      }
+
+      // Add advances (Debit - increases balance owed)
+      if (customer.notes) {
+        customer.notes
+          .filter((note: CustomerNote) => note.note_type === 'advance_payment')
+          .forEach((note: CustomerNote) => {
+            const amountMatch = note.note_text.match(/(?:rs|\$)\s*([0-9.,]+)/i);
+            const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '')) : 0;
+            const descriptionMatch = note.note_text.match(/: (.+)$/);
+            const description = descriptionMatch ? descriptionMatch[1] : note.note_text;
+            
+            transactions.push({
+              date: new Date(note.created_at),
+              description: `Advance Payment - ${description}`,
+              type: 'advance',
+              amount: amount,
+            });
+          });
+      }
+
+      // Sort by date (oldest first), then by type (sales before payments on same date)
+      transactions.sort((a, b) => {
+        const dateDiff = a.date.getTime() - b.date.getTime();
+        if (dateDiff !== 0) return dateDiff;
+        
+        // On same date, process in order: sale -> sale_payment -> payment
+        const typeOrder = { sale: 1, sale_payment: 2, payment: 3, advance: 4 };
+        return typeOrder[a.type] - typeOrder[b.type];
+      });
+
+      // Calculate running balance and create ledger entries
+      transactions.forEach(txn => {
+        let debit = 0;
+        let credit = 0;
+
+        if (txn.type === 'sale' || txn.type === 'advance') {
+          debit = txn.amount;
+          runningBalance += txn.amount;
+        } else if (txn.type === 'payment' || txn.type === 'sale_payment') {
+          credit = txn.amount;
+          runningBalance -= txn.amount;
+        }
+
+        ledgerEntries.push({
+          date: txn.date,
+          description: txn.description,
+          debit: debit,
+          credit: credit,
+          balance: runningBalance,
+        });
+      });
+
+      // Generate PDF
       const { default: jsPDF } = await import("jspdf");
       const autoTable = (await import("jspdf-autotable")).default;
 
       const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-      doc.setFontSize(14);
+      
+      // Header
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
       doc.text(storeInfo.name || "Store", 40, 40);
+      
       doc.setFontSize(12);
-      doc.text(`Customer Report - ${customer?.name || "Customer"}`, 40, 58);
+      doc.setFont('helvetica', 'normal');
+      if (storeInfo.address) doc.text(storeInfo.address, 40, 56);
+      if (storeInfo.phone) doc.text(storeInfo.phone, 40, 70);
+      
+      // Title
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('CUSTOMER LEDGER', doc.internal.pageSize.getWidth() / 2, 100, { align: 'center' });
+      
+      // Customer details
       doc.setFontSize(10);
-      doc.text(new Date().toLocaleString(), 40, 74);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Customer: ${customer.name || 'N/A'}`, 40, 120);
+      doc.text(`ID: ${customer.customer_id || 'N/A'}`, 40, 134);
+      if (customer.phone) doc.text(`Phone: ${customer.phone}`, 300, 120);
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 300, 134);
+      
+      // Opening Balance
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Opening Balance: ${formatCurrency(customer.opening_balance || 0)}`, 40, 155);
+      
+      // Ledger table
+      const tableData = ledgerEntries.map(entry => [
+        entry.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+        entry.description,
+        entry.debit > 0 ? formatCurrency(entry.debit) : '-',
+        entry.credit > 0 ? formatCurrency(entry.credit) : '-',
+        formatCurrency(entry.balance),
+      ]);
 
       autoTable(doc, {
-        startY: 90,
-        head: [headers],
-        body,
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [33, 33, 33] },
+        startY: 170,
+        head: [['Date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance']],
+        body: tableData,
+        theme: 'grid',
+        styles: { 
+          fontSize: 9,
+          cellPadding: 5,
+        },
+        headStyles: { 
+          fillColor: [52, 73, 94],
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          halign: 'center',
+        },
+        columnStyles: {
+          0: { cellWidth: 70, halign: 'left' },
+          1: { cellWidth: 220, halign: 'left' },
+          2: { cellWidth: 80, halign: 'right' },
+          3: { cellWidth: 80, halign: 'right' },
+          4: { cellWidth: 85, halign: 'right', fontStyle: 'bold' },
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245],
+        },
+        didDrawPage: (data: any) => {
+          // Footer
+          const pageCount = doc.getNumberOfPages();
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.text(
+            `Page ${data.pageNumber} of ${pageCount}`,
+            doc.internal.pageSize.getWidth() / 2,
+            doc.internal.pageSize.getHeight() - 20,
+            { align: 'center' }
+          );
+        },
       });
 
-      doc.save(`customer_report_${customerId}.pdf`);
+      // Closing Balance Summary
+      const finalY = (doc as any).lastAutoTable.finalY || 170;
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      
+      // Summary box
+      doc.setDrawColor(52, 73, 94);
+      doc.setLineWidth(1);
+      doc.rect(doc.internal.pageSize.getWidth() - 250, finalY + 20, 210, 60);
+      
+      doc.text('SUMMARY', doc.internal.pageSize.getWidth() - 145, finalY + 38, { align: 'center' });
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      
+      const totalDebit = ledgerEntries.reduce((sum, e) => sum + e.debit, 0);
+      const totalCredit = ledgerEntries.reduce((sum, e) => sum + e.credit, 0);
+      
+      doc.text(`Total Debit:`, doc.internal.pageSize.getWidth() - 240, finalY + 52);
+      doc.text(formatCurrency(totalDebit), doc.internal.pageSize.getWidth() - 50, finalY + 52, { align: 'right' });
+      
+      doc.text(`Total Credit:`, doc.internal.pageSize.getWidth() - 240, finalY + 66);
+      doc.text(formatCurrency(totalCredit), doc.internal.pageSize.getWidth() - 50, finalY + 66, { align: 'right' });
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(`Closing Balance:`, doc.internal.pageSize.getWidth() - 240, finalY + 80);
+      doc.setTextColor(runningBalance > 0 ? 220 : 0, runningBalance > 0 ? 53 : 150, runningBalance > 0 ? 69 : 0);
+      doc.text(formatCurrency(runningBalance), doc.internal.pageSize.getWidth() - 50, finalY + 80, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+
+      // Generate filename with store name and customer name
+      const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').substring(0, 30);
+      const storeName = sanitize(storeInfo.name || 'Store');
+      const customerName = sanitize(customer.name || `Customer_${customer.customer_id || customerId}`);
+      const date = new Date().toISOString().split('T')[0];
+      
+      doc.save(`${storeName}_${customerName}_Ledger_${date}.pdf`);
     } catch (error: any) {
       console.error("Failed to export customer report PDF", error);
-      alert(error?.response?.data?.detail || "Failed to export PDF");
+      alert(error?.response?.data?.detail || "Failed to export ledger PDF");
     }
   };
 
@@ -540,7 +742,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleCustomerReportPdf}>
-            <FileText className="h-4 w-4 mr-2" /> Download PDF
+            <FileText className="h-4 w-4 mr-2" /> Download Ledger
           </Button>
           <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
             <DialogTrigger asChild>
