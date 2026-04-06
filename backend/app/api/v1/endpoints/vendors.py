@@ -61,7 +61,7 @@ def read_vendors(
             )
         )
 
-    return query.offset(skip).limit(limit).all()
+    return query.order_by(Vendor.id.asc()).offset(skip).limit(limit).all()
 
 
 @router.get("/count")
@@ -236,6 +236,18 @@ async def bulk_import_vendors(
         "skipped": skipped,
         "errors": errors,
     }
+
+@router.get("/{id}", response_model=vendor_schema.Vendor)
+def get_vendor(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+) -> Any:
+    """Get a specific vendor by ID."""
+    vendor = db.query(Vendor).filter(Vendor.id == id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    return vendor
 
 @router.put("/{id}", response_model=vendor_schema.Vendor)
 def update_vendor(

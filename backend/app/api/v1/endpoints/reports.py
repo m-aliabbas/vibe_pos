@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, and_, or_
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional, Any, Dict
 import csv
 import io
@@ -31,6 +31,13 @@ from app.schemas.report import (
 )
 
 router = APIRouter()
+
+
+def _get_pakistan_time() -> datetime:
+    """Get current time in Pakistan timezone (UTC+5)."""
+    pakistan_tz = timezone(timedelta(hours=5))
+    return datetime.now(pakistan_tz)
+
 
 # Helper function to validate date range
 def validate_date_range(start_date: Optional[str], end_date: Optional[str]):
@@ -1342,8 +1349,9 @@ def get_daily_summary_text(
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    # Get today's date range
-    today = datetime.now().date()
+    # Get today's date range in Pakistan timezone
+    pakistan_now = _get_pakistan_time()
+    today = pakistan_now.date()
     start_of_day = datetime.combine(today, datetime.min.time())
     end_of_day = datetime.combine(today, datetime.max.time())
     
@@ -1454,7 +1462,8 @@ def get_daily_summary_text(
     
     report_lines.append("")
     report_lines.append("=" * 50)
-    report_lines.append(f"Report Generated: {datetime.now().strftime('%d %B %Y %I:%M %p')}")
+    pakistan_now = _get_pakistan_time()
+    report_lines.append(f"Report Generated: {pakistan_now.strftime('%d %B %Y %I:%M %p')}")
     report_lines.append("=" * 50)
     
     # Join all lines into a single text string
@@ -1462,7 +1471,7 @@ def get_daily_summary_text(
     
     return {
         "report": report_text,
-        "generated_at": datetime.now().isoformat()
+        "generated_at": pakistan_now.isoformat()
     }
 
 
@@ -1475,8 +1484,9 @@ def get_weekly_summary_text(
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    # Get this week's date range (Monday to Sunday)
-    today = datetime.now().date()
+    # Get this week's date range (Monday to Sunday) in Pakistan timezone
+    pakistan_now = _get_pakistan_time()
+    today = pakistan_now.date()
     start_of_week = today - timedelta(days=today.weekday())  # Monday
     end_of_week = start_of_week + timedelta(days=6)  # Sunday
     
@@ -1678,7 +1688,8 @@ def get_weekly_summary_text(
     
     # report_lines.append("")
     report_lines.append("=" * 50)
-    report_lines.append(f"Report Generated: {datetime.now().strftime('%d %B %Y %I:%M %p')}")
+    pakistan_now_end = _get_pakistan_time()
+    report_lines.append(f"Report Generated: {pakistan_now_end.strftime('%d %B %Y %I:%M %p')}")
     report_lines.append("=" * 50)
     
     # Join all lines into a single text string
@@ -1686,7 +1697,7 @@ def get_weekly_summary_text(
     
     return {
         "report": report_text,
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": pakistan_now_end.isoformat(),
         "week_start": start_of_week.isoformat(),
         "week_end": end_of_week.isoformat()
     }

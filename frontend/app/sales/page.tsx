@@ -141,6 +141,7 @@ export default function SalesTerminal() {
   const [summaryOpen, setSummaryOpen] = useState<boolean>(false);
   const [heldSales, setHeldSales] = useState<HoldSaleResponse[]>([]);
   const [heldOpen, setHeldOpen] = useState(false);
+  const [productsListOpen, setProductsListOpen] = useState(false);
   const [estimateOpen, setEstimateOpen] = useState(false);
   const [storeInfo, setStoreInfo] = useState<StoreInfo>(storeConfig);
 
@@ -772,111 +773,38 @@ export default function SalesTerminal() {
   const addToCartWithQuantity = useCallback(
     (product: Product, quantity: number) => {
       const normalizedQuantity = normalizeQuantityForProduct(product, quantity);
-      if (product.has_variations) {
-        setSelectedProductForVariation(product);
-        setQuantityForVariation(String(normalizedQuantity));
-        setSelectedUnit(product.base_unit);
-        setVariationPriceOverrideEnabled(false);
-        setVariationDialogOpen(true);
-        return;
-      }
-
-      if (shouldShowUnitDialog(product)) {
-        setSelectedProductForUnit(product);
-        setQuantityForUnit(String(normalizedQuantity));
-        setSelectedUnitForRegular(product.base_unit);
-        setUnitPriceOverrideEnabled(false);
-        setUnitDialogOpen(true);
-        return;
-      }
-
-      if (normalizedQuantity <= 0) {
-        alert("Please enter a valid quantity");
-        return;
-      }
-
-      const existingItem = cart.find(
-        (item) => item.product.id === product.id && !item.variation && item.unit === product.base_unit
-      );
-
-      const currentCartQuantity = existingItem ? existingItem.quantity : 0;
-      const newTotalQuantity = currentCartQuantity + normalizedQuantity;
-
-      if (newTotalQuantity > product.quantity) {
-        const willGoNegative = newTotalQuantity - product.quantity;
-        if (
-          !confirm(
-            `⚠️ Warning: Only ${product.quantity} units in stock!\nAdding ${normalizedQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
-          )
-        ) {
-          return;
-        }
-      }
-
-      if (existingItem) {
-        setCart((prev) =>
-          prev.map((item) =>
-            item.product.id === product.id && !item.variation && item.unit === product.base_unit
-              ? { ...item, quantity: newTotalQuantity }
-              : item
-          )
-        );
-      } else {
-        setCart((prev) => [...prev, { product, quantity: normalizedQuantity, unit: product.base_unit }]);
-      }
+      // Open variation picker dialog for all products
+      setSelectedProductForVariation(product);
+      setQuantityForVariation(String(normalizedQuantity));
+      setSelectedUnit(product.base_unit);
+      setVariationPriceOverrideEnabled(false);
+      setSelectedVariation(null);
+      setVariationDialogOpen(true);
+      return;
     },
     [cart, normalizeQuantityForProduct, shouldShowUnitDialog]
   );
 
   const addToCart = useCallback(
     (product: Product) => {
-      if (product.has_variations) {
-        setSelectedProductForVariation(product);
-        setQuantityForVariation("1");
-        setSelectedUnit(product.base_unit);
-        setVariationDialogOpen(true);
-        return;
-      }
-
-      if (shouldShowUnitDialog(product)) {
-        setSelectedProductForUnit(product);
-        setQuantityForUnit("1");
-        setSelectedUnitForRegular(product.base_unit);
-        setUnitDialogOpen(true);
-        return;
-      }
-
-      const existingItem = cart.find(
-        (item) => item.product.id === product.id && !item.variation && item.unit === product.base_unit
-      );
-
-      if (existingItem) {
-        if (existingItem.quantity >= product.quantity) {
-          if (
-            !confirm(
-              `⚠️ Warning: Only ${product.quantity} units in stock!\nContinuing will result in negative stock.\n\nContinue anyway?`
-            )
-          ) {
-            return;
-          }
-        }
-
-        setCart((prev) =>
-          prev.map((item) =>
-            item.product.id === product.id && !item.variation && item.unit === product.base_unit
-              ? { ...item, quantity: item.quantity + 1 }
-              : item
-          )
-        );
-      } else {
-        setCart((prev) => [...prev, { product, quantity: 1, unit: product.base_unit }]);
-      }
+      // Open variation picker dialog for all products
+      setSelectedProductForVariation(product);
+      setQuantityForVariation("1");
+      setSelectedUnit(product.base_unit);
+      setSelectedVariation(null);
+      setVariationDialogOpen(true);
     },
-    [cart, shouldShowUnitDialog]
+    []
   );
 
   const addVariationToCart = useCallback(async () => {
-    if (!selectedProductForVariation || !selectedVariation) {
+    if (!selectedProductForVariation) {
+      alert("Please select a product");
+      return;
+    }
+
+    // For products with variations, require a variation to be selected
+    if (selectedProductForVariation.has_variations && !selectedVariation) {
       alert("Please select a variation");
       return;
     }
@@ -903,10 +831,13 @@ export default function SalesTerminal() {
       if (sellingUnit) quantityInBaseUnits = normalizedQuantity * sellingUnit.conversion;
     }
 
+    // Determine available stock
+    const availableStock = selectedVariation ? selectedVariation.quantity : selectedProductForVariation.quantity;
+
     const existingItem = cart.find(
       (item) =>
         item.product.id === selectedProductForVariation.id &&
-        item.variation?.id === selectedVariation.id &&
+        item.variation?.id === selectedVariation?.id &&
         item.unit === unit
     );
 
@@ -919,11 +850,14 @@ export default function SalesTerminal() {
         : 1)
       : quantityInBaseUnits;
 
-    if (newTotalQuantityInBase > selectedVariation.quantity) {
-      const willGoNegative = newTotalQuantityInBase - selectedVariation.quantity;
+    if (newTotalQuantityInBase > availableStock) {
+      const willGoNegative = newTotalQuantityInBase - availableStock;
+      const stockLabel = selectedVariation 
+        ? `${availableStock} ${selectedProductForVariation.base_unit} in stock for this variation`
+        : `${availableStock} ${selectedProductForVariation.base_unit} in stock`;
       if (
         !confirm(
-          `⚠️ Warning: Only ${selectedVariation.quantity} ${selectedProductForVariation.base_unit} in stock for this variation!\nAdding this will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
+          `⚠️ Warning: Only ${stockLabel}!\nAdding this will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
         )
       ) {
         return;
@@ -951,7 +885,7 @@ export default function SalesTerminal() {
           });
 
           updateLocalProduct(selectedProductForVariation.id, (p) => ({ ...p, selling_units: updatedUnits }));
-        } else {
+        } else if (selectedVariation) {
           const newAdjustment = parsedUnitPrice - selectedProductForVariation.selling_price;
 
           await api.put(`/products/variations/${selectedVariation.id}`, {
@@ -964,6 +898,13 @@ export default function SalesTerminal() {
               v.id === selectedVariation.id ? { ...v, price_adjustment: newAdjustment } : v
             ),
           }));
+        } else {
+          // Update base product price
+          await api.put(`/products/${selectedProductForVariation.id}`, {
+            selling_price: parsedUnitPrice,
+          });
+
+          updateLocalProduct(selectedProductForVariation.id, (p) => ({ ...p, selling_price: parsedUnitPrice }));
         }
       } catch (error) {
         console.error("Failed to update selling price", error);
@@ -980,7 +921,7 @@ export default function SalesTerminal() {
             ? {
                 ...item,
                 quantity: normalizedQuantity,
-                variation: selectedVariation,
+                variation: selectedVariation || undefined,
                 unit: unit,
                 item_discount: variationDiscount || 0,
                 unit_price: unitPriceValue,
@@ -992,7 +933,7 @@ export default function SalesTerminal() {
       setCart((prev) =>
         prev.map((item) =>
           item.product.id === selectedProductForVariation.id &&
-            item.variation?.id === selectedVariation.id &&
+            item.variation?.id === selectedVariation?.id &&
             item.unit === unit
             ? {
               ...item,
@@ -1009,7 +950,7 @@ export default function SalesTerminal() {
         {
           product: selectedProductForVariation,
           quantity: normalizedQuantity,
-          variation: selectedVariation,
+          variation: selectedVariation || undefined,
           unit,
           item_discount: variationDiscount,
           unit_price: unitPriceValue,
@@ -1017,6 +958,7 @@ export default function SalesTerminal() {
       ]);
     }
 
+    // Close dialog after adding to cart
     setVariationDialogOpen(false);
     setSelectedProductForVariation(null);
     setSelectedVariation(null);
@@ -1256,56 +1198,21 @@ export default function SalesTerminal() {
         } else {
           // It's a product SKU barcode
           if (frontendProduct.has_variations) {
-            // Product has variations - open variation picker
+            // Product has variations - open variation picker dialog
             setSelectedProductForVariation(frontendProduct);
             setQuantityForVariation(String(normalizedQuantity));
             setSelectedUnit(frontendProduct.base_unit);
             setVariationPriceOverrideEnabled(false);
+            setSelectedVariation(null);
             setVariationDialogOpen(true);
-          } else if (shouldShowUnitDialog(frontendProduct)) {
-            // Product has multiple units - open unit picker
-            setSelectedProductForUnit(frontendProduct);
-            setQuantityForUnit(String(normalizedQuantity));
-            setSelectedUnitForRegular(frontendProduct.base_unit);
-            setUnitPriceOverrideEnabled(false);
-            setUnitDialogOpen(true);
           } else {
-            // Regular product - add directly
-            const existingItem = cart.find(
-              (item) =>
-                item.product.id === frontendProduct.id && !item.variation && item.unit === frontendProduct.base_unit
-            );
-
-            const currentCartQuantity = existingItem ? existingItem.quantity : 0;
-            const newTotalQuantity = currentCartQuantity + normalizedQuantity;
-
-            if (newTotalQuantity > frontendProduct.quantity) {
-              const willGoNegative = newTotalQuantity - frontendProduct.quantity;
-              if (
-                !confirm(
-                  `⚠️ Warning: Only ${frontendProduct.quantity} units in stock!\nAdding ${normalizedQuantity} will result in negative stock (-${willGoNegative}).\n\nContinue anyway?`
-                )
-              ) {
-                return true; // Still count as handled
-              }
-            }
-
-            if (existingItem) {
-              setCart((prev) =>
-                prev.map((item) =>
-                  item.product.id === frontendProduct.id && !item.variation && item.unit === frontendProduct.base_unit
-                    ? { ...item, quantity: newTotalQuantity }
-                    : item
-                )
-              );
-            } else {
-              setCart((prev) => [
-                ...prev,
-                { product: frontendProduct, quantity: normalizedQuantity, unit: frontendProduct.base_unit },
-              ]);
-            }
-
-            console.log(`✅ Added ${normalizedQuantity}x ${product.name} via barcode`);
+            // Product without variations - also open variation picker dialog
+            setSelectedProductForVariation(frontendProduct);
+            setQuantityForVariation(String(normalizedQuantity));
+            setSelectedUnit(frontendProduct.base_unit);
+            setVariationPriceOverrideEnabled(false);
+            setSelectedVariation(null);
+            setVariationDialogOpen(true);
           }
         }
 
@@ -1907,8 +1814,8 @@ export default function SalesTerminal() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Product Search & List */}
+      <div className="grid grid-cols-1 gap-6">
+        {/* Main content area */}
         <div className="space-y-4">
           <Card>
             <CardHeader>
@@ -1934,16 +1841,6 @@ export default function SalesTerminal() {
                     ))}
                   </SelectContent>
                 </Select>
-
-                <Tabs value={stockFilter} onValueChange={setStockFilter} defaultValue="all" className="w-auto">
-                  <TabsList>
-                    <TabsTrigger value="all">All Items</TabsTrigger>
-                    <TabsTrigger value="low" className={lowStockCount > 0 ? "text-orange-600" : ""}>
-                      Low Stock {lowStockCount > 0 && `(${lowStockCount})`}
-                    </TabsTrigger>
-                    <TabsTrigger value="out">Out of Stock</TabsTrigger>
-                  </TabsList>
-                </Tabs>
               </div>
 
               {/* Search Input */}
@@ -2030,74 +1927,7 @@ export default function SalesTerminal() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-0">
-              <div className="max-h-[600px] overflow-y-auto">
-                <table className="w-full">
-                  <thead className="bg-muted sticky top-0">
-                    <tr className="border-b">
-                      <th className="text-left p-3 font-semibold">Name</th>
-                      <th className="text-right p-3 font-semibold">Price</th>
-                      <th className="text-center p-3 font-semibold">Stock</th>
-                      <th className="text-center p-3 font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProducts.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="text-center p-8 text-muted-foreground">
-                          No products found
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredProducts.map((product) => (
-                        <tr
-                          key={product.id}
-                          className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
-                          onClick={() => addToCart(product)}
-                        >
-                          <td className="p-3 font-medium">{product.name}</td>
-                          <td className="p-3 text-right font-semibold text-primary">
-                            rs {product.selling_price.toFixed(2)}
-                          </td>
-                          <td className="p-3 text-center">
-                            <Badge
-                              variant={
-                                product.quantity > 10
-                                  ? "default"
-                                  : product.quantity > 0
-                                    ? "secondary"
-                                    : "destructive"
-                              }
-                            >
-                              {product.quantity > 0 ? product.quantity : "0 - Out of Stock"}
-                            </Badge>
-                          </td>
-                          <td className="p-3 text-center">
-                            <Button
-                              size="sm"
-                              disabled={product.quantity <= 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                addToCart(product);
-                              }}
-                            >
-                              <Plus className="h-4 w-4 mr-1" />
-                              Add
-                            </Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right: Cart & Held Bills */}
-        <div className="space-y-4">
+          {/* Shopping Cart - Moved from right column */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -2223,14 +2053,15 @@ export default function SalesTerminal() {
                                   setVariationPriceOverrideEnabled(typeof item.unit_price === "number");
                                   setVariationDialogOpen(true);
                                 } else {
-                                  // Open unit dialog for editing
-                                  setSelectedProductForUnit(item.product);
-                                  setQuantityForUnit(String(item.quantity));
-                                  setSelectedUnitForRegular(item.unit);
-                                  setUnitDiscount(item.item_discount || 0);
-                                  setUnitPriceOverride(typeof item.unit_price === "number" ? String(item.unit_price) : "");
-                                  setUnitPriceOverrideEnabled(typeof item.unit_price === "number");
-                                  setUnitDialogOpen(true);
+                                  // Open variation dialog for non-variation products too
+                                  setSelectedProductForVariation(item.product);
+                                  setSelectedVariation(null);
+                                  setQuantityForVariation(String(item.quantity));
+                                  setSelectedUnit(item.unit);
+                                  setVariationDiscount(item.item_discount || 0);
+                                  setVariationUnitPrice(typeof item.unit_price === "number" ? String(item.unit_price) : "");
+                                  setVariationPriceOverrideEnabled(typeof item.unit_price === "number");
+                                  setVariationDialogOpen(true);
                                 }
                               }}
                             >
@@ -2307,6 +2138,7 @@ export default function SalesTerminal() {
             </CardContent>
           </Card>
 
+          {/* Held Bills - Moved from right column */}
           <Card className="border-dashed">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center justify-between">
@@ -2353,6 +2185,89 @@ export default function SalesTerminal() {
                   ))
                 )}
               </CardContent>
+            )}
+          </Card>
+
+          {/* Products List */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <PackageIcon className="h-4 w-4 text-muted-foreground" />
+                  Products List
+                </span>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">{filteredProducts.length}</Badge>
+                  <Button size="sm" variant="outline" onClick={() => setProductsListOpen((prev) => !prev)}>
+                    {productsListOpen ? "Hide" : "Show"}
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+
+            {productsListOpen && (
+              <CardContent className="p-0">
+                <div className="max-h-[600px] overflow-y-auto">
+                <table className="w-full">
+                  <thead className="bg-muted sticky top-0">
+                    <tr className="border-b">
+                      <th className="text-left p-3 font-semibold">Name</th>
+                      <th className="text-right p-3 font-semibold">Price</th>
+                      <th className="text-center p-3 font-semibold">Stock</th>
+                      <th className="text-center p-3 font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="text-center p-8 text-muted-foreground">
+                          No products found
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredProducts.map((product) => (
+                        <tr
+                          key={product.id}
+                          className="border-b hover:bg-muted/50 transition-colors cursor-pointer"
+                          onClick={() => addToCart(product)}
+                        >
+                          <td className="p-3 font-medium">{product.name}</td>
+                          <td className="p-3 text-right font-semibold text-primary">
+                            rs {product.selling_price.toFixed(2)}
+                          </td>
+                          <td className="p-3 text-center">
+                            <Badge
+                              variant={
+                                product.quantity > 10
+                                  ? "default"
+                                  : product.quantity > 0
+                                    ? "secondary"
+                                    : "destructive"
+                              }
+                            >
+                              {product.quantity > 0 ? product.quantity : "0 - Out of Stock"}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-center">
+                            <Button
+                              size="sm"
+                              disabled={product.quantity <= 0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addToCart(product);
+                              }}
+                            >
+                              <Plus className="h-4 w-4 mr-1" />
+                              Add
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
             )}
           </Card>
         </div>
@@ -2682,12 +2597,37 @@ export default function SalesTerminal() {
       <Dialog open={variationDialogOpen} onOpenChange={setVariationDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Select Variation - {selectedProductForVariation?.name}</DialogTitle>
-            <DialogDescription>Choose the specific variation and quantity (Press F4 or Space to add to cart)</DialogDescription>
+            <DialogTitle>
+              {selectedProductForVariation?.has_variations ? "Select Variation" : "Product Details"} - {selectedProductForVariation?.name}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedProductForVariation?.has_variations 
+                ? "Choose the specific variation and quantity (Press F4 or Space to add to cart)"
+                : "Configure quantity and options (Press F4 or Space to add to cart)"}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {selectedProductForVariation?.variations && selectedProductForVariation.variations.length > 0 ? (
+            {/* Product Info */}
+            {selectedProductForVariation && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="text-sm font-medium text-blue-900 mb-1">Product Info</div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Base Price:</span>
+                  <span className="font-semibold text-blue-900">
+                    rs {selectedProductForVariation.selling_price.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-sm mt-1">
+                  <span className="text-muted-foreground">Stock:</span>
+                  <span className="font-medium">
+                    {selectedProductForVariation.quantity} {selectedProductForVariation.base_unit}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {selectedProductForVariation?.has_variations && selectedProductForVariation?.variations && selectedProductForVariation.variations.length > 0 ? (
               <div className="grid gap-2">
                 <Label>Select Variation</Label>
                 <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
@@ -2715,13 +2655,13 @@ export default function SalesTerminal() {
                   })}
                 </div>
               </div>
-            ) : (
+            ) : selectedProductForVariation?.has_variations ? (
               <div className="text-center text-muted-foreground py-4">
                 No variations available. Please add variations in inventory management.
               </div>
-            )}
+            ) : null}
 
-            {selectedProductForVariation && (
+            {selectedProductForVariation && (selectedVariation || !selectedProductForVariation.has_variations) && (
               <>
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-md group">
                   <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
@@ -2731,34 +2671,36 @@ export default function SalesTerminal() {
                       rs {selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}
                     </span>
                   </div>
-                  {selectedVariation && (
-                    <div className="flex justify-between items-center text-sm mt-1">
-                      <span className="text-muted-foreground">Selling Price:</span>
-                      <span className="font-semibold text-primary">
-                        rs {(selectedProductForVariation.selling_price + selectedVariation.price_adjustment).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
+                  <div className="flex justify-between items-center text-sm mt-1">
+                    <span className="text-muted-foreground">Selling Price:</span>
+                    <span className="font-semibold text-primary">
+                      rs {selectedVariation 
+                        ? (selectedProductForVariation.selling_price + selectedVariation.price_adjustment).toFixed(2)
+                        : selectedProductForVariation.selling_price.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="grid gap-2">
-                  <Label>Selling Unit</Label>
-                  <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={selectedProductForVariation.base_unit}>
-                        {selectedProductForVariation.base_unit} (Base unit)
-                      </SelectItem>
-                      {selectedProductForVariation.selling_units.map((unit) => (
-                        <SelectItem key={unit.unit} value={unit.unit}>
-                          {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
+                {selectedProductForVariation.selling_units && selectedProductForVariation.selling_units.length > 0 && (
+                  <div className="grid gap-2">
+                    <Label>Selling Unit</Label>
+                    <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={selectedProductForVariation.base_unit}>
+                          {selectedProductForVariation.base_unit} (Base unit)
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                        {selectedProductForVariation.selling_units.map((unit) => (
+                          <SelectItem key={unit.unit} value={unit.unit}>
+                            {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </>
             )}
 
@@ -2795,7 +2737,7 @@ export default function SalesTerminal() {
                   step={selectedProductForVariation?.allow_decimal_qty ? "0.25" : "1"}
                   value={quantityForVariation}
                   onChange={(e) => setQuantityForVariation(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && selectedVariation) { e.preventDefault(); void addVariationToCart(); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
                   className="text-center"
                   autoFocus
                   ref={quantityForVariationInputRef}
@@ -2826,7 +2768,7 @@ export default function SalesTerminal() {
                 placeholder="0.00"
                 value={variationDiscount || ""}
                 onChange={(e) => setVariationDiscount(parseFloat(e.target.value) || 0)}
-                onKeyDown={(e) => { if (e.key === "Enter" && selectedVariation) { e.preventDefault(); void addVariationToCart(); } }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
               />
               <p className="text-xs text-muted-foreground">Discount to apply on this item</p>
             </div>
@@ -2841,7 +2783,7 @@ export default function SalesTerminal() {
                 placeholder="0.00"
                 value={variationUnitPrice}
                 onChange={(e) => setVariationUnitPrice(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && selectedVariation) { e.preventDefault(); void addVariationToCart(); } }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
                 disabled={!variationPriceOverrideEnabled}
               />
               <div className="flex items-center gap-2">
@@ -2862,7 +2804,10 @@ export default function SalesTerminal() {
             <Button variant="outline" onClick={() => setVariationDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void addVariationToCart()} disabled={!selectedVariation}>
+            <Button 
+              onClick={() => void addVariationToCart()} 
+              disabled={selectedProductForVariation?.has_variations && !selectedVariation}
+            >
               Add to Cart <span className="ml-2 text-xs opacity-70">(F4/Space)</span>
             </Button>
           </DialogFooter>

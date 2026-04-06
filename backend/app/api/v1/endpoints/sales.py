@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from pathlib import Path
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import mm
@@ -88,6 +88,18 @@ def _get_store_details():
     return name, address, ""
 
 
+def _convert_utc_to_pakistan(utc_dt: datetime) -> datetime:
+    """
+    Convert UTC datetime to Pakistan timezone (UTC+5).
+    """
+    if utc_dt.tzinfo is None:
+        # Assume UTC if no timezone info
+        utc_dt = utc_dt.replace(tzinfo=timezone.utc)
+    
+    pakistan_tz = timezone(timedelta(hours=5))
+    return utc_dt.astimezone(pakistan_tz)
+
+
 def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     """Render an invoice image with consistent design across OSes."""
     from PIL import ImageDraw
@@ -146,7 +158,9 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     draw.text(((width - text_width) // 2, y), invoice_num, fill="black", font=font_md)
     y += mm(5)
 
-    date_text = sale.created_at.strftime("%Y-%m-%d %H:%M")
+    # Convert UTC to Pakistan time for display
+    pakistan_time = _convert_utc_to_pakistan(sale.created_at)
+    date_text = pakistan_time.strftime("%Y-%m-%d %H:%M")
     bbox = draw.textbbox((0, 0), date_text, font=font_sm)
     text_width = bbox[2] - bbox[0]
     draw.text(((width - text_width) // 2, y), date_text, fill="black", font=font_sm)

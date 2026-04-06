@@ -85,9 +85,9 @@ export default function VendorDetailsPage() {
 
     const fetchData = async () => {
         try {
-            // Mocked data for now until we have dedicated endpoints or filtering
-            const vendorsRes = await api.get('/vendors/');
-            const v = vendorsRes.data.find((v: any) => v.id === parseInt(id as string));
+            // Fetch vendor directly by ID
+            const vendorRes = await api.get(`/vendors/${id}`);
+            const v = vendorRes.data;
             setVendor(v);
             if (v) {
                 setEditVendor({
