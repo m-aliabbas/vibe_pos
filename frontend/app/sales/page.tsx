@@ -121,6 +121,7 @@ export default function SalesTerminal() {
   const [customerNameResults, setCustomerNameResults] = useState<CustomerSimple[]>([]);
   const [customerNameLoading, setCustomerNameLoading] = useState(false);
   const [showCustomerNameResults, setShowCustomerNameResults] = useState(false);
+  const [selectedCustomerNameIndex, setSelectedCustomerNameIndex] = useState(0);
 
   const [paymentMethod, setPaymentMethod] = useState<string>("cash");
   const [discount, setDiscount] = useState<number>(0);
@@ -162,8 +163,10 @@ export default function SalesTerminal() {
   const fetchProductsRequestIdRef = useRef(0);
   const customerLookupRequestIdRef = useRef(0);
   const customerNameLookupRequestIdRef = useRef(0);
+  const skipNextCustomerLookupRef = useRef(false);
   const productSearchInputRef = useRef<HTMLInputElement | null>(null);
   const autocompleteListRef = useRef<HTMLDivElement | null>(null);
+  const customerNameListRef = useRef<HTMLDivElement | null>(null);
 
   const latestSaleSnapshotRef = useRef<{
     cart: CartItem[];
@@ -595,6 +598,9 @@ export default function SalesTerminal() {
       lastAutoHoldSignatureRef.current = signature;
       clearCart();
       fetchHeldSales();
+      
+      // Auto-focus search bar after holding sale
+      setTimeout(() => productSearchInputRef.current?.focus(), 50);
     } catch (error) {
       console.error("Failed to hold sale:", error);
       alert("Failed to hold sale");
@@ -732,8 +738,14 @@ export default function SalesTerminal() {
         if (customer) {
           setSelectedCustomer(customer);
           setCustomerName(customer.name || "");
-          setCustomerPhone(customer.phone || phoneVal || "");
-          setCustomerId(customer.customer_id || idVal.toUpperCase() || "");
+          // Only update fields that weren't used for searching
+          // Don't override the user's input in the field they're typing in
+          if (!phoneVal && customer.phone) {
+            setCustomerPhone(customer.phone);
+          }
+          if (!idVal && customer.customer_id) {
+            setCustomerId(customer.customer_id);
+          }
         } else {
           setSelectedCustomer(null);
         }
@@ -968,6 +980,9 @@ export default function SalesTerminal() {
     setVariationUnitPrice("");
     setVariationPriceOverrideEnabled(false);
     setEditingCartIndex(null);
+    
+    // Auto-focus search bar for next item
+    setTimeout(() => productSearchInputRef.current?.focus(), 50);
   }, [
     selectedProductForVariation,
     selectedVariation,
@@ -1116,6 +1131,9 @@ export default function SalesTerminal() {
     setQuantityForUnit("1");
     setSelectedUnitForRegular("piece");
     setUnitDiscount(0);
+    
+    // Auto-focus search bar for next item
+    setTimeout(() => productSearchInputRef.current?.focus(), 50);
     setUnitPriceOverride("");
     setUnitPriceOverrideEnabled(false);
     setEditingCartIndex(null);
@@ -1296,6 +1314,17 @@ export default function SalesTerminal() {
     }
   }, [selectedProductIndex]);
 
+  // Scroll the highlighted customer name item into view on keyboard navigation
+  useEffect(() => {
+    const list = customerNameListRef.current;
+    if (!list) return;
+    const items = list.querySelectorAll<HTMLElement>("button");
+    const target = items[selectedCustomerNameIndex];
+    if (target) {
+      target.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedCustomerNameIndex]);
+
   const handleCheckout = useCallback(() => {
     if (cart.length === 0) {
       alert("Cart is empty!");
@@ -1310,6 +1339,7 @@ export default function SalesTerminal() {
   }, [amountPaid]);
 
   const handleSelectCustomerByName = useCallback((customer: CustomerSimple) => {
+    skipNextCustomerLookupRef.current = true;
     setSelectedCustomer(customer);
     setCustomerName(customer.name || "");
     setCustomerPhone(customer.phone || "");
@@ -1416,6 +1446,12 @@ export default function SalesTerminal() {
   // ✅ Debounced lookup when checkout is open and fields change
   useEffect(() => {
     if (!checkoutOpen) return;
+
+    // Skip lookup if customer was just manually selected
+    if (skipNextCustomerLookupRef.current) {
+      skipNextCustomerLookupRef.current = false;
+      return;
+    }
 
     const t = setTimeout(() => {
       void handleCustomerLookup(customerPhone, customerId);
@@ -1605,6 +1641,7 @@ export default function SalesTerminal() {
 
         setCustomerNameResults(results || []);
         setShowCustomerNameResults(true);
+        setSelectedCustomerNameIndex(0); // Reset selection when results change
       } catch (error) {
         console.error("Customer name search failed:", error);
         if (requestId !== customerNameLookupRequestIdRef.current) return;
@@ -1717,6 +1754,9 @@ export default function SalesTerminal() {
     setSuccessOpen(false);
     setSaleId(null);
     clearCart();
+    
+    // Auto-focus search bar for next sale
+    setTimeout(() => productSearchInputRef.current?.focus(), 100);
   }, [clearCart]);
 
   // Get unique categories
@@ -2090,8 +2130,15 @@ export default function SalesTerminal() {
 
                     {(discount > 0 || calculateItemDiscounts() > 0) && (
                       <div className="flex justify-between text-red-600">
-                        <span>Discount</span>
+                        <span>Total Discount</span>
                         <span>-rs {(discount + calculateItemDiscounts()).toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {(discount > 0 || calculateItemDiscounts() > 0) && (
+                      <div className="flex justify-between font-semibold border-t pt-2">
+                        <span>After Discount</span>
+                        <span>rs {(calculateSubtotal() - discount - calculateItemDiscounts()).toFixed(2)}</span>
                       </div>
                     )}
 
@@ -2109,8 +2156,8 @@ export default function SalesTerminal() {
                       </div>
                     )}
 
-                    <div className="flex justify-between font-bold text-lg pt-2 border-t mt-2">
-                      <span>Total</span>
+                    <div className="flex justify-between font-bold text-lg pt-2 border-t-2 mt-2">
+                      <span>Total to Charge</span>
                       <span>rs {calculateTotal().toFixed(2)}</span>
                     </div>
                   </div>
@@ -2299,7 +2346,11 @@ export default function SalesTerminal() {
             )}
 
             {selectedCustomer && (
-              <div className="p-2 bg-green-50 border border-green-200 rounded text-sm">
+              <div className={`p-2 border rounded text-sm ${
+                selectedCustomer.outstanding_balance < 0 
+                  ? 'bg-green-50 border-green-200' 
+                  : 'bg-green-50 border-green-200'
+              }`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold text-green-800">{selectedCustomer.name || "Customer"}</p>
@@ -2311,6 +2362,11 @@ export default function SalesTerminal() {
                   {selectedCustomer.outstanding_balance > 0 && (
                     <Badge variant="destructive" className="text-xs">
                       Udhar: rs {selectedCustomer.outstanding_balance.toFixed(2)}
+                    </Badge>
+                  )}
+                  {selectedCustomer.outstanding_balance < 0 && (
+                    <Badge variant="default" className="text-xs bg-green-600">
+                      Credit: +rs {Math.abs(selectedCustomer.outstanding_balance).toFixed(2)}
                     </Badge>
                   )}
                 </div>
@@ -2366,6 +2422,26 @@ export default function SalesTerminal() {
                 onBlur={() => {
                   setTimeout(() => setShowCustomerNameResults(false), 150);
                 }}
+                onKeyDown={(e) => {
+                  if (!showCustomerNameResults || customerNameResults.length === 0) return;
+
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSelectedCustomerNameIndex((prev) =>
+                      prev < customerNameResults.length - 1 ? prev + 1 : prev
+                    );
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSelectedCustomerNameIndex((prev) => (prev > 0 ? prev - 1 : 0));
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (customerNameResults[selectedCustomerNameIndex]) {
+                      handleSelectCustomerByName(customerNameResults[selectedCustomerNameIndex]);
+                    }
+                  } else if (e.key === "Escape") {
+                    setShowCustomerNameResults(false);
+                  }
+                }}
               />
 
               {customerNameLoading && (
@@ -2375,13 +2451,21 @@ export default function SalesTerminal() {
               )}
 
               {showCustomerNameResults && customerNameResults.length > 0 && (
-                <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto">
-                  {customerNameResults.map((cust) => (
+                <div 
+                  ref={customerNameListRef}
+                  className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto"
+                >
+                  {customerNameResults.map((cust, index) => (
                     <button
                       key={cust.id}
                       type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm"
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                        index === selectedCustomerNameIndex
+                          ? "bg-blue-50 border-l-2 border-blue-500"
+                          : "hover:bg-gray-50"
+                      }`}
                       onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setSelectedCustomerNameIndex(index)}
                       onClick={() => handleSelectCustomerByName(cust)}
                     >
                       <div className="font-medium text-gray-900">{cust.name || "Customer"}</div>
@@ -2482,15 +2566,41 @@ export default function SalesTerminal() {
             </div>
 
             <div className="border-t pt-2 space-y-1 text-xs">
-              {calculateItemDiscounts() > 0 && (
+              <div className="flex justify-between">
+                <span>Subtotal:</span>
+                <span>rs {calculateSubtotal().toFixed(2)}</span>
+              </div>
+
+              {(discount > 0 || calculateItemDiscounts() > 0) && (
                 <div className="flex justify-between text-red-600">
-                  <span>Total Item Discs:</span>
-                  <span>-rs {calculateItemDiscounts().toFixed(2)}</span>
+                  <span>Total Discount:</span>
+                  <span>-rs {(discount + calculateItemDiscounts()).toFixed(2)}</span>
                 </div>
               )}
 
-              <div className="flex justify-between font-semibold">
-                <span>Total:</span>
+              {(discount > 0 || calculateItemDiscounts() > 0) && (
+                <div className="flex justify-between font-semibold border-t pt-1">
+                  <span>After Discount:</span>
+                  <span>rs {(calculateSubtotal() - discount - calculateItemDiscounts()).toFixed(2)}</span>
+                </div>
+              )}
+
+              {tax > 0 && (
+                <div className="flex justify-between">
+                  <span>Tax:</span>
+                  <span>+rs {tax.toFixed(2)}</span>
+                </div>
+              )}
+
+              {deliveryCharges > 0 && (
+                <div className="flex justify-between">
+                  <span>Delivery:</span>
+                  <span>+rs {deliveryCharges.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between font-bold border-t-2 pt-1 mt-1">
+                <span>TOTAL TO CHARGE:</span>
                 <span className="text-lg">rs {calculateTotal().toFixed(2)}</span>
               </div>
 
@@ -3067,8 +3177,14 @@ export default function SalesTerminal() {
                 </div>
                 {(discount > 0 || calculateItemDiscounts() > 0) && (
                   <div className="flex justify-between text-red-600">
-                    <span>Discount</span>
+                    <span>Total Discount</span>
                     <span>-rs {(discount + calculateItemDiscounts()).toFixed(2)}</span>
+                  </div>
+                )}
+                {(discount > 0 || calculateItemDiscounts() > 0) && (
+                  <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+                    <span>Price After Discount</span>
+                    <span>rs {(calculateSubtotal() - discount - calculateItemDiscounts()).toFixed(2)}</span>
                   </div>
                 )}
                 {tax > 0 && (
@@ -3083,8 +3199,8 @@ export default function SalesTerminal() {
                     <span>+rs {deliveryCharges.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold border-t pt-1 mt-1">
-                  <span>TOTAL</span>
+                <div className="flex justify-between font-bold border-t-2 pt-1 mt-1">
+                  <span>TOTAL TO BE CHARGED</span>
                   <span>rs {calculateTotal().toFixed(2)}</span>
                 </div>
               </div>

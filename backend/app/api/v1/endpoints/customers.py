@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 import csv
 import io
 import requests
@@ -6,7 +6,7 @@ import asyncio
 import re
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, File, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from datetime import datetime
 
@@ -19,6 +19,37 @@ from app.schemas import customer as customer_schema
 from app.services import accounting as accounting_service
 
 router = APIRouter()
+
+
+def _set_reconciled_balance(customer: Customer, reconciled_balance: float) -> Customer:
+    customer.outstanding_balance = reconciled_balance
+    return customer
+
+
+def _reconcile_customer(customer: Optional[Customer], db: Session) -> Optional[Customer]:
+    if not customer:
+        return customer
+    reconciled_balance = accounting_service.get_customer_balance(
+        db,
+        customer.id,
+        customer.opening_balance or 0.0,
+    )
+    return _set_reconciled_balance(customer, reconciled_balance)
+
+
+def _reconcile_customers(customers: List[Customer], db: Session) -> List[Customer]:
+    if not customers:
+        return customers
+    balances = accounting_service.get_customer_balances(
+        db,
+        {customer.id: customer.opening_balance or 0.0 for customer in customers},
+    )
+    for customer in customers:
+        _set_reconciled_balance(
+            customer,
+            balances.get(customer.id, round(float(customer.opening_balance or 0.0), 2)),
+        )
+    return customers
 
 
 def _get_store_name() -> str:
@@ -111,7 +142,7 @@ def read_customers(
         )
     
     customers = query.order_by(Customer.created_at.desc()).offset(skip).limit(limit).all()
-    return customers
+    return _reconcile_customers(customers, db)
 
 
 @router.get("/count")
@@ -159,12 +190,12 @@ def search_customer(
         for variant in phone_variants:
             customer = query.filter(Customer.phone == variant).first()
             if customer:
-                return customer
+                return _reconcile_customer(customer, db)
     
     if customer_id:
         customer = query.filter(Customer.customer_id == customer_id.strip().upper()).first()
         if customer:
-            return customer
+            return _reconcile_customer(customer, db)
     
     return None
 
@@ -465,10 +496,13 @@ def read_customer(
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """Get customer by ID with all details, notes, and payments"""
-    customer = db.query(Customer).filter(Customer.id == id).first()
+    customer = db.query(Customer).options(
+        joinedload(Customer.notes),
+        joinedload(Customer.payments)
+    ).filter(Customer.id == id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return customer
+    return _reconcile_customer(customer, db)
 
 
 @router.put("/{id}", response_model=customer_schema.CustomerResponse)
@@ -535,11 +569,13 @@ def update_customer(
                 status_code=400,
                 detail="Opening balance must be greater than or equal to 0",
             )
-        previous_opening = customer.opening_balance or 0.0
         new_opening = float(customer_in.opening_balance)
-        delta = new_opening - previous_opening
         customer.opening_balance = new_opening
-        customer.outstanding_balance = max(0.0, (customer.outstanding_balance or 0.0) + delta)
+        customer.outstanding_balance = accounting_service.get_customer_balance(
+            db,
+            customer.id,
+            new_opening,
+        )
     if customer_in.current_mileage is not None:
         customer.current_mileage = customer_in.current_mileage
     if customer_in.oil_change_interval is not None:
@@ -557,7 +593,7 @@ def update_customer(
     db.add(customer)
     db.commit()
     db.refresh(customer)
-    return customer
+    return _reconcile_customer(customer, db)
 
 
 @router.delete("/{id}")
@@ -571,6 +607,11 @@ def delete_customer(
     customer = db.query(Customer).filter(Customer.id == id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db,
+        customer.id,
+        customer.opening_balance or 0.0,
+    )
     
     # Check if customer has sales linked
     sales_count = db.query(Sale).filter(Sale.customer_ref_id == id).count()
@@ -680,7 +721,7 @@ def record_customer_payment(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
-    """Record a payment against customer's outstanding balance (udhar)"""
+    """Record a payment at customer-ledger level without auto-distributing to invoices."""
     customer = db.query(Customer).filter(Customer.id == id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -695,33 +736,16 @@ def record_customer_payment(
         payment_method=payment_in.payment_method,
         reference_note=payment_in.reference_note,
     )
-    
-    # Update outstanding balance
-    customer.outstanding_balance = max(0, customer.outstanding_balance - payment_in.amount)
-    
-    # --- RECONCILIATION LOGIC ---
-    # Find unpaid sales and distribute payment
-    remaining_payment = payment_in.amount
-    
-    # Get unpaid/partial sales ordered by date (oldest first)
-    unpaid_sales = db.query(Sale).filter(
-        Sale.customer_ref_id == id,
-        Sale.amount_due > 0
-    ).order_by(Sale.created_at.asc()).all()
-    
-    for sale in unpaid_sales:
-        if remaining_payment <= 0:
-            break
-            
-        due = sale.amount_due
-        pay_amount = min(remaining_payment, due)
-        
-        sale.amount_paid += pay_amount
-        sale.amount_due -= pay_amount
-        remaining_payment -= pay_amount
-        
-        # If fully paid, we could potentially update a status flag if you had one,
-        # currently logic depends on amount_due which is sufficient.
+
+    # Keep balance in sync with accounting-ledger basis before applying the new payment.
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db,
+        customer.id,
+        customer.opening_balance or 0.0,
+    )
+
+    # Apply payment at customer level. This can go negative (prepaid credit).
+    customer.outstanding_balance = (customer.outstanding_balance or 0.0) - payment_in.amount
     
     customer.updated_at = datetime.utcnow()
     
@@ -767,6 +791,11 @@ def add_customer_advance(
     customer = db.query(Customer).filter(Customer.id == id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db,
+        customer.id,
+        customer.opening_balance or 0.0,
+    )
     
     amount = advance_in.get('amount', 0)
     description = advance_in.get('description', '')
@@ -1136,16 +1165,30 @@ def get_customer_purchases(
     customer = db.query(Customer).filter(Customer.id == id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    
-    sales = db.query(Sale).filter(
-        Sale.customer_ref_id == id
-    ).order_by(Sale.created_at.desc()).offset(skip).limit(limit).all()
+
+    normalized_phone = normalize_phone_for_sales(customer.phone)
+
+    sales_query = db.query(Sale).filter(
+        or_(
+            Sale.customer_ref_id == id,
+            # Include legacy/unlinked sales matched by phone.
+            # This keeps customer ledger/history consistent with sale history.
+            (
+                Sale.customer_ref_id.is_(None)
+                & Sale.customer_phone.isnot(None)
+                & (Sale.customer_phone == normalized_phone)
+            ) if normalized_phone else False,
+        )
+    )
+
+    total_count = sales_query.count()
+    sales = sales_query.order_by(Sale.created_at.desc()).offset(skip).limit(limit).all()
     
     # Format response
     return {
         "customer_id": customer.id,
         "customer_name": customer.name,
-        "total_count": customer.total_purchases,
+        "total_count": total_count,
         "purchases": [
             {
                 "id": sale.id,
@@ -1194,7 +1237,11 @@ def get_customer_financial_summary(
         "customer_name": customer.name,
         "total_purchases": customer.total_purchases,
         "total_spent": customer.total_spent,
-        "outstanding_balance": customer.outstanding_balance,
+        "outstanding_balance": accounting_service.get_customer_balance(
+            db,
+            customer.id,
+            customer.opening_balance or 0.0,
+        ),
         "average_purchase_value": round(avg_purchase, 2),
         "total_payments_made": total_payments,
         "total_payment_amount": total_payment_amount,

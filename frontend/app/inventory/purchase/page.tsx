@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import api from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
+import api, { holdPurchasesApi, HoldPurchaseResponse } from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
@@ -13,8 +14,10 @@ import { Trash2, ArrowRight, Plus } from "lucide-react";
 
 function PurchasePageContent() {
     const router = useRouter();
+    const { token } = useAuthStore();
     const searchParams = useSearchParams();
     const preselectedVendorId = searchParams.get('vendorId');
+    const openHeldFromQuery = searchParams.get('held') === '1';
     const productInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
     const costInputRef = useRef<HTMLInputElement>(null);
@@ -32,9 +35,12 @@ function PurchasePageContent() {
     
     const [items, setItems] = useState<any[]>([]);
     const [amountPaid, setAmountPaid] = useState<string>('');
+    const [heldPurchases, setHeldPurchases] = useState<HoldPurchaseResponse[]>([]);
+    const [heldOpen, setHeldOpen] = useState(false);
     const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
     const [receiptData, setReceiptData] = useState<{
         title: string;
+        vendorId?: string;
         vendorName: string;
         total: number;
         paid: number;
@@ -62,11 +68,33 @@ function PurchasePageContent() {
     const [newProductSellingPrice, setNewProductSellingPrice] = useState('');
     const [newProductCostPrice, setNewProductCostPrice] = useState('');
     const [savingProduct, setSavingProduct] = useState(false);
+    const latestPurchaseSnapshotRef = useRef<{
+        vendorId: string;
+        vendorSearch: string;
+        amountPaid: string;
+        items: any[];
+        token: string | null;
+    }>({
+        vendorId: '',
+        vendorSearch: '',
+        amountPaid: '',
+        items: [],
+        token: null,
+    });
+    const autoHoldInFlightRef = useRef(false);
+    const lastAutoHoldSignatureRef = useRef<string>('');
 
     useEffect(() => {
         fetchData();
         fetchStoreConfig().then(setStoreInfo);
+        fetchHeldPurchases();
     }, []);
+
+    useEffect(() => {
+        if (openHeldFromQuery) {
+            setHeldOpen(true);
+        }
+    }, [openHeldFromQuery]);
 
     useEffect(() => {
         if (preselectedVendorId && vendors.length > 0) {
@@ -103,6 +131,108 @@ function PurchasePageContent() {
         return () => clearTimeout(timer);
     }, [productSearch]);
 
+    // Keep latest purchase draft snapshot for auto-hold
+    useEffect(() => {
+        latestPurchaseSnapshotRef.current = {
+            vendorId,
+            vendorSearch,
+            amountPaid,
+            items,
+            token,
+        };
+    }, [vendorId, vendorSearch, amountPaid, items, token]);
+
+    // Auto-hold draft on tab close/navigation/visibility changes
+    useEffect(() => {
+        const buildHoldRequest = (snapshot: {
+            vendorId: string;
+            vendorSearch: string;
+            amountPaid: string;
+            items: any[];
+            token: string | null;
+        }) => {
+            const label = snapshot.vendorSearch.trim() || (snapshot.vendorId ? `Vendor #${snapshot.vendorId}` : 'Draft Purchase');
+            const payload = {
+                vendorId: snapshot.vendorId,
+                vendorSearch: snapshot.vendorSearch,
+                amountPaid: snapshot.amountPaid,
+                items: snapshot.items,
+            };
+            const signature = JSON.stringify(payload);
+            return { label, payload, signature };
+        };
+
+        const autoHoldCurrentPurchase = async () => {
+            const snapshot = latestPurchaseSnapshotRef.current;
+            const hasDraft =
+                (snapshot.items || []).length > 0 ||
+                !!snapshot.vendorId.trim() ||
+                !!snapshot.vendorSearch.trim() ||
+                !!snapshot.amountPaid.trim();
+            if (!hasDraft || autoHoldInFlightRef.current) return;
+
+            const { label, payload, signature } = buildHoldRequest(snapshot);
+            if (signature === lastAutoHoldSignatureRef.current) return;
+
+            autoHoldInFlightRef.current = true;
+            try {
+                await holdPurchasesApi.create({ label, payload });
+                lastAutoHoldSignatureRef.current = signature;
+            } catch (error) {
+                console.error('Auto-hold purchase failed:', error);
+            } finally {
+                autoHoldInFlightRef.current = false;
+            }
+        };
+
+        const autoHoldWithKeepAlive = () => {
+            const snapshot = latestPurchaseSnapshotRef.current;
+            const hasDraft =
+                (snapshot.items || []).length > 0 ||
+                !!snapshot.vendorId.trim() ||
+                !!snapshot.vendorSearch.trim() ||
+                !!snapshot.amountPaid.trim();
+            if (!snapshot.token || !hasDraft) return;
+
+            const { label, payload, signature } = buildHoldRequest(snapshot);
+            if (signature === lastAutoHoldSignatureRef.current) return;
+
+            const endpoint = 'http://127.0.0.1:8000/api/v1/hold-purchases/';
+            fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${snapshot.token}`,
+                },
+                body: JSON.stringify({ label, payload }),
+                keepalive: true,
+            }).catch((error) => {
+                console.error('Auto-hold purchase keepalive failed:', error);
+            });
+
+            lastAutoHoldSignatureRef.current = signature;
+        };
+
+        const handlePageHide = () => {
+            autoHoldWithKeepAlive();
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                autoHoldWithKeepAlive();
+            }
+        };
+
+        window.addEventListener('pagehide', handlePageHide);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('pagehide', handlePageHide);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            void autoHoldCurrentPurchase();
+        };
+    }, []);
+
     const fetchData = async () => {
         try {
             const [vRes] = await Promise.all([
@@ -112,6 +242,15 @@ function PurchasePageContent() {
             setFilteredVendors(vRes.data);
         } catch (error) {
             console.error("Failed to load data", error);
+        }
+    };
+
+    const fetchHeldPurchases = async () => {
+        try {
+            const data = await holdPurchasesApi.list();
+            setHeldPurchases(data || []);
+        } catch (error) {
+            console.error("Failed to fetch held purchases", error);
         }
     };
 
@@ -280,6 +419,73 @@ function PurchasePageContent() {
 
     const totalAmount = items.reduce((acc, item) => acc + item.total_cost, 0);
 
+    const clearPurchaseForm = () => {
+        setVendorId('');
+        setVendorSearch('');
+        setItems([]);
+        setAmountPaid('');
+        setSelectedProduct(null);
+        setProductSearch('');
+        setQty('');
+        setCost('');
+        setExpiry('');
+        setRetailPrice('');
+        setUpdateRetailPrice(false);
+    };
+
+    const calculateHeldPurchaseTotal = (hold: HoldPurchaseResponse) => {
+        return (hold.payload.items || []).reduce((sum, item) => sum + (item.total_cost || 0), 0);
+    };
+
+    const holdCurrentPurchase = async () => {
+        if (!vendorId || items.length === 0) {
+            alert("Please select a vendor and add at least one item");
+            return;
+        }
+
+        const label = vendorSearch.trim() || `Vendor #${vendorId}`;
+        const payload = {
+            vendorId,
+            vendorSearch,
+            amountPaid,
+            items,
+        };
+
+        try {
+            await holdPurchasesApi.create({ label, payload });
+            clearPurchaseForm();
+            fetchHeldPurchases();
+            setTimeout(() => productInputRef.current?.focus(), 50);
+        } catch (error) {
+            console.error("Failed to hold purchase", error);
+            alert("Failed to hold purchase");
+        }
+    };
+
+    const resumeHeldPurchase = async (hold: HoldPurchaseResponse) => {
+        const payload = hold.payload;
+        setVendorId(payload.vendorId || '');
+        setVendorSearch(payload.vendorSearch || '');
+        setAmountPaid(payload.amountPaid || '');
+        setItems(payload.items || []);
+
+        try {
+            await holdPurchasesApi.delete(hold.id);
+            fetchHeldPurchases();
+        } catch (error) {
+            console.error("Failed to remove held purchase", error);
+        }
+    };
+
+    const deleteHeldPurchase = async (holdId: number) => {
+        try {
+            await holdPurchasesApi.delete(holdId);
+            fetchHeldPurchases();
+        } catch (error) {
+            console.error("Failed to delete held purchase", error);
+        }
+    };
+
     const handleSubmit = async () => {
         if (!vendorId || items.length === 0) {
             alert("Please select a vendor and add at least one item");
@@ -302,12 +508,14 @@ function PurchasePageContent() {
                         const vendor = vendors.find(v => v.id.toString() === vendorId);
                         setReceiptData({
                                 title: "Purchase Receipt",
+                            vendorId,
                                 vendorName: vendor?.name || "Vendor",
                                 total: response.data.total_amount || totalAmount,
                                 paid: response.data.amount_paid || (amountPaid ? parseFloat(amountPaid) : 0),
                                 date: response.data.created_at || new Date().toISOString(),
                                 status: response.data.status || "unpaid",
                         });
+                            clearPurchaseForm();
                         setReceiptDialogOpen(true);
         } catch (error) {
             console.error("Failed to submit purchase", error);
@@ -435,8 +643,8 @@ function PurchasePageContent() {
                             <DialogFooter>
                                 <Button variant="outline" onClick={() => {
                                     setReceiptDialogOpen(false);
-                                    if (vendorId) {
-                                        router.push(`/vendors/${vendorId}`);
+                                    if (receiptData?.vendorId) {
+                                        router.push(`/vendors/${receiptData.vendorId}`);
                                     }
                                 }}>
                                     Close
@@ -661,6 +869,23 @@ function PurchasePageContent() {
                         </div>
 
                         <Button
+                            variant="outline"
+                            size="lg"
+                            onClick={holdCurrentPurchase}
+                            disabled={!vendorId || items.length === 0}
+                        >
+                            Hold Purchase
+                        </Button>
+
+                        <Button
+                            variant="outline"
+                            size="lg"
+                            onClick={() => setHeldOpen((prev) => !prev)}
+                        >
+                            {heldOpen ? 'Hide Held' : `Show Held (${heldPurchases.length})`}
+                        </Button>
+
+                        <Button
                             className="w-full"
                             size="lg"
                             onClick={handleSubmit}
@@ -669,6 +894,40 @@ function PurchasePageContent() {
                             Confirm Purchase Order
                             <ArrowRight className="ml-2 h-5 w-5" />
                         </Button>
+
+                        {heldOpen && (
+                            <div className="border rounded-lg p-4 bg-slate-50 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="font-semibold">Held Purchases</h3>
+                                    <span className="text-sm text-muted-foreground">{heldPurchases.length} saved</span>
+                                </div>
+
+                                {heldPurchases.length === 0 ? (
+                                    <p className="text-sm text-muted-foreground">No held purchases.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {heldPurchases.map((hold) => (
+                                            <div key={hold.id} className="flex items-center justify-between gap-3 rounded border bg-white p-3">
+                                                <div>
+                                                    <div className="font-medium">{hold.label || 'Held Purchase'}</div>
+                                                    <div className="text-sm text-muted-foreground">
+                                                        {hold.payload.items?.length || 0} items • rs {calculateHeldPurchaseTotal(hold).toFixed(2)}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Button size="sm" onClick={() => void resumeHeldPurchase(hold)}>
+                                                        Resume
+                                                    </Button>
+                                                    <Button size="sm" variant="outline" onClick={() => void deleteHeldPurchase(hold.id)}>
+                                                        Delete
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

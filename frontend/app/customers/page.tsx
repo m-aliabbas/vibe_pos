@@ -552,7 +552,11 @@ export default function CustomersPage() {
                       <TableCell>
                         {customer.outstanding_balance > 0 ? (
                           <Badge variant="destructive">
-                            {formatCurrency(customer.outstanding_balance)}
+                            Udhar: {formatCurrency(customer.outstanding_balance)}
+                          </Badge>
+                        ) : customer.outstanding_balance < 0 ? (
+                          <Badge variant="default" className="bg-green-600">
+                            Credit: {formatCurrency(Math.abs(customer.outstanding_balance))}
                           </Badge>
                         ) : (
                           <span className="text-muted-foreground">-</span>

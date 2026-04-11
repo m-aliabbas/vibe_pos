@@ -376,18 +376,25 @@ export default function InvoicePage() {
                   )}
                   <div className="flex justify-between text-xs text-gray-600">
                     <span>{item.quantity} {item.unit} x rs {item.unit_price.toFixed(2)}</span>
-                    <span className="font-semibold text-gray-900">
+                    <span className="text-gray-700">
+                      rs {(item.unit_price * item.quantity).toFixed(2)}
+                    </span>
+                  </div>
+                  {item.item_discount && item.item_discount > 0 && (
+                    <div className="flex justify-between text-xs text-gray-900">
+                      <span>Discount:</span>
+                      <span>-rs {item.item_discount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs font-semibold mt-1">
+                    <span className="text-gray-900">Final Price:</span>
+                    <span className="text-gray-900">
                       rs {item.total_price.toFixed(2)}
                     </span>
                   </div>
                   {(returnedBySaleItem[item.id] || 0) > 0 && (
                     <div className="text-xs text-orange-600 mt-1">
                       Returned: {returnedBySaleItem[item.id]} {item.unit}
-                    </div>
-                  )}
-                  {item.item_discount && item.item_discount > 0 && (
-                    <div className="text-xs text-red-600 mb-1 text-right">
-                      Disc: -rs {item.item_discount.toFixed(2)}
                     </div>
                   )}
                 </div>
@@ -399,17 +406,25 @@ export default function InvoicePage() {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal:</span>
                 <span className="font-medium text-gray-900">
-                  rs {sale.subtotal.toFixed(2)}
+                  rs {sale.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0).toFixed(2)}
                 </span>
               </div>
 
-              {sale.discount > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Discount:</span>
-                  <span className="font-medium text-red-600">
-                    -rs {sale.discount.toFixed(2)}
-                  </span>
-                </div>
+              {(sale.discount > 0 || sale.items.some(item => (item.item_discount || 0) > 0)) && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Total Discount:</span>
+                    <span className="font-medium text-gray-900">
+                      -rs {(sale.discount + sale.items.reduce((sum, item) => sum + (item.item_discount || 0), 0)).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm font-semibold border-t pt-1">
+                    <span className="text-gray-700">After Discount:</span>
+                    <span className="text-gray-900">
+                      rs {sale.subtotal.toFixed(2)}
+                    </span>
+                  </div>
+                </>
               )}
 
               {sale.tax > 0 && (
@@ -431,7 +446,7 @@ export default function InvoicePage() {
               )}
 
               <div className="flex justify-between text-base font-bold pt-2 border-t-2 border-gray-900">
-                <span className="text-gray-900">TOTAL:</span>
+                <span className="text-gray-900">TOTAL TO PAY:</span>
                 <span className="text-gray-900">
                   rs {sale.total.toFixed(2)}
                 </span>

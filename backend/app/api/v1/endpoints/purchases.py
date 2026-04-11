@@ -89,27 +89,44 @@ def create_purchase(
             db.add(product)
 
     # Determine Status
+    cash_paid = max(0.0, float(purchase_in.amount_paid or 0.0))
+    prepaid_available = max(0.0, float(vendor.prepaid_credit or 0.0))
+    amount_remaining = max(0.0, total_amount - cash_paid)
+    prepaid_used = min(prepaid_available, amount_remaining)
+    remaining_after_prepaid = max(0.0, total_amount - prepaid_used)
+    cash_applied = min(cash_paid, remaining_after_prepaid)
+    cash_overpaid = max(0.0, cash_paid - cash_applied)
+    total_paid = min(total_amount, cash_applied + prepaid_used)
+
     status = PurchaseStatus.UNPAID
-    if purchase_in.amount_paid >= total_amount:
+    if total_paid >= total_amount:
         status = PurchaseStatus.PAID
-    elif purchase_in.amount_paid > 0:
+    elif total_paid > 0:
         status = PurchaseStatus.PARTIAL
 
     # 4. Create Purchase Record
     purchase = Purchase(
         vendor_id=purchase_in.vendor_id,
         total_amount=total_amount,
-        amount_paid=purchase_in.amount_paid,
+        amount_paid=total_paid,
         status=status,
         items=db_items
     )
+
+    if prepaid_used > 0:
+        vendor.prepaid_credit = prepaid_available - prepaid_used + cash_overpaid
+        db.add(vendor)
+    elif cash_overpaid > 0:
+        vendor.prepaid_credit = prepaid_available + cash_overpaid
+        db.add(vendor)
     
     db.add(purchase)
     db.flush()
     accounting_service.post_purchase_entry(
         db=db,
         purchase=purchase,
-        amount_paid=purchase_in.amount_paid,
+        amount_paid=cash_paid,
+        prepaid_used=prepaid_used,
         created_by=current_user.id,
     )
     db.commit()

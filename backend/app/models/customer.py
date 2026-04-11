@@ -24,7 +24,7 @@ class Customer(Base):
     # Financial tracking
     total_purchases = Column(Integer, default=0)  # Count of sales transactions
     total_spent = Column(Float, default=0.0)  # Total amount spent
-    outstanding_balance = Column(Float, default=0.0)  # Credit/udhar amount (positive = customer owes)
+    outstanding_balance = Column(Float, default=0.0)  # Balance (positive = owes money, negative = prepaid credit)
     opening_balance = Column(Float, default=0.0)  # Initial balance from legacy/manual system
     credit_limit = Column(Float, nullable=True, default=None)  # Max allowed outstanding balance (None = unlimited)
     

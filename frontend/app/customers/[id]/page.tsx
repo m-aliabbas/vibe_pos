@@ -134,6 +134,15 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
         customerApi.getCustomer(customerId),
         customerApi.getCustomerFinancialSummary(customerId),
       ]);
+      
+      // DEBUG: Log the customer data to see what's being returned
+      console.log('=== CUSTOMER DATA FROM API ===');
+      console.log('Customer:', customerData);
+      console.log('Notes array:', customerData.notes);
+      console.log('Notes count:', customerData.notes?.length || 0);
+      console.log('Payments array:', customerData.payments);
+      console.log('Payments count:', customerData.payments?.length || 0);
+      
       setCustomer(customerData);
       setFinancialSummary(summaryData);
       setEditCustomer({
@@ -343,10 +352,8 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   const handleCustomerReportPdf = async () => {
     if (!isValidId || !customer) return;
     try {
-      // Fetch all transaction data
-      const purchasesData = await customerApi.getCustomerPurchases(customerId);
-      
-      // Build ledger entries
+      const ledgerReport = await customerApi.getCustomerLedger(customerId);
+
       interface LedgerEntry {
         date: Date;
         description: string;
@@ -355,107 +362,13 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
         balance: number;
       }
 
-      const ledgerEntries: LedgerEntry[] = [];
-      
-      // Opening balance
-      let runningBalance = customer.opening_balance || 0;
-      
-      // Collect all transactions
-      const transactions: Array<{
-        date: Date;
-        description: string;
-        type: 'sale' | 'sale_payment' | 'payment' | 'advance';
-        amount: number;
-        saleId?: number;
-      }> = [];
-
-      // Add sales (Debit - increases balance owed)
-      if (purchasesData.purchases) {
-        purchasesData.purchases.forEach((sale: any) => {
-          // Always add the full sale amount as Debit
-          transactions.push({
-            date: new Date(sale.created_at),
-            description: `Sale #${sale.id} - ${sale.items_count} items`,
-            type: 'sale',
-            amount: sale.total, // Full sale amount
-            saleId: sale.id,
-          });
-          
-          // If customer paid something at time of sale, add it as Credit
-          if (sale.amount_paid > 0) {
-            transactions.push({
-              date: new Date(sale.created_at),
-              description: `Payment on Sale #${sale.id} - ${sale.payment_method}`,
-              type: 'sale_payment',
-              amount: sale.amount_paid,
-              saleId: sale.id,
-            });
-          }
-        });
-      }
-
-      // Add payments (Credit - reduces balance owed)
-      if (customer.payments) {
-        customer.payments.forEach((payment: CustomerPayment) => {
-          transactions.push({
-            date: new Date(payment.payment_date),
-            description: `Payment received - ${payment.payment_method}${payment.reference_note ? ': ' + payment.reference_note : ''}`,
-            type: 'payment',
-            amount: payment.amount,
-          });
-        });
-      }
-
-      // Add advances (Debit - increases balance owed)
-      if (customer.notes) {
-        customer.notes
-          .filter((note: CustomerNote) => note.note_type === 'advance_payment')
-          .forEach((note: CustomerNote) => {
-            const amountMatch = note.note_text.match(/(?:rs|\$)\s*([0-9.,]+)/i);
-            const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '')) : 0;
-            const descriptionMatch = note.note_text.match(/: (.+)$/);
-            const description = descriptionMatch ? descriptionMatch[1] : note.note_text;
-            
-            transactions.push({
-              date: new Date(note.created_at),
-              description: `Advance Payment - ${description}`,
-              type: 'advance',
-              amount: amount,
-            });
-          });
-      }
-
-      // Sort by date (oldest first), then by type (sales before payments on same date)
-      transactions.sort((a, b) => {
-        const dateDiff = a.date.getTime() - b.date.getTime();
-        if (dateDiff !== 0) return dateDiff;
-        
-        // On same date, process in order: sale -> sale_payment -> payment
-        const typeOrder = { sale: 1, sale_payment: 2, payment: 3, advance: 4 };
-        return typeOrder[a.type] - typeOrder[b.type];
-      });
-
-      // Calculate running balance and create ledger entries
-      transactions.forEach(txn => {
-        let debit = 0;
-        let credit = 0;
-
-        if (txn.type === 'sale' || txn.type === 'advance') {
-          debit = txn.amount;
-          runningBalance += txn.amount;
-        } else if (txn.type === 'payment' || txn.type === 'sale_payment') {
-          credit = txn.amount;
-          runningBalance -= txn.amount;
-        }
-
-        ledgerEntries.push({
-          date: txn.date,
-          description: txn.description,
-          debit: debit,
-          credit: credit,
-          balance: runningBalance,
-        });
-      });
+      const ledgerEntries: LedgerEntry[] = ledgerReport.entries.map((entry) => ({
+        date: new Date(entry.date),
+        description: entry.description,
+        debit: entry.debit,
+        credit: entry.credit,
+        balance: entry.balance,
+      }));
 
       // Generate PDF
       const { default: jsPDF } = await import("jspdf");
@@ -489,7 +402,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       // Opening Balance
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      doc.text(`Opening Balance: ${formatCurrency(customer.opening_balance || 0)}`, 40, 155);
+      doc.text(`Opening Balance: ${formatCurrency(ledgerReport.opening_balance || 0)}`, 40, 155);
       
       // Ledger table
       const tableData = ledgerEntries.map(entry => [
@@ -565,8 +478,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.text(`Closing Balance:`, doc.internal.pageSize.getWidth() - 240, finalY + 80);
-      doc.setTextColor(runningBalance > 0 ? 220 : 0, runningBalance > 0 ? 53 : 150, runningBalance > 0 ? 69 : 0);
-      doc.text(formatCurrency(runningBalance), doc.internal.pageSize.getWidth() - 50, finalY + 80, { align: 'right' });
+      const closingBalance = ledgerReport.closing_balance || 0;
+      doc.setTextColor(closingBalance > 0 ? 220 : 0, closingBalance > 0 ? 53 : 150, closingBalance > 0 ? 69 : 0);
+      doc.text(formatCurrency(closingBalance), doc.internal.pageSize.getWidth() - 50, finalY + 80, { align: 'right' });
       doc.setTextColor(0, 0, 0);
 
       // Generate filename with store name and customer name
@@ -854,15 +768,33 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="bg-blue-50 p-4 rounded-md border border-blue-200">
+                <div className={`p-4 rounded-md border ${
+                  customer.outstanding_balance < 0 
+                    ? "bg-green-50 border-green-200" 
+                    : "bg-blue-50 border-blue-200"
+                }`}>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-blue-900">Outstanding Balance:</span>
-                    <span className="text-lg font-bold text-red-600">
-                      {formatCurrency(customer?.outstanding_balance || 0)}
+                    <span className={`text-sm font-medium ${
+                      customer.outstanding_balance < 0 ? "text-green-900" : "text-blue-900"
+                    }`}>
+                      {customer.outstanding_balance < 0 ? "Prepaid Credit:" : "Outstanding Balance:"}
+                    </span>
+                    <span className={`text-lg font-bold ${
+                      customer.outstanding_balance < 0 ? "text-green-600" : "text-red-600"
+                    }`}>
+                      {customer.outstanding_balance < 0 
+                        ? `+${formatCurrency(Math.abs(customer.outstanding_balance))}`
+                        : formatCurrency(customer?.outstanding_balance || 0)
+                      }
                     </span>
                   </div>
-                  <p className="text-xs text-blue-700">
-                    ℹ️ This payment will be automatically reconciled against the oldest unpaid invoices first.
+                  <p className={`text-xs ${
+                    customer.outstanding_balance < 0 ? "text-green-700" : "text-blue-700"
+                  }`}>
+                    {customer.outstanding_balance < 0 
+                      ? "✅ Customer has prepaid credit. Payments will add to this credit or can be refunded."
+                      : "ℹ️ This payment is recorded at customer level (ledger) to avoid ambiguous auto-distribution across invoices/advances."
+                    }
                   </p>
                 </div>
 
@@ -927,15 +859,51 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="bg-orange-50 p-4 rounded-md border border-orange-200">
+                <div className={`p-4 rounded-md border ${
+                  customer.outstanding_balance > 0 
+                    ? "bg-orange-50 border-orange-200" 
+                    : customer.outstanding_balance < 0
+                      ? "bg-green-50 border-green-200"
+                      : "bg-blue-50 border-blue-200"
+                }`}>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-orange-900">Current Balance:</span>
-                    <span className="text-lg font-bold text-red-600">
-                      {formatCurrency(customer?.outstanding_balance || 0)}
+                    <span className={`text-sm font-medium ${
+                      customer.outstanding_balance > 0 
+                        ? "text-orange-900" 
+                        : customer.outstanding_balance < 0
+                          ? "text-green-900"
+                          : "text-blue-900"
+                    }`}>
+                      Current Balance:
+                    </span>
+                    <span className={`text-lg font-bold ${
+                      customer.outstanding_balance > 0 
+                        ? "text-red-600" 
+                        : customer.outstanding_balance < 0
+                          ? "text-green-600"
+                          : "text-gray-900"
+                    }`}>
+                      {customer.outstanding_balance < 0 
+                        ? `Credit: +${formatCurrency(Math.abs(customer.outstanding_balance))}`
+                        : customer.outstanding_balance > 0
+                          ? `Udhar: ${formatCurrency(customer.outstanding_balance)}`
+                          : formatCurrency(0)
+                      }
                     </span>
                   </div>
-                  <p className="text-xs text-orange-700">
-                    ⚠️ This amount will be added to customer's balance (they will owe you)
+                  <p className={`text-xs ${
+                    customer.outstanding_balance > 0 
+                      ? "text-orange-700" 
+                      : customer.outstanding_balance < 0
+                        ? "text-green-700"
+                        : "text-blue-700"
+                  }`}>
+                    {customer.outstanding_balance > 0
+                      ? "⚠️ This amount will be added to customer's balance (they will owe you more)"
+                      : customer.outstanding_balance < 0
+                        ? "✅ Customer has prepaid credit. This will add to their credit balance."
+                        : "ℹ️ This amount will be added to customer's balance (they will owe you)"
+                    }
                   </p>
                 </div>
 
@@ -1055,9 +1023,12 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
               <span className="font-medium">{formatCurrency(financialSummary?.average_purchase_value || 0)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Outstanding Balance</span>
-              <Badge variant={customer.outstanding_balance > 0 ? "destructive" : "secondary"}>
-                {formatCurrency(customer.outstanding_balance)}
+              <span className="text-sm text-muted-foreground">
+                {customer.outstanding_balance < 0 ? "Prepaid Credit" : customer.outstanding_balance > 0 ? "Outstanding Balance" : "Balance"}
+              </span>
+              <Badge variant={customer.outstanding_balance > 0 ? "destructive" : customer.outstanding_balance < 0 ? "default" : "secondary"} 
+                     className={customer.outstanding_balance < 0 ? "bg-green-600" : ""}>
+                {customer.outstanding_balance < 0 ? formatCurrency(Math.abs(customer.outstanding_balance)) : formatCurrency(customer.outstanding_balance)}
               </Badge>
             </div>
             <div className="flex justify-between items-center">
@@ -1102,7 +1073,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
               disabled={!customer.phone || customer.outstanding_balance <= 0}
             >
               <DollarSign className="h-4 w-4 mr-2" />
-              Send Due Reminder
+              Send Udhar Reminder
             </Button>
             <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
               <DialogTrigger asChild>
@@ -1197,7 +1168,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                     
                     return advances.map((note: CustomerNote) => {
                       // Extract amount from note_text (format: "Paid $XX.XX on behalf via cash: description")
-                      const amountMatch = note.note_text.match(/\$([0-9.,]+)/);
+                      const amountMatch = note.note_text.match(/(?:rs|\$)\s*([0-9.,]+)/i);
                       const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '')) : 0;
                       const methodMatch = note.note_text.match(/via ([a-z_]+):/i);
                       const method = methodMatch ? methodMatch[1] : 'cash';

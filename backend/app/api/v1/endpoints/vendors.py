@@ -1,8 +1,8 @@
 from typing import Any, List, Optional
 import csv
 import io
-import requests
 import asyncio
+import requests
 from fastapi.responses import StreamingResponse
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, File, UploadFile, Query
 from sqlalchemy.orm import Session
@@ -394,77 +394,25 @@ def make_vendor_payment(
     background_tasks: BackgroundTasks,
     current_user = Depends(deps.get_current_user),
 ) -> Any:
-    """Make a lump sum payment to vendor, automatically distributed across unpaid purchases."""
+    """Record vendor payment at ledger level without auto-distributing across purchases."""
     vendor = db.query(Vendor).filter(Vendor.id == id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
     
     if payment_in.amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be positive")
-    
-    # Start with new payment + any existing prepaid credit
-    total_available = payment_in.amount + (vendor.prepaid_credit or 0)
-    credit_used = vendor.prepaid_credit or 0
-    
-    # Get all purchases with outstanding balance, ordered by creation date (oldest first)
-    purchases = db.query(Purchase)\
-        .filter(Purchase.vendor_id == id)\
-        .filter(Purchase.status.in_([PurchaseStatus.UNPAID, PurchaseStatus.PARTIAL]))\
-        .order_by(Purchase.created_at.asc())\
-        .all()
-    
-    remaining_payment = total_available
-    updated_purchases = []
-    
-    # If no outstanding purchases, store entire amount as credit
-    if not purchases:
-        vendor.prepaid_credit = total_available
-        db.add(vendor)
-        db.commit()
-        return {
-            "message": "No outstanding purchases. Amount stored as prepaid credit.",
-            "total_payment": payment_in.amount,
-            "previous_credit": credit_used,
-            "applied_amount": 0,
-            "new_prepaid_credit": vendor.prepaid_credit,
-            "updated_purchases": []
-        }
-    
-    # Distribute payment across purchases (FIFO - First In First Out)
-    for purchase in purchases:
-        if remaining_payment <= 0:
-            break
-        
-        balance = purchase.total_amount - purchase.amount_paid
-        
-        if balance <= 0:
-            continue
-        
-        # Apply payment to this purchase
-        payment_to_apply = min(remaining_payment, balance)
-        purchase.amount_paid += payment_to_apply
-        remaining_payment -= payment_to_apply
-        
-        # Update status
-        if purchase.amount_paid >= purchase.total_amount:
-            purchase.status = PurchaseStatus.PAID
-        elif purchase.amount_paid > 0:
-            purchase.status = PurchaseStatus.PARTIAL
-        
-        db.add(purchase)
-        updated_purchases.append({
-            "purchase_id": purchase.id,
-            "payment_applied": payment_to_apply,
-            "new_balance": purchase.total_amount - purchase.amount_paid
-        })
-    
-    # Store any remaining amount as prepaid credit
-    vendor.prepaid_credit = remaining_payment
+
+    # Ledger-level payable balance; keep behavior explicit (no auto clearing of existing advance).
+    previous_credit = max(0.0, accounting_service.get_vendor_advance_balance(db, id))
+    current_payable = max(0.0, accounting_service.get_vendor_balance(db, id))
+    applied_amount = min(float(payment_in.amount), current_payable)
+    new_prepaid_from_cash = max(0.0, float(payment_in.amount) - applied_amount)
+    prepaid_used = 0.0
+
+    # Keep prepaid credit as explicit wallet for vendor-level overpayments.
+    vendor.prepaid_credit = previous_credit + new_prepaid_from_cash
     db.add(vendor)
-    applied_amount = total_available - remaining_payment
-    prepaid_used = max(0.0, applied_amount - payment_in.amount)
-    cash_applied = min(payment_in.amount, applied_amount)
-    new_prepaid_from_cash = max(0.0, payment_in.amount - cash_applied)
+
     accounting_service.post_vendor_payment(
         db=db,
         vendor_id=id,
@@ -476,35 +424,84 @@ def make_vendor_payment(
     )
     db.commit()
 
-    # Calculate remaining balance
-    remaining_balance = db.query(Purchase).filter(
-        Purchase.vendor_id == id,
-        Purchase.status.in_([PurchaseStatus.UNPAID, PurchaseStatus.PARTIAL])
-    ).with_entities(func.sum(Purchase.total_amount - Purchase.amount_paid)).scalar() or 0
+    # Payable balance after payment from ledger perspective.
+    remaining_balance = max(0.0, current_payable - applied_amount)
     
     # Send WhatsApp notification if vendor has phone
     if vendor.phone:
         background_tasks.add_task(
-            asyncio.run,
-            send_vendor_payment_notification_async(
-                vendor.phone,
-                payment_in.amount,
-                remaining_balance,
-                vendor.name,
-            ),
+            send_vendor_payment_notification_async,
+            vendor.phone,
+            payment_in.amount,
+            remaining_balance,
+            vendor.name,
         )
     
     return {
         "message": "Payment applied successfully",
         "total_payment": payment_in.amount,
-        "previous_credit": credit_used,
-        "applied_amount": total_available - remaining_payment,
+        "previous_credit": previous_credit,
+        "prepaid_used": prepaid_used,
+        "applied_amount": applied_amount,
         "new_prepaid_credit": vendor.prepaid_credit,
-        "updated_purchases": updated_purchases
+        "updated_purchases": []
     }
 
-def send_vendor_payment_notification(phone: str, amount: float, balance: float, vendor_name: str):
-    """Send WhatsApp notification for vendor payment"""
+
+@router.post("/{id}/settle-balance")
+def settle_vendor_balance(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    settlement_in: vendor_schema.VendorSettlement,
+    current_user = Depends(deps.get_current_user),
+) -> Any:
+    """Settle vendor net balance to zero using an explicit accounting adjustment entry."""
+    vendor = db.query(Vendor).filter(Vendor.id == id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    reason = (settlement_in.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Settlement reason is required")
+
+    payable_balance = max(0.0, accounting_service.get_vendor_balance(db, id))
+    advance_balance = max(0.0, accounting_service.get_vendor_advance_balance(db, id))
+
+    if payable_balance == 0 and advance_balance == 0 and (vendor.prepaid_credit or 0) == 0:
+        return {
+            "message": "Vendor is already settled",
+            "settled_payable": 0.0,
+            "settled_advance": 0.0,
+            "new_payable_balance": 0.0,
+            "new_prepaid_credit": 0.0,
+        }
+
+    accounting_service.post_vendor_settlement(
+        db=db,
+        vendor_id=id,
+        payable_balance=payable_balance,
+        advance_balance=advance_balance,
+        reason=reason,
+        created_by=current_user.id,
+    )
+
+    # Keep denormalized field aligned with ledger settlement.
+    vendor.prepaid_credit = 0.0
+    db.add(vendor)
+    db.commit()
+    db.refresh(vendor)
+
+    return {
+        "message": "Vendor balance settled to zero",
+        "settled_payable": payable_balance,
+        "settled_advance": advance_balance,
+        "new_payable_balance": 0.0,
+        "new_prepaid_credit": vendor.prepaid_credit,
+    }
+
+async def send_vendor_payment_notification_async(phone: str, amount: float, balance: float, vendor_name: str):
+    """Send WhatsApp notification for vendor payment without blocking the request path."""
     try:
         # Normalize phone if needed
         if phone.startswith('0'):
@@ -517,18 +514,14 @@ def send_vendor_payment_notification(phone: str, amount: float, balance: float, 
                   f"Amount Paid: RS{amount:,.2f}\n" \
                   f"Remaining Balance: RS{balance:,.2f}\n\n" \
                   f"Transaction recorded successfully."
-                  
-        requests.post(
+        await asyncio.to_thread(
+            requests.post,
             "http://127.0.0.1:8000/api/v1/whatsapp/send",
             json={
                 "phone_number": phone,
                 "message": message
             },
-            timeout=2
+            timeout=2,
         )
     except Exception as e:
         print(f"Failed to send vendor payment notification: {e}")
-
-
-async def send_vendor_payment_notification_async(phone: str, amount: float, balance: float, vendor_name: str):
-    await asyncio.to_thread(send_vendor_payment_notification, phone, amount, balance, vendor_name)

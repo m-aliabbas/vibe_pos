@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, vendors, products, purchases, sales, files, reports, whatsapp, customers, returns, backup, accounting, hold_sales, settings
+from app.api.v1.endpoints import auth, users, vendors, products, purchases, sales, files, reports, whatsapp, customers, returns, backup, accounting, hold_sales, hold_purchases, settings
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -10,6 +10,7 @@ api_router.include_router(products.router, prefix="/products", tags=["products"]
 api_router.include_router(purchases.router, prefix="/purchases", tags=["purchases"])
 api_router.include_router(sales.router, prefix="/sales", tags=["sales"])
 api_router.include_router(hold_sales.router, prefix="/hold-sales", tags=["hold-sales"])
+api_router.include_router(hold_purchases.router, prefix="/hold-purchases", tags=["hold-purchases"])
 api_router.include_router(returns.router, prefix="/returns", tags=["returns"])
 api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
 api_router.include_router(files.router, tags=["files"])

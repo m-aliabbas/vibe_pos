@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import api, { vendorReportsApi } from '@/lib/api';
+import api, { reportsApi } from '@/lib/api';
 import { storeConfig, fetchStoreConfig } from '@/lib/store-config';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter, FileText } from "lucide-react";
@@ -67,6 +67,7 @@ export default function VendorDetailsPage() {
     } | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [storeInfo, setStoreInfo] = useState(storeConfig);
+    const [ledgerBalance, setLedgerBalance] = useState<number | null>(null);
     const [editVendor, setEditVendor] = useState({
         name: '',
         contact_name: '',
@@ -102,6 +103,9 @@ export default function VendorDetailsPage() {
 
             const purchasesRes = await api.get(`/purchases/vendor/${id}`);
             setPurchases(purchasesRes.data);
+
+            const ledgerRes = await reportsApi.getVendorLedger(parseInt(id as string));
+            setLedgerBalance(ledgerRes.closing_balance ?? null);
         } catch (error) {
             console.error("Failed to fetch details", error);
         } finally {
@@ -138,6 +142,29 @@ export default function VendorDetailsPage() {
         } catch (error: any) {
             console.error("Failed to process payment", error);
             alert(error?.response?.data?.detail || "Failed to process payment");
+        }
+    };
+
+    const handleSettleBalance = async () => {
+        if (!vendor) return;
+        const reason = window.prompt("Enter settlement reason (required):", "Balance adjustment");
+        if (!reason || !reason.trim()) {
+            alert("Settlement reason is required");
+            return;
+        }
+
+        try {
+            const response = await api.post(`/vendors/${id}/settle-balance`, {
+                reason: reason.trim(),
+            });
+            const data = response.data || {};
+            alert(
+                `Balance settled.\nSettled Payable: rs ${(data.settled_payable || 0).toFixed(2)}\nSettled Advance: rs ${(data.settled_advance || 0).toFixed(2)}`
+            );
+            fetchData();
+        } catch (error: any) {
+            console.error("Failed to settle balance", error);
+            alert(error?.response?.data?.detail || "Failed to settle balance");
         }
     };
 
@@ -191,11 +218,11 @@ export default function VendorDetailsPage() {
     const handleVendorReportExport = async () => {
         if (!id) return;
         try {
-            const blob = await vendorReportsApi.exportVendorReport(parseInt(id as string));
+            const blob = await reportsApi.exportVendorLedger(parseInt(id as string));
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `vendor_report_${id}.csv`;
+            a.download = `vendor_ledger_${id}.csv`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -206,68 +233,11 @@ export default function VendorDetailsPage() {
         }
     };
 
-    const parseCsv = (text: string) => {
-        const rows: string[][] = [];
-        let row: string[] = [];
-        let current = "";
-        let inQuotes = false;
-
-        const pushCell = () => {
-            row.push(current);
-            current = "";
-        };
-
-        const pushRow = () => {
-            if (row.length > 0 || current.length > 0) {
-                pushCell();
-                rows.push(row);
-                row = [];
-            }
-        };
-
-        for (let i = 0; i < text.length; i++) {
-            const char = text[i];
-            const next = text[i + 1];
-
-            if (char === '"') {
-                if (inQuotes && next === '"') {
-                    current += '"';
-                    i++;
-                } else {
-                    inQuotes = !inQuotes;
-                }
-                continue;
-            }
-
-            if (char === ',' && !inQuotes) {
-                pushCell();
-                continue;
-            }
-
-            if ((char === '\n' || char === '\r') && !inQuotes) {
-                if (char === '\r' && next === '\n') {
-                    i++;
-                }
-                pushRow();
-                continue;
-            }
-
-            current += char;
-        }
-
-        pushRow();
-        return rows.filter((r) => r.length > 0);
-    };
-
     const handleVendorReportPdf = async () => {
         if (!id || !vendor) return;
         try {
-            // Fetch the CSV report which includes individual payment transactions
-            const response = await api.get(`/vendors/${id}/report`, { responseType: "text" });
-            const csvText = response.data as string;
-            const rows = parseCsv(csvText);
-            
-            if (rows.length === 0) {
+            const ledger = await reportsApi.getVendorLedger(parseInt(id as string));
+            if (!ledger?.entries || ledger.entries.length === 0) {
                 alert("No data to export");
                 return;
             }
@@ -281,75 +251,14 @@ export default function VendorDetailsPage() {
                 balance: number;
             }
 
-            const ledgerEntries: LedgerEntry[] = [];
+            const ledgerEntries: LedgerEntry[] = ledger.entries.map((entry: any) => ({
+                date: new Date(entry.date),
+                description: entry.description,
+                debit: Number(entry.debit || 0),
+                credit: Number(entry.credit || 0),
+                balance: Number(entry.balance || 0),
+            }));
             const formatCurrency = (amount: number) => `rs ${amount.toFixed(2)}`;
-            
-            // Opening balance (what we owe vendor from start)
-            let runningBalance = vendor.opening_balance || 0;
-            
-            // Parse CSV rows (skip header row)
-            const transactions: Array<{
-                date: Date;
-                description: string;
-                type: string;
-                amount: number;
-            }> = [];
-
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (row.length < 4) continue;
-                
-                const type = row[0]; // "Purchase" or "Payment"
-                const dateStr = row[1];
-                const reference = row[2];
-                const amountStr = row[3];
-                
-                if (!dateStr || !amountStr) continue;
-                
-                const date = new Date(dateStr);
-                const amount = parseFloat(amountStr);
-                
-                if (isNaN(amount) || isNaN(date.getTime())) continue;
-                
-                transactions.push({
-                    date: date,
-                    description: reference || type,
-                    type: type,
-                    amount: amount,
-                });
-            }
-
-            // Sort by date (oldest first)
-            transactions.sort((a, b) => {
-                const dateDiff = a.date.getTime() - b.date.getTime();
-                if (dateDiff !== 0) return dateDiff;
-                // On same date, purchases before payments
-                if (a.type === 'Purchase' && b.type === 'Payment') return -1;
-                if (a.type === 'Payment' && b.type === 'Purchase') return 1;
-                return 0;
-            });
-
-            // Calculate running balance and create ledger entries
-            transactions.forEach(txn => {
-                let debit = 0;
-                let credit = 0;
-
-                if (txn.type === 'Purchase') {
-                    credit = txn.amount; // We owe more
-                    runningBalance += txn.amount;
-                } else if (txn.type === 'Payment') {
-                    debit = txn.amount; // We pay and reduce what we owe
-                    runningBalance -= txn.amount;
-                }
-
-                ledgerEntries.push({
-                    date: txn.date,
-                    description: txn.description,
-                    debit: debit,
-                    credit: credit,
-                    balance: runningBalance,
-                });
-            });
 
             // Generate PDF
             const { default: jsPDF } = await import("jspdf");
@@ -383,7 +292,7 @@ export default function VendorDetailsPage() {
             // Opening Balance
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
-            doc.text(`Opening Balance: ${formatCurrency(vendor.opening_balance || 0)}`, 40, 155);
+            doc.text(`Opening Balance: ${formatCurrency(Number(ledger.opening_balance || 0))}`, 40, 155);
             
             // Ledger table
             const tableData = ledgerEntries.map(entry => [
@@ -460,8 +369,9 @@ export default function VendorDetailsPage() {
             doc.setFont('helvetica', 'bold');
             doc.setFontSize(11);
             doc.text(`Outstanding Balance:`, doc.internal.pageSize.getWidth() - 240, finalY + 80);
-            doc.setTextColor(runningBalance > 0 ? 220 : 0, runningBalance > 0 ? 53 : 0, runningBalance > 0 ? 69 : 0);
-            doc.text(formatCurrency(runningBalance), doc.internal.pageSize.getWidth() - 50, finalY + 80, { align: 'right' });
+            const closingBalance = Number(ledger.closing_balance || 0);
+            doc.setTextColor(closingBalance > 0 ? 220 : 0, closingBalance > 0 ? 53 : 0, closingBalance > 0 ? 69 : 0);
+            doc.text(formatCurrency(closingBalance), doc.internal.pageSize.getWidth() - 50, finalY + 80, { align: 'right' });
             doc.setTextColor(0, 0, 0);
 
             // Generate filename with store name and vendor name
@@ -503,7 +413,10 @@ export default function VendorDetailsPage() {
     if (loading) return <div>Loading...</div>;
     if (!vendor) return <div>Vendor not found</div>;
 
-    const totalBalance = calculateBalance(purchases);
+    const purchaseBalance = calculateBalance(purchases);
+    const totalBalance = ledgerBalance !== null ? Math.max(0, ledgerBalance) : purchaseBalance;
+    const ledgerAdvance = ledgerBalance !== null ? Math.max(0, -ledgerBalance) : 0;
+    const effectivePrepaidCredit = Math.max(vendor.prepaid_credit || 0, ledgerAdvance);
 
     // Filter purchases based on status
     const filteredPurchases = statusFilter === 'all'
@@ -623,7 +536,7 @@ export default function VendorDetailsPage() {
                     <Button variant="outline" onClick={() => router.push(`/inventory/purchase?vendorId=${vendor.id}`)}>
                         <ShoppingCart className="mr-2 h-4 w-4" /> New Purchase
                     </Button>
-                    {(totalBalance > 0 || vendor.prepaid_credit > 0) && (
+                    {(totalBalance > 0 || effectivePrepaidCredit > 0) && (
                         <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
                             <DialogTrigger asChild>
                                 <Button className="bg-green-600 hover:bg-green-700">
@@ -634,7 +547,7 @@ export default function VendorDetailsPage() {
                                 <DialogHeader>
                                     <DialogTitle>Make Payment to {vendor.name}</DialogTitle>
                                     <DialogDescription>
-                                        Enter payment amount. It will be automatically distributed across unpaid purchases (oldest first).
+                                        Enter payment amount. It will be recorded at vendor-ledger level without auto-distributing across purchases.
                                     </DialogDescription>
                                 </DialogHeader>
                                 {!paymentResult ? (
@@ -647,14 +560,14 @@ export default function VendorDetailsPage() {
                                                         rs {totalBalance.toFixed(2)}
                                                     </span>
                                                 </div>
-                                                {vendor.prepaid_credit > 0 && (
+                                                {effectivePrepaidCredit > 0 && (
                                                     <div className="flex justify-between items-center mb-2 text-sm">
                                                         <span className="text-blue-900">Existing Credit:</span>
-                                                        <span className="font-bold text-green-600">rs {vendor.prepaid_credit.toFixed(2)}</span>
+                                                        <span className="font-bold text-green-600">rs {effectivePrepaidCredit.toFixed(2)}</span>
                                                     </div>
                                                 )}
                                                 <p className="text-xs text-blue-700">
-                                                    ℹ️ This payment will be automatically reconciled against the oldest unpaid purchases first.
+                                                    ℹ️ This payment is recorded at vendor level (ledger) to avoid ambiguous auto-distribution across purchases.
                                                 </p>
                                             </div>
                                             <div className="grid gap-2">
@@ -691,14 +604,14 @@ export default function VendorDetailsPage() {
                                                         <span className="text-gray-600">Payment Amount:</span>
                                                         <span className="font-bold">rs {paymentResult.total_payment.toFixed(2)}</span>
                                                     </div>
-                                                    {paymentResult.previous_credit > 0 && (
+                                                    {paymentResult.prepaid_used > 0 && (
                                                         <div className="flex justify-between">
                                                             <span className="text-gray-600">Previous Credit Used:</span>
-                                                            <span className="font-medium text-blue-600">rs {paymentResult.previous_credit.toFixed(2)}</span>
+                                                            <span className="font-medium text-blue-600">rs {paymentResult.prepaid_used.toFixed(2)}</span>
                                                         </div>
                                                     )}
                                                     <div className="flex justify-between">
-                                                        <span className="text-gray-600">Applied to Purchases:</span>
+                                                        <span className="text-gray-600">Applied to Payable (Ledger):</span>
                                                         <span className="font-medium text-green-600">rs {paymentResult.applied_amount.toFixed(2)}</span>
                                                     </div>
                                                     {paymentResult.new_prepaid_credit > 0 && (
@@ -710,12 +623,12 @@ export default function VendorDetailsPage() {
                                                 </div>
                                                 {paymentResult.new_prepaid_credit > 0 && (
                                                     <p className="text-xs text-blue-700 mt-2 bg-blue-100 p-2 rounded">
-                                                        💡 The prepaid credit will be automatically applied to future purchases.
+                                                        💡 Prepaid credit is kept at vendor ledger level and can be applied manually when needed.
                                                     </p>
                                                 )}
                                             </div>
                                             <div>
-                                                <h4 className="font-medium text-sm mb-2">Updated Purchases:</h4>
+                                                <h4 className="font-medium text-sm mb-2">Purchase Allocation:</h4>
                                                 {paymentResult.updated_purchases && paymentResult.updated_purchases.length > 0 ? (
                                                     <div className="space-y-2">
                                                         {paymentResult.updated_purchases.map((up: any) => (
@@ -732,7 +645,7 @@ export default function VendorDetailsPage() {
                                                     </div>
                                                 ) : (
                                                     <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
-                                                        No outstanding purchases. Amount stored as prepaid credit.
+                                                        No automatic purchase allocation performed for this payment.
                                                     </p>
                                                 )}
                                             </div>
@@ -746,6 +659,11 @@ export default function VendorDetailsPage() {
                                 )}
                             </DialogContent>
                         </Dialog>
+                    )}
+                    {(totalBalance > 0 || effectivePrepaidCredit > 0) && (
+                        <Button variant="secondary" onClick={handleSettleBalance}>
+                            Clear Balance to 0
+                        </Button>
                     )}
 
                     <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
@@ -833,13 +751,13 @@ export default function VendorDetailsPage() {
                 </Card>
             </div>
 
-            {vendor.prepaid_credit > 0 && (
+            {effectivePrepaidCredit > 0 && (
                 <Card className="border-blue-200 bg-blue-50">
                     <CardContent className="flex items-center justify-between p-6">
                         <div>
                             <h3 className="font-semibold text-blue-900">💰 Prepaid Credit Available</h3>
                             <p className="text-sm text-blue-700">
-                                This vendor has a prepaid balance of <span className="font-bold">${vendor.prepaid_credit.toFixed(2)}</span> that will be automatically applied to future purchases.
+                                This vendor has a prepaid balance of <span className="font-bold">${effectivePrepaidCredit.toFixed(2)}</span> tracked at ledger level.
                             </p>
                         </div>
                     </CardContent>

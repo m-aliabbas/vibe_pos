@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
-import { Plus, Phone, Mail, MapPin, Download } from "lucide-react";
+import { Plus, Phone, Mail, MapPin, Download, ShoppingCart } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -178,6 +178,12 @@ export default function VendorsPage() {
                     <p className="text-gray-500 mt-1">Manage your suppliers and partners.</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button variant="outline" onClick={() => router.push('/inventory/purchase')}>
+                        <ShoppingCart className="mr-2 h-4 w-4" /> New Purchase
+                    </Button>
+                    <Button variant="outline" onClick={() => router.push('/inventory/purchase?held=1')}>
+                        <ShoppingCart className="mr-2 h-4 w-4" /> Held Purchases
+                    </Button>
                     <Button variant="outline" onClick={handleDownloadCsv}>
                         <Download className="mr-2 h-4 w-4" /> Download CSV
                     </Button>

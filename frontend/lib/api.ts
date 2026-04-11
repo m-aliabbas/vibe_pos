@@ -164,6 +164,32 @@ export interface HoldSaleResponse {
     updated_at?: string;
 }
 
+export interface HoldPurchasePayload {
+    vendorId: string;
+    vendorSearch: string;
+    amountPaid: string;
+    items: Array<{
+        product_id: number;
+        product_name: string;
+        product_sku?: string | null;
+        quantity: number;
+        unit_cost: number;
+        total_cost: number;
+        expiry_date?: string | null;
+        selling_price?: number | null;
+        update_selling_price?: boolean;
+    }>;
+}
+
+export interface HoldPurchaseResponse {
+    id: number;
+    user_id: number;
+    label?: string;
+    payload: HoldPurchasePayload;
+    created_at: string;
+    updated_at?: string;
+}
+
 // Customer API functions
 export const customerApi = {
     // List customers with optional search
@@ -374,6 +400,20 @@ export const holdSalesApi = {
     },
     delete: async (id: number): Promise<void> => {
         await api.delete(`/hold-sales/${id}`);
+    },
+};
+
+export const holdPurchasesApi = {
+    list: async (): Promise<HoldPurchaseResponse[]> => {
+        const response = await api.get('/hold-purchases/');
+        return response.data;
+    },
+    create: async (payload: { label?: string; payload: HoldPurchasePayload }): Promise<HoldPurchaseResponse> => {
+        const response = await api.post('/hold-purchases/', payload);
+        return response.data;
+    },
+    delete: async (id: number): Promise<void> => {
+        await api.delete(`/hold-purchases/${id}`);
     },
 };
 

@@ -17,6 +17,10 @@ class VendorUpdate(VendorBase):
 class VendorPayment(BaseModel):
     amount: float
 
+
+class VendorSettlement(BaseModel):
+    reason: str
+
 class Vendor(VendorBase):
     id: int
     opening_balance: float

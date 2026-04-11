@@ -92,27 +92,48 @@ class ConnectionStatus(BaseModel):
     message: str
     pairing_code: Optional[str] = None
 
+# Helper function to safely update connection status (works with both dict and Manager.dict)
+def set_status(
+    *,
+    connected: Optional[bool] = None,
+    message: Optional[str] = None,
+    pairing_code: Optional[str] = None,
+):
+    if connected is not None:
+        connection_status["connected"] = connected
+    if message is not None:
+        connection_status["message"] = message
+    if pairing_code is not None:
+        connection_status["pairing_code"] = pairing_code
+
 # Event handlers
 @client.event(ConnectedEv)
 def on_connected(client: NewClient, _: ConnectedEv):
     print("✅ WhatsApp Connection Established! You are now online.")
-    connection_status["connected"] = True
-    connection_status["message"] = "Connected successfully"
-    connection_status["pairing_code"] = None
+    set_status(
+        connected=True,
+        message="Connected successfully",
+        pairing_code=None,
+    )
 
 @client.event(PairStatusEv)
 def on_pair_status(client: NewClient, pair: PairStatusEv):
     if pair.ID.User:
         print(f"✅ WhatsApp Logged in as: {pair.ID.User}")
-        connection_status["connected"] = True
-        connection_status["message"] = f"Logged in as: {pair.ID.User}"
+        set_status(
+            connected=True,
+            message=f"Logged in as: {pair.ID.User}",
+            pairing_code=None,
+        )
 
 @client.event(LoggedOutEv)
 def on_logged_out(client: NewClient, evt: LoggedOutEv):
     print(f"❌ WhatsApp Disconnected: {evt.Reason}")
-    connection_status["connected"] = False
-    connection_status["message"] = f"Disconnected: {evt.Reason}"
-    connection_status["pairing_code"] = None
+    set_status(
+        connected=False,
+        message=f"Disconnected: {evt.Reason}",
+        pairing_code=None,
+    )
 
 @client.event(MessageEv)
 def on_message(client: NewClient, message: MessageEv):
@@ -186,51 +207,106 @@ def on_message(client: NewClient, message: MessageEv):
                         client.reply_message(error_reply, message)
 
 
+def connect_client_loop():
+    """
+    Keep Neonize connection loop running in a background thread.
+    """
+    try:
+        client.connect()
+    except Exception as e:
+        print(f"❌ Error in WhatsApp connect loop: {e}")
+        set_status(
+            connected=False,
+            message=f"Connection error: {str(e)}",
+            pairing_code=None,
+        )
+
+
 # Background task to run the WhatsApp client
 def run_whatsapp_client():
+    """
+    Start the connect loop first, then request pairing code if needed.
+    This avoids the 'client is nil' race seen when PairPhone is called
+    before the underlying client is ready.
+    """
     try:
         phone_number = os.getenv("WHATSAPP_PHONE", "923025114945")
         use_qr = os.getenv("USE_QR", "0") == "1"
         
+        print(f"📞 Phone number for authentication: {phone_number}")
+        
+        # Start client connection loop first
+        connect_thread = threading.Thread(target=connect_client_loop, daemon=True)
+        connect_thread.start()
+        
+        # Give Neonize a moment to initialize its internal client
+        time.sleep(2)
+        
+        # If already connected/logged in from existing session, no need to pair
+        is_logged_in = bool(getattr(client, "is_logged_in", False))
+        if connection_status.get("connected") or is_logged_in:
+            set_status(
+                connected=True,
+                message="Connected using existing session",
+                pairing_code=None,
+            )
+            print("✅ Existing session detected. No new pairing required.")
+            return
+        
         if use_qr:
-            print("📱 WhatsApp: Using QR Code authentication")
-            print("📱 Scan the QR code below with WhatsApp:")
-            print("")
-            client.connect()
-            connection_status["message"] = "Using QR code authentication"
-        else:
-            print(f"📞 WhatsApp: Attempting pairing code authentication for: {phone_number}")
-            print("💡 Tip: If rate limited, restart with: USE_QR=1")
+            print("📱 Using QR Code authentication (USE_QR enabled)")
+            print("📱 Scan the QR code in the terminal")
+            set_status(
+                connected=False,
+                message="Waiting for QR code scan",
+                pairing_code=None,
+            )
+            return
+        
+        print(f"📞 Attempting pairing code authentication for: {phone_number}")
+        print("💡 Tip: If you get rate limited, restart with: USE_QR=1 python main.py")
+        
+        try:
+            pairing_code = client.PairPhone(
+                phone_number,
+                show_push_notification=True,
+            )
+            pairing_code = str(pairing_code)
             
-            try:
-                pairing_code = client.PairPhone(
-                    phone_number,
-                    show_push_notification=True
+            print(f"🔑 Your pairing code: {pairing_code}")
+            print("Enter this code in WhatsApp → Linked Devices → Link with phone number")
+            
+            set_status(
+                connected=False,
+                message="Pairing code generated. Complete linking from WhatsApp.",
+                pairing_code=pairing_code,
+            )
+            
+        except Exception as pair_error:
+            error_msg = str(pair_error)
+            print(f"❌ Pairing error: {error_msg}")
+            
+            if "429" in error_msg or "rate" in error_msg.lower() or "overlimit" in error_msg.lower():
+                print("")
+                print("⚠️ Rate limit detected! Falling back to QR code authentication...")
+                print("📱 Scan the QR code in the terminal")
+                print("")
+                
+                set_status(
+                    connected=False,
+                    message="Waiting for QR code scan (pairing rate limited)",
+                    pairing_code=None,
                 )
-                
-                print(f"🔑 WhatsApp Pairing Code: {pairing_code}")
-                print("Enter this code in WhatsApp → Linked Devices → Link with phone number")
-                
-                client.connect()
-                
-            except Exception as pair_error:
-                error_msg = str(pair_error)
-                
-                if "429" in error_msg or "rate" in error_msg.lower() or "overlimit" in error_msg.lower():
-                    print("")
-                    print("⚠️  Rate limit detected! Falling back to QR Code...")
-                    print("📱 Scan the QR code below with WhatsApp:")
-                    print("")
-                    
-                    client.connect()
-                    connection_status["message"] = "Using QR code authentication (rate limited)"
-                else:
-                    raise pair_error
+            else:
+                raise pair_error
                 
     except Exception as e:
-        print(f"❌ WhatsApp Error: {e}")
-        connection_status["connected"] = False
-        connection_status["message"] = f"Connection error: {str(e)}"
+        print(f"❌ Error connecting WhatsApp client: {e}")
+        set_status(
+            connected=False,
+            message=f"Connection error: {str(e)}",
+            pairing_code=None,
+        )
 
 def run_whatsapp_worker(status_proxy, task_queue):
     global connection_status

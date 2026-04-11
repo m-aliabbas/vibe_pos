@@ -100,6 +100,40 @@ def _convert_utc_to_pakistan(utc_dt: datetime) -> datetime:
     return utc_dt.astimezone(pakistan_tz)
 
 
+def _build_whatsapp_invoice_caption(sale: Sale) -> str:
+    """Build a WhatsApp caption that mirrors invoice subtotal/discount totals."""
+    gross_subtotal = 0.0
+    total_item_discount = 0.0
+    for item in sale.items:
+        unit_price = float(getattr(item, "unit_price", 0.0) or 0.0)
+        quantity = float(getattr(item, "quantity", 0.0) or 0.0)
+        gross_subtotal += unit_price * quantity
+        item_discount = getattr(item, "item_discount", 0.0) or 0.0
+        total_item_discount += item_discount
+
+    total_discount = (sale.discount or 0.0) + total_item_discount
+    after_discount = gross_subtotal - total_discount
+
+    lines = [
+        f"Invoice #{str(sale.id).zfill(6)}",
+        f"Subtotal: RS {gross_subtotal:.2f}",
+    ]
+
+    if total_discount > 0:
+        lines.append(f"Discount: -RS {total_discount:.2f}")
+        lines.append(f"After Discount: RS {after_discount:.2f}")
+    if sale.tax and sale.tax > 0:
+        lines.append(f"Tax: RS {sale.tax:.2f}")
+    if sale.delivery_charges and sale.delivery_charges > 0:
+        lines.append(f"Delivery: RS {sale.delivery_charges:.2f}")
+
+    lines.extend([
+        f"Total: RS {sale.total:.2f}",
+        "Thank you for your business!",
+    ])
+    return "\n".join(lines)
+
+
 def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     """Render an invoice image with consistent design across OSes."""
     from PIL import ImageDraw
@@ -405,6 +439,17 @@ def resolve_sale_customer(db: Session, sale_in: SaleCreate):
         customer = db.query(Customer).filter(Customer.phone == normalized_phone).first()
 
         if not customer:
+            # If phone doesn't match but name uniquely matches an existing customer,
+            # link to that record to keep sale and ledger tied to the same customer.
+            if sale_in.customer_name and sale_in.customer_name.strip():
+                exact_name = sale_in.customer_name.strip().lower()
+                name_matches = db.query(Customer).filter(
+                    func.lower(Customer.name) == exact_name
+                ).all()
+                if len(name_matches) == 1:
+                    customer = name_matches[0]
+
+        if not customer:
             last_customer = db.query(Customer).filter(
                 Customer.customer_id.like("CUST%")
             ).order_by(Customer.id.desc()).first()
@@ -431,6 +476,16 @@ def resolve_sale_customer(db: Session, sale_in: SaleCreate):
 
         customer_ref_id = customer.id
         is_walkin = False
+    elif sale_in.customer_name and sale_in.customer_name.strip():
+        # Fallback for named customers entered without phone/id.
+        exact_name = sale_in.customer_name.strip().lower()
+        name_matches = db.query(Customer).filter(
+            func.lower(Customer.name) == exact_name
+        ).all()
+        if len(name_matches) == 1:
+            customer = name_matches[0]
+            customer_ref_id = customer.id
+            is_walkin = False
 
     return customer, customer_ref_id, is_walkin, normalized_phone
 
@@ -464,7 +519,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         payload = {
             "phone_number": phone_number,
             "image_url": str(file_path.absolute()),
-            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: RS {sale.total:.2f}\nThank you for your business!"
+            "caption": _build_whatsapp_invoice_caption(sale)
         }
         
         response = requests.post(
@@ -622,6 +677,12 @@ def create_sale(
     change_amount = max(0, amount_paid - total)
     
     customer, customer_ref_id, is_walkin, normalized_phone = resolve_sale_customer(db, sale_in)
+    if customer and customer_ref_id:
+        customer.outstanding_balance = accounting_service.get_customer_balance(
+            db,
+            customer.id,
+            customer.opening_balance or 0.0,
+        )
 
     # Enforce credit limit
     if customer and amount_due > 0:
@@ -702,9 +763,25 @@ def create_sale(
     if customer and customer_ref_id:
         customer.total_purchases += 1
         customer.total_spent += total
-        # Add to outstanding balance if there's amount due (udhar)
-        if amount_due > 0:
-            customer.outstanding_balance += amount_due
+        
+        # Auto-apply prepaid credit if customer has negative balance (advance payment)
+        if customer.outstanding_balance < 0:
+            credit_available = abs(customer.outstanding_balance)
+            credit_to_apply = min(credit_available, amount_due)
+            
+            if credit_to_apply > 0:
+                # Apply prepaid credit to this sale
+                db_sale.amount_paid += credit_to_apply
+                db_sale.amount_due -= credit_to_apply
+                db_sale.change_amount = max(0, db_sale.amount_paid - db_sale.total)
+                
+                # Reduce prepaid credit (move balance closer to 0)
+                customer.outstanding_balance += credit_to_apply
+        
+        # Add remaining amount due to outstanding balance (udhar)
+        if db_sale.amount_due > 0:
+            customer.outstanding_balance += db_sale.amount_due
+            
         customer.updated_at = datetime.utcnow()
         db.add(customer)
     
@@ -773,9 +850,14 @@ def update_sale(
     if old_customer_id:
         old_customer = db.query(Customer).filter(Customer.id == old_customer_id).first()
         if old_customer:
+            old_customer.outstanding_balance = accounting_service.get_customer_balance(
+                db,
+                old_customer.id,
+                old_customer.opening_balance or 0.0,
+            )
             old_customer.total_purchases = max(0, (old_customer.total_purchases or 0) - 1)
             old_customer.total_spent = max(0.0, (old_customer.total_spent or 0.0) - old_total)
-            old_customer.outstanding_balance = max(0.0, (old_customer.outstanding_balance or 0.0) - old_due)
+            old_customer.outstanding_balance = (old_customer.outstanding_balance or 0.0) - old_due
             old_customer.updated_at = datetime.utcnow()
             db.add(old_customer)
 
@@ -845,6 +927,12 @@ def update_sale(
     change_amount = max(0, amount_paid - total)
 
     customer, customer_ref_id, is_walkin, normalized_phone = resolve_sale_customer(db, sale_in)
+    if customer and customer_ref_id:
+        customer.outstanding_balance = accounting_service.get_customer_balance(
+            db,
+            customer.id,
+            customer.opening_balance or 0.0,
+        )
 
     # Enforce credit limit (account for balance reduction from old due on this sale)
     if customer and amount_due > 0:
@@ -1089,7 +1177,7 @@ def send_invoice(
         payload = {
             "phone_number": normalized_phone,
             "image_url": str(file_path.absolute()),
-            "caption": f"Invoice #{str(sale.id).zfill(6)} - Total: RS {sale.total:.2f}\nThank you for your business!"
+            "caption": _build_whatsapp_invoice_caption(sale)
         }
         
         response = requests.post(

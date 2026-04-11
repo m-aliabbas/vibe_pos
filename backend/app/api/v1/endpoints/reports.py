@@ -13,6 +13,7 @@ from app.models.product import Product, ProductVariation
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.vendor import Vendor
 from app.models.customer import Customer
+from app.models.pos_return import PosReturn
 from app.models.accounting import JournalEntry, JournalLine, Account
 from app.models.user import User, UserRole
 from app.services import accounting as accounting_service
@@ -1154,7 +1155,7 @@ def get_customer_ledger(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
-    """Customer ledger based on Accounts Receivable journal lines."""
+    """Customer ledger with AR journal lines plus informational sale entries."""
     customer = db.query(Customer).filter(Customer.id == customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -1167,7 +1168,30 @@ def get_customer_ledger(
     if not ar_account:
         raise HTTPException(status_code=500, detail="Accounts Receivable not configured")
 
-    customer_sales = db.query(Sale.id).filter(Sale.customer_ref_id == customer_id).subquery()
+    # Match sales by explicit customer link and by legacy/unlinked phone match.
+    digits = "".join(ch for ch in (customer.phone or "") if ch.isdigit())
+    if digits.startswith("92") and len(digits) > 10:
+        digits = digits[2:]
+    if digits.startswith("0") and len(digits) > 10:
+        digits = digits[1:]
+    if len(digits) > 10:
+        digits = digits[-10:]
+
+    phone_variants: List[str] = []
+    if digits:
+        phone_variants = [digits, f"0{digits}", f"92{digits}", f"+92{digits}"]
+
+    sale_filters = [Sale.customer_ref_id == customer_id]
+    if phone_variants:
+        sale_filters.append(
+            and_(
+                Sale.customer_ref_id.is_(None),
+                Sale.customer_phone.in_(phone_variants),
+            )
+        )
+
+    customer_sales_query = db.query(Sale.id).filter(or_(*sale_filters))
+    customer_sales = customer_sales_query.subquery()
 
     base_query = db.query(JournalLine, JournalEntry).join(
         JournalEntry, JournalEntry.id == JournalLine.entry_id
@@ -1197,6 +1221,45 @@ def get_customer_ledger(
         JournalLine.id.asc(),
     ).all()
 
+    aggregated_rows = {}
+    for line, entry in rows:
+        row = aggregated_rows.get(entry.id)
+        if not row:
+            row = {
+                "entry": entry,
+                "debit": 0.0,
+                "credit": 0.0,
+            }
+            aggregated_rows[entry.id] = row
+        row["debit"] += float(line.debit or 0.0)
+        row["credit"] += float(line.credit or 0.0)
+
+    sales_rows = db.query(Sale.id, Sale.created_at, Sale.total, Sale.amount_paid, Sale.amount_due).filter(
+        Sale.id.in_(customer_sales_query)
+    ).filter(
+        Sale.created_at >= start,
+        Sale.created_at <= end,
+    ).all()
+
+    returns_query = db.query(
+        PosReturn.id,
+        PosReturn.created_at,
+        PosReturn.refund_amount,
+        PosReturn.sale_id,
+    ).filter(
+        PosReturn.created_at >= start,
+        PosReturn.created_at <= end,
+    ).filter(
+        or_(
+            PosReturn.sale_id.in_(customer_sales_query),
+            and_(
+                PosReturn.customer_phone.isnot(None),
+                PosReturn.customer_phone.in_(phone_variants),
+            ) if phone_variants else False,
+        )
+    )
+    returns_rows = returns_query.all()
+
     running_balance = opening_balance
     entries: List[LedgerEntry] = []
 
@@ -1209,15 +1272,57 @@ def get_customer_ledger(
             balance=running_balance,
         ))
 
+    sale_ids_in_journal = set()
+    return_ids_in_journal = set()
+    journal_events = []
     for line, entry in rows:
-        debit = line.debit or 0.0
-        credit = line.credit or 0.0
+        sale_id = line.sale_id or entry.source_id
+        if sale_id:
+            sale_ids_in_journal.add(sale_id)
+        return_id = line.return_id or (entry.source_id if entry.source_type == "return" else None)
+        if return_id:
+            return_ids_in_journal.add(return_id)
+        journal_events.append((entry.entry_date, 0, {
+            "description": entry.description,
+            "source_type": entry.source_type,
+            "source_id": entry.source_id,
+            "debit": line.debit or 0.0,
+            "credit": line.credit or 0.0,
+        }))
+
+    info_events = []
+    for sale_id, created_at, total, amount_paid, amount_due in sales_rows:
+        if sale_id in sale_ids_in_journal:
+            continue
+        info_events.append((created_at, 1, {
+            "description": f"Sale #{sale_id} (Paid {amount_paid:.2f}, Due {amount_due:.2f}, Total {total:.2f})",
+            "source_type": "sale",
+            "source_id": sale_id,
+            "debit": 0.0,
+            "credit": 0.0,
+        }))
+
+    for return_id, created_at, refund_amount, sale_id in returns_rows:
+        if return_id in return_ids_in_journal:
+            continue
+        sale_part = f" for Sale #{sale_id}" if sale_id else ""
+        info_events.append((created_at, 1, {
+            "description": f"Return #{return_id}{sale_part} (Refund {refund_amount:.2f})",
+            "source_type": "return",
+            "source_id": return_id,
+            "debit": 0.0,
+            "credit": 0.0,
+        }))
+
+    for event_date, _, data in sorted([*journal_events, *info_events], key=lambda x: (x[0], x[1])):
+        debit = data["debit"]
+        credit = data["credit"]
         running_balance += debit - credit
         entries.append(LedgerEntry(
-            date=entry.entry_date,
-            description=entry.description,
-            source_type=entry.source_type,
-            source_id=entry.source_id,
+            date=event_date,
+            description=data["description"],
+            source_type=data["source_type"],
+            source_id=data["source_id"],
             debit=debit,
             credit=credit,
             balance=running_balance,
@@ -1263,14 +1368,16 @@ def get_vendor_ledger(
 
     accounting_service.ensure_system_accounts(db)
     ap_code = accounting_service.SYSTEM_ACCOUNTS["ACCOUNTS_PAYABLE"]["code"]
+    adv_code = accounting_service.SYSTEM_ACCOUNTS["VENDOR_ADVANCES"]["code"]
     ap_account = db.query(Account).filter(Account.code == ap_code).first()
-    if not ap_account:
-        raise HTTPException(status_code=500, detail="Accounts Payable not configured")
+    adv_account = db.query(Account).filter(Account.code == adv_code).first()
+    if not ap_account or not adv_account:
+        raise HTTPException(status_code=500, detail="Vendor ledger accounts not configured")
 
     base_query = db.query(JournalLine, JournalEntry).join(
         JournalEntry, JournalEntry.id == JournalLine.entry_id
     ).filter(
-        JournalLine.account_id == ap_account.id,
+        JournalLine.account_id.in_([ap_account.id, adv_account.id]),
         JournalLine.vendor_id == vendor_id,
     )
 
@@ -1292,6 +1399,37 @@ def get_vendor_ledger(
         JournalLine.id.asc(),
     ).all()
 
+    aggregated_rows = {}
+    for line, entry in rows:
+        existing = aggregated_rows.get(entry.id)
+        if not existing:
+            existing = {
+                "entry": entry,
+                "debit": 0.0,
+                "credit": 0.0,
+            }
+            aggregated_rows[entry.id] = existing
+        existing["debit"] += float(line.debit or 0.0)
+        existing["credit"] += float(line.credit or 0.0)
+
+    purchase_ids = {
+        int(r["entry"].source_id)
+        for r in aggregated_rows.values()
+        if r["entry"].source_type in {"purchase", "purchase_payment"} and r["entry"].source_id
+    }
+    purchase_meta = {}
+    if purchase_ids:
+        purchase_rows = db.query(Purchase.id, Purchase.total_amount, Purchase.amount_paid).filter(
+            Purchase.id.in_(purchase_ids)
+        ).all()
+        purchase_meta = {
+            pid: {
+                "total": float(total_amount or 0.0),
+                "paid": float(amount_paid or 0.0),
+            }
+            for pid, total_amount, amount_paid in purchase_rows
+        }
+
     running_balance = opening_balance
     entries: List[LedgerEntry] = []
 
@@ -1304,13 +1442,37 @@ def get_vendor_ledger(
             balance=running_balance,
         ))
 
-    for line, entry in rows:
-        debit = line.debit or 0.0
-        credit = line.credit or 0.0
+    for row in sorted(
+        aggregated_rows.values(),
+        key=lambda r: (r["entry"].entry_date, r["entry"].id),
+    ):
+        entry = row["entry"]
+        debit = row["debit"]
+        credit = row["credit"]
         running_balance += credit - debit
+
+        description = entry.description
+        if entry.source_type == "vendor_payment":
+            description = (
+                f"{entry.description} "
+                f"(Paid {debit:.2f}, Due {max(running_balance, 0.0):.2f})"
+            )
+        elif entry.source_type in {"purchase", "purchase_payment"} and entry.source_id in purchase_meta:
+            meta = purchase_meta[int(entry.source_id)]
+            due = max(0.0, meta["total"] - meta["paid"])
+            description = (
+                f"{entry.description} "
+                f"(Total {meta['total']:.2f}, Paid {meta['paid']:.2f}, Due {due:.2f})"
+            )
+        elif entry.source_type == "vendor_advance":
+            description = (
+                f"{entry.description} "
+                f"(Advance +{debit:.2f}, Net {running_balance:.2f})"
+            )
+
         entries.append(LedgerEntry(
             date=entry.entry_date,
-            description=entry.description,
+            description=description,
             source_type=entry.source_type,
             source_id=entry.source_id,
             debit=debit,
