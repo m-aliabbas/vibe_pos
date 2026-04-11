@@ -165,6 +165,7 @@ export default function SalesTerminal() {
   const customerNameLookupRequestIdRef = useRef(0);
   const skipNextCustomerLookupRef = useRef(false);
   const productSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const amountPaidInputRef = useRef<HTMLInputElement | null>(null);
   const autocompleteListRef = useRef<HTMLDivElement | null>(null);
   const customerNameListRef = useRef<HTMLDivElement | null>(null);
 
@@ -1540,7 +1541,7 @@ export default function SalesTerminal() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [variationDialogOpen, addVariationToCart]);
 
-  // Ctrl+H hold, Ctrl+M checkout, Ctrl+E estimate
+  // Ctrl+H hold, Ctrl+M checkout, Ctrl+E estimate, Ctrl+Space focus Amount Paid
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!e.ctrlKey) return;
@@ -1562,12 +1563,20 @@ export default function SalesTerminal() {
       if (e.code === "KeyE") {
         e.preventDefault();
         if (cart.length > 0) setEstimateOpen(true);
+        return;
+      }
+
+      if (e.code === "Space") {
+        if (!checkoutOpen) return;
+        e.preventDefault();
+        amountPaidInputRef.current?.focus();
+        amountPaidInputRef.current?.select();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleCheckout, holdCurrentSale, cart.length]);
+  }, [handleCheckout, holdCurrentSale, cart.length, checkoutOpen]);
 
   // keep snapshot for auto-hold
   useEffect(() => {
@@ -2554,6 +2563,7 @@ export default function SalesTerminal() {
                 Amount Paid (rs)
               </Label>
               <Input
+                ref={amountPaidInputRef}
                 id="amountPaid"
                 type="number"
                 min="0"

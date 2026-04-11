@@ -12,6 +12,8 @@ apscheduler
 reportlab==4.0.9
 pillow==12.1.0
 requests
-neonize==0.3.12
+#neonize==0.3.12
+neonize==0.3.16.post0
 python-dotenv
 firebase-admin
+protobuf==6.32.1
