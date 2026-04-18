@@ -18,6 +18,11 @@ class ReturnCreate(BaseModel):
     notes: Optional[str] = None
     items: List[ReturnItemCreate]
     refund_amount: Optional[float] = None  # If None, calculate from items
+    # Settlement handling:
+    # - auto: reduce due first, remaining paid in cash (legacy behavior)
+    # - paid_to_customer: full cash refund
+    # - added_to_account: full credit to customer account (prepaid/negative balance possible)
+    settlement_mode: Optional[str] = "auto"
 
 class ReturnItemResponse(BaseModel):
     id: int

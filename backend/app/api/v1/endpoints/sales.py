@@ -763,21 +763,7 @@ def create_sale(
     if customer and customer_ref_id:
         customer.total_purchases += 1
         customer.total_spent += total
-        
-        # Auto-apply prepaid credit if customer has negative balance (advance payment)
-        if customer.outstanding_balance < 0:
-            credit_available = abs(customer.outstanding_balance)
-            credit_to_apply = min(credit_available, amount_due)
-            
-            if credit_to_apply > 0:
-                # Apply prepaid credit to this sale
-                db_sale.amount_paid += credit_to_apply
-                db_sale.amount_due -= credit_to_apply
-                db_sale.change_amount = max(0, db_sale.amount_paid - db_sale.total)
-                
-                # Reduce prepaid credit (move balance closer to 0)
-                customer.outstanding_balance += credit_to_apply
-        
+
         # Add remaining amount due to outstanding balance (udhar)
         if db_sale.amount_due > 0:
             customer.outstanding_balance += db_sale.amount_due

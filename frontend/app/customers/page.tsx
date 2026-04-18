@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { ToWords } from "to-words";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,40 @@ import {
 export default function CustomersPage() {
   const router = useRouter();
   const { user, token, isLoading } = useAuthStore();
+
+  // Number to words converter for prices
+  const toWords = useMemo(
+    () =>
+      new ToWords({
+        localeCode: "en-IN",
+        converterOptions: {
+          currency: true,
+          ignoreDecimal: false,
+          ignoreZeroCurrency: false,
+          doNotAddOnly: false,
+          currencyOptions: {
+            name: "Rupee",
+            plural: "Rupees",
+            symbol: "Rs",
+            fractionalUnit: {
+              name: "Paisa",
+              plural: "Paise",
+              symbol: "P",
+            },
+          },
+        },
+      }),
+    []
+  );
+
+  const convertToWords = useCallback((value: number): string => {
+    if (!Number.isFinite(value) || value < 0) return "";
+    try {
+      return toWords.convert(value);
+    } catch {
+      return "";
+    }
+  }, [toWords]);
   const [customers, setCustomers] = useState<CustomerListResponse[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -420,6 +455,11 @@ export default function CustomersPage() {
                     })
                   }
                 />
+                {(newCustomer.opening_balance ?? 0) > 0 && (
+                  <p className="text-xs text-blue-600 font-medium">
+                    {convertToWords(newCustomer.opening_balance ?? 0)}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Enter existing credit from manual system
                 </p>
@@ -441,6 +481,11 @@ export default function CustomersPage() {
                     })
                   }
                 />
+                {newCustomer.credit_limit && newCustomer.credit_limit > 0 && (
+                  <p className="text-xs text-blue-600 font-medium">
+                    {convertToWords(newCustomer.credit_limit)}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Max outstanding balance allowed. Leave blank for unlimited.
                 </p>

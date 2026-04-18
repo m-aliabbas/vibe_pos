@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api, { reportsApi } from '@/lib/api';
+import { ToWords } from 'to-words';
 import { storeConfig, fetchStoreConfig } from '@/lib/store-config';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter, FileText } from "lucide-react";
@@ -49,6 +50,40 @@ import { Label } from "@/components/ui/label";
 export default function VendorDetailsPage() {
     const { id } = useParams();
     const router = useRouter();
+
+    // Number to words converter for prices
+    const toWords = useMemo(
+        () =>
+            new ToWords({
+                localeCode: 'en-IN',
+                converterOptions: {
+                    currency: true,
+                    ignoreDecimal: false,
+                    ignoreZeroCurrency: false,
+                    doNotAddOnly: false,
+                    currencyOptions: {
+                        name: 'Rupee',
+                        plural: 'Rupees',
+                        symbol: 'Rs',
+                        fractionalUnit: {
+                            name: 'Paisa',
+                            plural: 'Paise',
+                            symbol: 'P',
+                        },
+                    },
+                },
+            }),
+        []
+    );
+
+    const convertToWords = useCallback((value: number): string => {
+        if (!Number.isFinite(value) || value < 0) return '';
+        try {
+            return toWords.convert(value);
+        } catch {
+            return '';
+        }
+    }, [toWords]);
     const [vendor, setVendor] = useState<any>(null);
     const [purchases, setPurchases] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -68,6 +103,7 @@ export default function VendorDetailsPage() {
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [storeInfo, setStoreInfo] = useState(storeConfig);
     const [ledgerBalance, setLedgerBalance] = useState<number | null>(null);
+    const [vendorLedgerEntries, setVendorLedgerEntries] = useState<any[]>([]);
     const [editVendor, setEditVendor] = useState({
         name: '',
         contact_name: '',
@@ -106,6 +142,7 @@ export default function VendorDetailsPage() {
 
             const ledgerRes = await reportsApi.getVendorLedger(parseInt(id as string));
             setLedgerBalance(ledgerRes.closing_balance ?? null);
+            setVendorLedgerEntries(ledgerRes.entries || []);
         } catch (error) {
             console.error("Failed to fetch details", error);
         } finally {
@@ -246,6 +283,8 @@ export default function VendorDetailsPage() {
             interface LedgerEntry {
                 date: Date;
                 description: string;
+                source_type?: string;
+                source_id?: number;
                 debit: number;
                 credit: number;
                 balance: number;
@@ -254,11 +293,33 @@ export default function VendorDetailsPage() {
             const ledgerEntries: LedgerEntry[] = ledger.entries.map((entry: any) => ({
                 date: new Date(entry.date),
                 description: entry.description,
+                source_type: entry.source_type,
+                source_id: entry.source_id,
                 debit: Number(entry.debit || 0),
                 credit: Number(entry.credit || 0),
                 balance: Number(entry.balance || 0),
             }));
             const formatCurrency = (amount: number) => `rs ${amount.toFixed(2)}`;
+
+            // Extract all purchase IDs from ledger
+            const purchaseIds = new Set<number>();
+            ledgerEntries.forEach(entry => {
+                if (entry.source_type === 'purchase' && entry.source_id) {
+                    purchaseIds.add(entry.source_id);
+                }
+            });
+
+            // Fetch purchase details for all purchases
+            const purchasesData = new Map<number, any>();
+            const { purchasesApi } = await import("@/lib/api");
+            for (const purchaseId of purchaseIds) {
+                try {
+                    const purchase = await purchasesApi.getPurchase(purchaseId);
+                    purchasesData.set(purchaseId, purchase);
+                } catch (err) {
+                    console.error(`Failed to fetch purchase ${purchaseId}:`, err);
+                }
+            }
 
             // Generate PDF
             const { default: jsPDF } = await import("jspdf");
@@ -294,40 +355,73 @@ export default function VendorDetailsPage() {
             doc.setFont('helvetica', 'bold');
             doc.text(`Opening Balance: ${formatCurrency(Number(ledger.opening_balance || 0))}`, 40, 155);
             
-            // Ledger table
-            const tableData = ledgerEntries.map(entry => [
+            // Ledger table with inline details
+            const tableData = ledgerEntries.map(entry => {
+              let description = entry.description;
+              
+              // Enhance description with inline details
+                         if (entry.source_type === 'purchase' && entry.source_id && purchasesData.has(entry.source_id)) {
+                             const purchase = purchasesData.get(entry.source_id);
+                             const totalAmount = Number(purchase.total_amount || 0);
+                             const paidAmount = Number(purchase.amount_paid || 0);
+                             const items = purchase.items || [];
+                             const dueAmount = Math.max(0, totalAmount - paidAmount);
+               
+                             if (items.length > 0) {
+                                 // Show first 4-5 items with quantities
+                                 const displayItems = items.slice(0, 5).map((item: any) => {
+                                     const qty = item.quantity > 1 ? ` (${item.quantity})` : '';
+                                     const itemName = item.product_name || item.product?.name || item.description || `Product #${item.product_id}`;
+                                     return `${itemName}${qty}`;
+                                 }).join(', ');
+                 
+                                 const moreCount = Math.max(0, items.length - 5);
+                                 const moreText = moreCount > 0 ? ` +${moreCount} more` : '';
+                                 description = `Purchase #${entry.source_id}: ${displayItems}${moreText} | Total ${formatCurrency(totalAmount)}, Paid ${formatCurrency(paidAmount)}, Due ${formatCurrency(dueAmount)}`;
+                             } else {
+                                 description = `Purchase #${entry.source_id} | Total ${formatCurrency(totalAmount)}, Paid ${formatCurrency(paidAmount)}, Due ${formatCurrency(dueAmount)}`;
+                             }
+                         } else if (entry.source_type === 'vendor_payment' || entry.source_type === 'purchase_payment') {
+                             description = 'Payment made';
+                         } else if (entry.source_type === 'vendor_advance') {
+                             // Preserve backend description/notes for vendor advances
+                             description = entry.description || 'Vendor advance';
+                         }
+              
+              return [
                 entry.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-                entry.description,
+                description,
                 entry.debit > 0 ? formatCurrency(entry.debit) : '-',
                 entry.credit > 0 ? formatCurrency(entry.credit) : '-',
                 formatCurrency(entry.balance),
-            ]);
+              ];
+            });
 
             autoTable(doc, {
-                startY: 170,
-                head: [['Date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance']],
-                body: tableData,
-                theme: 'grid',
-                styles: { 
-                    fontSize: 9,
-                    cellPadding: 5,
-                },
-                headStyles: { 
-                    fillColor: [52, 73, 94],
-                    textColor: [255, 255, 255],
-                    fontStyle: 'bold',
-                    halign: 'center',
-                },
-                columnStyles: {
-                    0: { cellWidth: 70, halign: 'left' },
-                    1: { cellWidth: 220, halign: 'left' },
-                    2: { cellWidth: 80, halign: 'right' },
-                    3: { cellWidth: 80, halign: 'right' },
-                    4: { cellWidth: 85, halign: 'right', fontStyle: 'bold' },
-                },
-                alternateRowStyles: {
-                    fillColor: [245, 245, 245],
-                },
+              startY: 170,
+              head: [['Date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance']],
+              body: tableData,
+              theme: 'grid',
+              styles: { 
+                  fontSize: 8,
+                  cellPadding: 4,
+              },
+              headStyles: { 
+                  fillColor: [52, 73, 94],
+                  textColor: [255, 255, 255],
+                  fontStyle: 'bold',
+                  halign: 'center',
+              },
+              columnStyles: {
+                  0: { cellWidth: 65, halign: 'left' },
+                  1: { cellWidth: 240, halign: 'left' },
+                  2: { cellWidth: 75, halign: 'right' },
+                  3: { cellWidth: 75, halign: 'right' },
+                  4: { cellWidth: 80, halign: 'right', fontStyle: 'bold' },
+              },
+              alternateRowStyles: {
+                  fillColor: [245, 245, 245],
+              },
                 didDrawPage: (data: any) => {
                     // Footer
                     const pageCount = doc.getNumberOfPages();
@@ -418,10 +512,41 @@ export default function VendorDetailsPage() {
     const ledgerAdvance = ledgerBalance !== null ? Math.max(0, -ledgerBalance) : 0;
     const effectivePrepaidCredit = Math.max(vendor.prepaid_credit || 0, ledgerAdvance);
 
-    // Filter purchases based on status
-    const filteredPurchases = statusFilter === 'all'
-        ? purchases
-        : purchases.filter(p => p.status === statusFilter);
+    // Merge purchases with return/adjustment ledger rows for a unified vendor history.
+    const returnLikeSourceTypes = new Set(['vendor_settlement', 'vendor_return', 'purchase_return', 'return']);
+
+    const historyRows = [
+        ...purchases.map((purchase) => ({
+            kind: 'purchase' as const,
+            id: `purchase-${purchase.id}`,
+            date: purchase.created_at,
+            reference: `#${purchase.id}`,
+            status: purchase.status,
+            total_amount: Number(purchase.total_amount || 0),
+            amount_paid: Number(purchase.amount_paid || 0),
+            balance: Number((purchase.total_amount || 0) - (purchase.amount_paid || 0)),
+        })),
+        ...vendorLedgerEntries
+            .filter((entry: any) => returnLikeSourceTypes.has(entry.source_type))
+            .map((entry: any, idx: number) => ({
+                kind: 'return' as const,
+                id: `ledger-${entry.source_type || 'entry'}-${entry.source_id || idx}-${entry.date || idx}`,
+                date: entry.date,
+                reference: entry.source_id ? `#${entry.source_id}` : '-',
+                status: entry.source_type || 'adjustment',
+                total_amount: Number(entry.credit || 0),
+                amount_paid: Number(entry.debit || 0),
+                balance: Number((entry.credit || 0) - (entry.debit || 0)),
+                description: entry.description || 'Adjustment',
+            })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // Filter history rows based on selected filter
+    const filteredHistory = historyRows.filter((row) => {
+        if (statusFilter === 'all') return true;
+        if (statusFilter === 'returns') return row.kind === 'return';
+        return row.kind === 'purchase' && row.status === statusFilter;
+    });
 
     return (
         <div className="p-8 max-w-7xl mx-auto space-y-8">
@@ -514,6 +639,11 @@ export default function VendorDetailsPage() {
                                             })
                                         }
                                     />
+                                    {editVendor.opening_balance > 0 && (
+                                        <p className="text-xs text-blue-600 font-medium">
+                                            {convertToWords(editVendor.opening_balance)}
+                                        </p>
+                                    )}
                                     <p className="text-xs text-muted-foreground">
                                         This will update the legacy payable purchase.
                                     </p>
@@ -580,6 +710,11 @@ export default function VendorDetailsPage() {
                                                     onChange={e => setPaymentAmount(e.target.value)}
                                                     placeholder="0.00"
                                                 />
+                                                {paymentAmount && parseFloat(paymentAmount) > 0 && (
+                                                    <p className="text-xs text-blue-600 font-medium">
+                                                        {convertToWords(parseFloat(paymentAmount))}
+                                                    </p>
+                                                )}
                                                 <p className="text-xs text-gray-500">
                                                     💡 Tip: Pay the full balance (rs {totalBalance.toFixed(2)}) or any amount
                                                 </p>
@@ -599,25 +734,49 @@ export default function VendorDetailsPage() {
                                         <div className="py-4 space-y-4">
                                             <div className="bg-green-50 p-4 rounded-md border border-green-200">
                                                 <h3 className="font-semibold text-green-900 mb-2">✅ Payment Processed Successfully</h3>
-                                                <div className="space-y-1 text-sm">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-600">Payment Amount:</span>
-                                                        <span className="font-bold">rs {paymentResult.total_payment.toFixed(2)}</span>
+                                                <div className="space-y-3 text-sm">
+                                                    <div>
+                                                        <div className="flex justify-between">
+                                                            <span className="text-gray-600">Payment Amount:</span>
+                                                            <span className="font-bold">rs {paymentResult.total_payment.toFixed(2)}</span>
+                                                        </div>
+                                                        {paymentResult.total_payment > 0 && (
+                                                            <p className="text-xs text-blue-600 font-medium mt-1">
+                                                                {convertToWords(paymentResult.total_payment)}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                     {paymentResult.prepaid_used > 0 && (
-                                                        <div className="flex justify-between">
-                                                            <span className="text-gray-600">Previous Credit Used:</span>
-                                                            <span className="font-medium text-blue-600">rs {paymentResult.prepaid_used.toFixed(2)}</span>
+                                                        <div>
+                                                            <div className="flex justify-between">
+                                                                <span className="text-gray-600">Previous Credit Used:</span>
+                                                                <span className="font-medium text-blue-600">rs {paymentResult.prepaid_used.toFixed(2)}</span>
+                                                            </div>
+                                                            <p className="text-xs text-blue-600 font-medium mt-1">
+                                                                {convertToWords(paymentResult.prepaid_used)}
+                                                            </p>
                                                         </div>
                                                     )}
-                                                    <div className="flex justify-between">
-                                                        <span className="text-gray-600">Applied to Payable (Ledger):</span>
-                                                        <span className="font-medium text-green-600">rs {paymentResult.applied_amount.toFixed(2)}</span>
+                                                    <div>
+                                                        <div className="flex justify-between">
+                                                            <span className="text-gray-600">Applied to Payable (Ledger):</span>
+                                                            <span className="font-medium text-green-600">rs {paymentResult.applied_amount.toFixed(2)}</span>
+                                                        </div>
+                                                        {paymentResult.applied_amount > 0 && (
+                                                            <p className="text-xs text-blue-600 font-medium mt-1">
+                                                                {convertToWords(paymentResult.applied_amount)}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                     {paymentResult.new_prepaid_credit > 0 && (
-                                                        <div className="flex justify-between border-t pt-1 mt-1">
-                                                            <span className="text-gray-600">New Prepaid Credit:</span>
-                                                            <span className="font-bold text-blue-600">${paymentResult.new_prepaid_credit.toFixed(2)}</span>
+                                                        <div className="border-t pt-2 mt-2">
+                                                            <div className="flex justify-between">
+                                                                <span className="text-gray-600">New Prepaid Credit:</span>
+                                                                <span className="font-bold text-blue-600">rs {paymentResult.new_prepaid_credit.toFixed(2)}</span>
+                                                            </div>
+                                                            <p className="text-xs text-blue-600 font-medium mt-1">
+                                                                {convertToWords(paymentResult.new_prepaid_credit)}
+                                                            </p>
                                                         </div>
                                                     )}
                                                 </div>
@@ -777,6 +936,7 @@ export default function VendorDetailsPage() {
                             <SelectItem value="paid">Paid</SelectItem>
                             <SelectItem value="partial">Partial</SelectItem>
                             <SelectItem value="unpaid">Unpaid</SelectItem>
+                            <SelectItem value="returns">Returns / Adjustments</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -785,41 +945,52 @@ export default function VendorDetailsPage() {
                         <TableHeader>
                             <TableRow className="bg-gray-50/50">
                                 <TableHead>Date</TableHead>
-                                <TableHead>Purchase ID</TableHead>
-                                <TableHead>Status</TableHead>
+                                <TableHead>Reference</TableHead>
+                                <TableHead>Type</TableHead>
                                 <TableHead className="text-right">Total Amount</TableHead>
                                 <TableHead className="text-right">Paid</TableHead>
                                 <TableHead className="text-right">Balance</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredPurchases.map((purchase) => (
+                            {filteredHistory.map((row) => (
                                 <TableRow
-                                    key={purchase.id}
-                                    className="cursor-pointer hover:bg-gray-50 transition-colors"
-                                    onClick={() => router.push(`/purchases/${purchase.id}`)}
+                                    key={row.id}
+                                    className={row.kind === 'purchase' ? "cursor-pointer hover:bg-gray-50 transition-colors" : "bg-slate-50/40"}
+                                    onClick={() => {
+                                        if (row.kind === 'purchase') {
+                                            router.push(`/purchases/${row.reference.replace('#', '')}`);
+                                        }
+                                    }}
                                 >
                                     <TableCell>
-                                        {new Date(purchase.created_at).toLocaleDateString()}
+                                        {new Date(row.date).toLocaleDateString()}
                                     </TableCell>
-                                    <TableCell className="font-mono text-xs">#{purchase.id}</TableCell>
+                                    <TableCell className="font-mono text-xs">{row.reference}</TableCell>
                                     <TableCell>
                                         <Badge variant="outline" className={
-                                            purchase.status === 'paid' ? 'bg-green-100 text-green-700 border-green-200' :
-                                                purchase.status === 'partial' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
-                                                    'bg-red-100 text-red-700 border-red-200'
+                                            row.kind === 'return'
+                                                ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                                : row.status === 'paid'
+                                                    ? 'bg-green-100 text-green-700 border-green-200'
+                                                    : row.status === 'partial'
+                                                        ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                                                        : 'bg-red-100 text-red-700 border-red-200'
                                         }>
-                                            {purchase.status.toUpperCase()}
+                                            {row.kind === 'return' ? 'RETURN / ADJ' : String(row.status || '').toUpperCase()}
                                         </Badge>
+                                        {row.kind === 'return' && row.description && (
+                                            <p className="text-xs text-gray-500 mt-1 max-w-[260px] truncate" title={row.description}>{row.description}</p>
+                                        )}
                                     </TableCell>
                                     <TableCell className="text-right font-medium">
-                                        ${purchase.total_amount.toFixed(2)}
+                                        ${row.total_amount.toFixed(2)}
                                     </TableCell>
                                     <TableCell className="text-right text-gray-500">
-                                        ${purchase.amount_paid.toFixed(2)}
+                                        ${row.amount_paid.toFixed(2)}
                                     </TableCell>
                                     <TableCell className="text-right font-medium">
-                                        ${(purchase.total_amount - purchase.amount_paid).toFixed(2)}
+                                        ${row.balance.toFixed(2)}
                                     </TableCell>
                                 </TableRow>
                             ))}

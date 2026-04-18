@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import { ToWords } from 'to-words';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,6 +78,41 @@ const ACCOUNT_TYPES = [
 export default function AccountingPage() {
   const { user } = useAuthStore();
   const router = useRouter();
+
+  // Number to words converter for prices
+  const toWords = useMemo(
+    () =>
+      new ToWords({
+        localeCode: 'en-IN',
+        converterOptions: {
+          currency: true,
+          ignoreDecimal: false,
+          ignoreZeroCurrency: false,
+          doNotAddOnly: false,
+          currencyOptions: {
+            name: 'Rupee',
+            plural: 'Rupees',
+            symbol: 'Rs',
+            fractionalUnit: {
+              name: 'Paisa',
+              plural: 'Paise',
+              symbol: 'P',
+            },
+          },
+        },
+      }),
+    []
+  );
+
+  const convertToWords = useCallback((value: number): string => {
+    if (!Number.isFinite(value) || value < 0) return '';
+    try {
+      return toWords.convert(value);
+    } catch {
+      return '';
+    }
+  }, [toWords]);
+
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [trialBalance, setTrialBalance] = useState<TrialBalanceReport | null>(null);
@@ -609,20 +645,34 @@ export default function AccountingPage() {
                           </Select>
                         </TableCell>
                         <TableCell className="text-right min-w-[120px]">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={line.debit}
-                            onChange={(e) => handleLineChange(index, 'debit', e.target.value)}
-                          />
+                          <div className="space-y-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={line.debit}
+                              onChange={(e) => handleLineChange(index, 'debit', e.target.value)}
+                            />
+                            {line.debit && parseFloat(line.debit) > 0 && (
+                              <p className="text-xs text-blue-600 font-medium">
+                                {convertToWords(parseFloat(line.debit))}
+                              </p>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right min-w-[120px]">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={line.credit}
-                            onChange={(e) => handleLineChange(index, 'credit', e.target.value)}
-                          />
+                          <div className="space-y-1">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={line.credit}
+                              onChange={(e) => handleLineChange(index, 'credit', e.target.value)}
+                            />
+                            {line.credit && parseFloat(line.credit) > 0 && (
+                              <p className="text-xs text-blue-600 font-medium">
+                                {convertToWords(parseFloat(line.credit))}
+                              </p>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="min-w-[200px]">
                           <Input

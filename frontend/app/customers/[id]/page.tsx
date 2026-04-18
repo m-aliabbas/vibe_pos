@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useMemo, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { ToWords } from "to-words";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,40 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   
   const router = useRouter();
   const { token, isLoading } = useAuthStore();
+
+  // Number to words converter for prices
+  const toWords = useMemo(
+    () =>
+      new ToWords({
+        localeCode: "en-IN",
+        converterOptions: {
+          currency: true,
+          ignoreDecimal: false,
+          ignoreZeroCurrency: false,
+          doNotAddOnly: false,
+          currencyOptions: {
+            name: "Rupee",
+            plural: "Rupees",
+            symbol: "Rs",
+            fractionalUnit: {
+              name: "Paisa",
+              plural: "Paise",
+              symbol: "P",
+            },
+          },
+        },
+      }),
+    []
+  );
+
+  const convertToWords = useCallback((value: number): string => {
+    if (!Number.isFinite(value) || value < 0) return "";
+    try {
+      return toWords.convert(value);
+    } catch {
+      return "";
+    }
+  }, [toWords]);
   const [customer, setCustomer] = useState<CustomerResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [financialSummary, setFinancialSummary] = useState<any>(null);
@@ -357,6 +392,8 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       interface LedgerEntry {
         date: Date;
         description: string;
+        source_type?: string;
+        source_id?: number;
         debit: number;
         credit: number;
         balance: number;
@@ -365,10 +402,32 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       const ledgerEntries: LedgerEntry[] = ledgerReport.entries.map((entry) => ({
         date: new Date(entry.date),
         description: entry.description,
+        source_type: entry.source_type,
+        source_id: entry.source_id,
         debit: entry.debit,
         credit: entry.credit,
         balance: entry.balance,
       }));
+
+      // Extract all sale IDs from ledger
+      const saleIds = new Set<number>();
+      ledgerEntries.forEach(entry => {
+        if (entry.source_type === 'sale' && entry.source_id) {
+          saleIds.add(entry.source_id);
+        }
+      });
+
+      // Fetch sale details for all sales
+      const salesData = new Map<number, any>();
+      const { salesApi } = await import("@/lib/api");
+      for (const saleId of saleIds) {
+        try {
+          const sale = await salesApi.getSale(saleId);
+          salesData.set(saleId, sale);
+        } catch (err) {
+          console.error(`Failed to fetch sale ${saleId}:`, err);
+        }
+      }
 
       // Generate PDF
       const { default: jsPDF } = await import("jspdf");
@@ -404,14 +463,46 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       doc.setFont('helvetica', 'bold');
       doc.text(`Opening Balance: ${formatCurrency(ledgerReport.opening_balance || 0)}`, 40, 155);
       
-      // Ledger table
-      const tableData = ledgerEntries.map(entry => [
-        entry.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
-        entry.description,
-        entry.debit > 0 ? formatCurrency(entry.debit) : '-',
-        entry.credit > 0 ? formatCurrency(entry.credit) : '-',
-        formatCurrency(entry.balance),
-      ]);
+      // Ledger table with inline details
+      const tableData = ledgerEntries.map(entry => {
+        let description = entry.description;
+        
+        // Enhance description with inline details
+        if (entry.source_type === 'sale' && entry.source_id && salesData.has(entry.source_id)) {
+          const sale = salesData.get(entry.source_id);
+          const items = sale.items || [];
+          
+          if (items.length > 0) {
+            // Show first 4-5 items with quantities
+            const displayItems = items.slice(0, 5).map((item: any) => {
+              const qty = item.quantity > 1 ? ` (${item.quantity})` : '';
+              const itemName = item.product_name || item.product?.name || item.description || `Product #${item.product_id}`;
+              return `${itemName}${qty}`;
+            }).join(', ');
+            
+            const moreCount = Math.max(0, items.length - 5);
+            const moreText = moreCount > 0 ? ` +${moreCount} more` : '';
+            description = `Sale #${entry.source_id}: ${displayItems}${moreText}`;
+          } else {
+            description = `Sale #${entry.source_id}`;
+          }
+        } else if (entry.source_type === 'payment' || entry.source_type === 'sale_payment' || entry.source_type === 'customer_payment') {
+          description = 'Payment received';
+        } else if (entry.source_type === 'advance' || entry.source_type === 'customer_advance') {
+          // Preserve backend description/notes, e.g. "Customer advance #523 ..."
+          description = entry.description || 'Customer advance';
+        } else if (entry.source_type === 'return' && entry.source_id) {
+          description = `Return #${entry.source_id}`;
+        }
+        
+        return [
+          entry.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+          description,
+          entry.debit > 0 ? formatCurrency(entry.debit) : '-',
+          entry.credit > 0 ? formatCurrency(entry.credit) : '-',
+          formatCurrency(entry.balance),
+        ];
+      });
 
       autoTable(doc, {
         startY: 170,
@@ -419,8 +510,8 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
         body: tableData,
         theme: 'grid',
         styles: { 
-          fontSize: 9,
-          cellPadding: 5,
+          fontSize: 8,
+          cellPadding: 4,
         },
         headStyles: { 
           fillColor: [52, 73, 94],
@@ -429,11 +520,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           halign: 'center',
         },
         columnStyles: {
-          0: { cellWidth: 70, halign: 'left' },
-          1: { cellWidth: 220, halign: 'left' },
-          2: { cellWidth: 80, halign: 'right' },
-          3: { cellWidth: 80, halign: 'right' },
-          4: { cellWidth: 85, halign: 'right', fontStyle: 'bold' },
+          0: { cellWidth: 65, halign: 'left' },
+          1: { cellWidth: 240, halign: 'left' },
+          2: { cellWidth: 75, halign: 'right' },
+          3: { cellWidth: 75, halign: 'right' },
+          4: { cellWidth: 80, halign: 'right', fontStyle: 'bold' },
         },
         alternateRowStyles: {
           fillColor: [245, 245, 245],
@@ -715,6 +806,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                       })
                     }
                   />
+                  {(editCustomer.opening_balance ?? 0) > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">
+                      {convertToWords(editCustomer.opening_balance ?? 0)}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     This will adjust the customer outstanding balance.
                   </p>
@@ -736,6 +832,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                       })
                     }
                   />
+                  {editCustomer.credit_limit && editCustomer.credit_limit > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">
+                      {convertToWords(editCustomer.credit_limit)}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     Max outstanding balance allowed. Leave blank for unlimited.
                   </p>
@@ -808,6 +909,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                     value={newPayment.amount}
                     onChange={(e) => setNewPayment({ ...newPayment, amount: parseFloat(e.target.value) || 0 })}
                   />
+                  {newPayment.amount > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">
+                      {convertToWords(newPayment.amount)}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="payment-method">Payment Method</Label>
@@ -917,6 +1023,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                     value={newAdvance.amount}
                     onChange={(e) => setNewAdvance({ ...newAdvance, amount: parseFloat(e.target.value) || 0 })}
                   />
+                  {newAdvance.amount > 0 && (
+                    <p className="text-xs text-blue-600 font-medium">
+                      {convertToWords(newAdvance.amount)}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="advance-description">Description *</Label>

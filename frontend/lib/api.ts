@@ -417,6 +417,24 @@ export const holdPurchasesApi = {
     },
 };
 
+// ============ SALES API FUNCTIONS ============
+
+export const salesApi = {
+    getSale: async (id: number): Promise<any> => {
+        const response = await api.get(`/sales/${id}`);
+        return response.data;
+    },
+};
+
+// ============ PURCHASES API FUNCTIONS ============
+
+export const purchasesApi = {
+    getPurchase: async (id: number): Promise<any> => {
+        const response = await api.get(`/purchases/${id}`);
+        return response.data;
+    },
+};
+
 export const reportsApi = {
     getVendorLedger: async (id: number, params?: { start_date?: string; end_date?: string }): Promise<LedgerReport> => {
         const response = await api.get(`/reports/vendors/${id}/ledger`, { params });

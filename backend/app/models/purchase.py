@@ -39,3 +39,9 @@ class PurchaseItem(Base):
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product")
     variation = relationship("ProductVariation")
+
+    @property
+    def product_name(self):
+        if self.product and getattr(self.product, "name", None):
+            return self.product.name
+        return None

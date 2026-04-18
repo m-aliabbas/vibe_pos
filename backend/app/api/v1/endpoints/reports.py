@@ -12,7 +12,7 @@ from app.models.sale import Sale, SaleItem
 from app.models.product import Product, ProductVariation
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.vendor import Vendor
-from app.models.customer import Customer
+from app.models.customer import Customer, CustomerNote
 from app.models.pos_return import PosReturn
 from app.models.accounting import JournalEntry, JournalLine, Account
 from app.models.user import User, UserRole
@@ -1221,6 +1221,23 @@ def get_customer_ledger(
         JournalLine.id.asc(),
     ).all()
 
+    # Fallback for historical customer advances where journal descriptions were saved
+    # without notes. We align same-day advance notes in chronological order.
+    advance_notes = db.query(CustomerNote).filter(
+        CustomerNote.customer_id == customer_id,
+        CustomerNote.note_type == "advance_payment",
+        CustomerNote.created_at >= start,
+        CustomerNote.created_at <= end,
+    ).order_by(
+        CustomerNote.created_at.asc(),
+        CustomerNote.id.asc(),
+    ).all()
+
+    advance_notes_by_day: Dict[str, List[CustomerNote]] = {}
+    for note in advance_notes:
+        day_key = note.created_at.date().isoformat()
+        advance_notes_by_day.setdefault(day_key, []).append(note)
+
     aggregated_rows = {}
     for line, entry in rows:
         row = aggregated_rows.get(entry.id)
@@ -1282,8 +1299,18 @@ def get_customer_ledger(
         return_id = line.return_id or (entry.source_id if entry.source_type == "return" else None)
         if return_id:
             return_ids_in_journal.add(return_id)
+
+        description = entry.description
+        if entry.source_type == "customer_advance" and ":" not in (entry.description or ""):
+            day_key = entry.entry_date.date().isoformat()
+            day_notes = advance_notes_by_day.get(day_key, [])
+            if day_notes:
+                note = day_notes.pop(0)
+                if note.note_text:
+                    description = f"{entry.description}: {note.note_text}"
+
         journal_events.append((entry.entry_date, 0, {
-            "description": entry.description,
+            "description": description,
             "source_type": entry.source_type,
             "source_id": entry.source_id,
             "debit": line.debit or 0.0,
@@ -1399,6 +1426,8 @@ def get_vendor_ledger(
         JournalLine.id.asc(),
     ).all()
 
+    epsilon = 0.005
+
     aggregated_rows = {}
     for line, entry in rows:
         existing = aggregated_rows.get(entry.id)
@@ -1411,6 +1440,13 @@ def get_vendor_ledger(
             aggregated_rows[entry.id] = existing
         existing["debit"] += float(line.debit or 0.0)
         existing["credit"] += float(line.credit or 0.0)
+
+    # Normalize tiny floating artifacts to zero to avoid false "in-journal" purchases.
+    for row in aggregated_rows.values():
+        if abs(row["debit"]) < epsilon:
+            row["debit"] = 0.0
+        if abs(row["credit"]) < epsilon:
+            row["credit"] = 0.0
 
     purchase_ids = {
         int(r["entry"].source_id)
@@ -1442,6 +1478,8 @@ def get_vendor_ledger(
             balance=running_balance,
         ))
 
+    purchase_ids_in_journal = set()
+    journal_events = []
     for row in sorted(
         aggregated_rows.values(),
         key=lambda r: (r["entry"].entry_date, r["entry"].id),
@@ -1449,13 +1487,21 @@ def get_vendor_ledger(
         entry = row["entry"]
         debit = row["debit"]
         credit = row["credit"]
-        running_balance += credit - debit
+
+        has_material_ap_movement = (abs(debit) + abs(credit)) >= epsilon
+
+        if entry.source_type in {"purchase", "purchase_payment"} and entry.source_id and has_material_ap_movement:
+            purchase_ids_in_journal.add(int(entry.source_id))
+
+        # Skip zero-effect AP artifacts for purchase rows; informational event will be added below.
+        if entry.source_type in {"purchase", "purchase_payment"} and not has_material_ap_movement:
+            continue
 
         description = entry.description
         if entry.source_type == "vendor_payment":
             description = (
                 f"{entry.description} "
-                f"(Paid {debit:.2f}, Due {max(running_balance, 0.0):.2f})"
+                f"(Paid {debit:.2f})"
             )
         elif entry.source_type in {"purchase", "purchase_payment"} and entry.source_id in purchase_meta:
             meta = purchase_meta[int(entry.source_id)]
@@ -1467,14 +1513,56 @@ def get_vendor_ledger(
         elif entry.source_type == "vendor_advance":
             description = (
                 f"{entry.description} "
-                f"(Advance +{debit:.2f}, Net {running_balance:.2f})"
+                f"(Advance +{debit:.2f})"
             )
 
+        journal_events.append((entry.entry_date, 0, {
+            "description": description,
+            "source_type": entry.source_type,
+            "source_id": entry.source_id,
+            "debit": debit,
+            "credit": credit,
+        }))
+
+    purchase_rows = db.query(
+        Purchase.id,
+        Purchase.created_at,
+        Purchase.total_amount,
+        Purchase.amount_paid,
+    ).filter(
+        Purchase.vendor_id == vendor_id,
+        Purchase.created_at >= start,
+        Purchase.created_at <= end,
+    ).all()
+
+    info_events = []
+    for purchase_id, created_at, total_amount, amount_paid in purchase_rows:
+        if int(purchase_id) in purchase_ids_in_journal:
+            continue
+        total = float(total_amount or 0.0)
+        paid = float(amount_paid or 0.0)
+        due = max(0.0, total - paid)
+        # Synthetic AP view for fully/partially paid purchases missing AP journal rows:
+        # CR = purchase total (liability created), DR = amount settled against AP.
+        ap_credit = total
+        ap_debit = min(paid, total)
+        info_events.append((created_at, 1, {
+            "description": f"Purchase #{purchase_id} (Total {total:.2f}, Paid {paid:.2f}, Due {due:.2f})",
+            "source_type": "purchase",
+            "source_id": int(purchase_id),
+            "debit": ap_debit,
+            "credit": ap_credit,
+        }))
+
+    for event_date, _, data in sorted([*journal_events, *info_events], key=lambda x: (x[0], x[1])):
+        debit = data["debit"]
+        credit = data["credit"]
+        running_balance += credit - debit
         entries.append(LedgerEntry(
-            date=entry.entry_date,
-            description=description,
-            source_type=entry.source_type,
-            source_id=entry.source_id,
+            date=event_date,
+            description=data["description"],
+            source_type=data["source_type"],
+            source_id=data["source_id"],
             debit=debit,
             credit=credit,
             balance=running_balance,

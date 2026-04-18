@@ -23,6 +23,7 @@ class PurchaseItem(PurchaseItemBase):
     id: int
     purchase_id: int
     total_cost: float
+    product_name: Optional[str] = None
     
     class Config:
         from_attributes = True

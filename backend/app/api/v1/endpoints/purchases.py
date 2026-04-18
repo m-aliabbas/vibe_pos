@@ -1,6 +1,6 @@
 from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
 from app.api import deps
 from app.models.purchase import Purchase, PurchaseItem, PurchaseStatus
@@ -267,6 +267,7 @@ def read_vendor_purchases(
     limit: int = 100,
 ) -> Any:
     purchases = db.query(Purchase)\
+        .options(joinedload(Purchase.items).joinedload(PurchaseItem.product))\
         .filter(Purchase.vendor_id == vendor_id)\
         .order_by(Purchase.created_at.desc())\
         .offset(skip)\
@@ -280,7 +281,9 @@ def read_purchase(
     db: Session = Depends(deps.get_db),
     purchase_id: int,
 ) -> Any:
-    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    purchase = db.query(Purchase).options(
+        joinedload(Purchase.items).joinedload(PurchaseItem.product)
+    ).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Purchase not found")
     return purchase

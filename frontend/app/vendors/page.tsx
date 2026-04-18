@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
+import { ToWords } from 'to-words';
 import { Button } from "@/components/ui/button";
 import { Plus, Phone, Mail, MapPin, Download, ShoppingCart } from "lucide-react";
 import {
@@ -31,6 +32,41 @@ import { useRouter } from 'next/navigation';
 
 export default function VendorsPage() {
     const router = useRouter();
+
+    // Number to words converter for prices
+    const toWords = useMemo(
+        () =>
+            new ToWords({
+                localeCode: 'en-IN',
+                converterOptions: {
+                    currency: true,
+                    ignoreDecimal: false,
+                    ignoreZeroCurrency: false,
+                    doNotAddOnly: false,
+                    currencyOptions: {
+                        name: 'Rupee',
+                        plural: 'Rupees',
+                        symbol: 'Rs',
+                        fractionalUnit: {
+                            name: 'Paisa',
+                            plural: 'Paise',
+                            symbol: 'P',
+                        },
+                    },
+                },
+            }),
+        []
+    );
+
+    const convertToWords = useCallback((value: number): string => {
+        if (!Number.isFinite(value) || value < 0) return '';
+        try {
+            return toWords.convert(value);
+        } catch {
+            return '';
+        }
+    }, [toWords]);
+
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [loading, setLoading] = useState(true);
     const [open, setOpen] = useState(false);
@@ -294,6 +330,11 @@ export default function VendorsPage() {
                                 <p className="text-xs text-muted-foreground">
                                     Enter existing amount owed from manual system
                                 </p>
+                                {openingBalance > 0 && (
+                                    <p className="text-xs text-blue-600 font-medium">
+                                        {convertToWords(openingBalance)}
+                                    </p>
+                                )}
                             </div>
                             <DialogFooter>
                                 <Button type="submit">Save Vendor</Button>

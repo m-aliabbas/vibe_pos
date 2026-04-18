@@ -262,8 +262,8 @@ def create_return(
             # Calculate refund for this item
             item_refund = sale_item.unit_price * quantity
             subtotal += item_refund
-            
-            # Get product for inventory update
+
+            # Resolve product for inventory updates
             product = db.query(Product).filter(Product.id == sale_item.product_id).first()
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product {sale_item.product_id} not found")
@@ -382,21 +382,48 @@ def create_return(
     ar_reduction = 0.0
     cash_refund = refund_amount
 
-    # Update customer balance if there was a credit (udhar) - only for sale-based returns
+    settlement_mode = (return_in.settlement_mode or "auto").strip().lower()
+    if settlement_mode not in {"auto", "paid_to_customer", "added_to_account"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid settlement_mode. Use: auto, paid_to_customer, or added_to_account",
+        )
+
+    # Update customer balance and settlement buckets - only for sale-based returns
     if return_in.sale_id:
         sale = db.query(Sale).filter(Sale.id == return_in.sale_id).first()
         if sale and sale.customer_ref_id and refund_amount > 0:
             customer = db.query(Customer).filter(Customer.id == sale.customer_ref_id).first()
             if customer:
-                # Reduce outstanding balance by refund amount (if they had udhar)
-                if customer.outstanding_balance > 0:
-                    ar_reduction = min(customer.outstanding_balance, refund_amount)
-                    customer.outstanding_balance -= ar_reduction
-                    cash_refund = max(0.0, refund_amount - ar_reduction)
+                if settlement_mode == "auto":
+                    # Legacy behavior: reduce due first, then cash refund remainder.
+                    if customer.outstanding_balance > 0:
+                        ar_reduction = min(customer.outstanding_balance, refund_amount)
+                        customer.outstanding_balance -= ar_reduction
+                        cash_refund = max(0.0, refund_amount - ar_reduction)
+                    else:
+                        cash_refund = refund_amount
+
+                elif settlement_mode == "paid_to_customer":
+                    # Full cash refund; customer due/prepaid position unchanged.
+                    ar_reduction = 0.0
+                    cash_refund = refund_amount
+
+                elif settlement_mode == "added_to_account":
+                    # Full refund added to customer account (can become prepaid credit).
+                    ar_reduction = refund_amount
+                    cash_refund = 0.0
+                    customer.outstanding_balance = (customer.outstanding_balance or 0.0) - refund_amount
                 
                 # Update customer stats
                 customer.total_spent = max(0, customer.total_spent - refund_amount)
                 customer.updated_at = datetime.utcnow()
+
+    if settlement_mode == "added_to_account" and ar_reduction <= 0 and refund_amount > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="added_to_account requires a linked customer sale to credit account",
+        )
     
     # Commit transaction
     try:
@@ -434,6 +461,11 @@ def create_return(
         )
         
         # Add items with product names
+        response_data = response.model_dump()
+        response_data["settlement_mode"] = settlement_mode
+        response_data["account_credit_amount"] = ar_reduction
+        response_data["cash_refund_amount"] = cash_refund
+
         for ret_item in db_return.items:
             product = db.query(Product).filter(Product.id == ret_item.product_id).first()
             response.items.append({

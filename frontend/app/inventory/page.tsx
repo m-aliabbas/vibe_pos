@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import JsBarcode from 'jsbarcode';
+import { ToWords } from 'to-words';
 import { Button } from "@/components/ui/button";
 import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download, Barcode, Printer } from "lucide-react";
 import {
@@ -80,6 +81,42 @@ interface Product {
 export default function InventoryPage() {
     const router = useRouter();
     const { user } = useAuthStore();
+
+    // Number to words converter for prices
+    const toWords = useMemo(
+        () =>
+            new ToWords({
+                localeCode: 'en-IN',
+                converterOptions: {
+                    currency: true,
+                    ignoreDecimal: false,
+                    ignoreZeroCurrency: false,
+                    doNotAddOnly: false,
+                    currencyOptions: {
+                        name: 'Rupee',
+                        plural: 'Rupees',
+                        symbol: 'Rs',
+                        fractionalUnit: {
+                            name: 'Paisa',
+                            plural: 'Paise',
+                            symbol: 'P',
+                        },
+                    },
+                },
+            }),
+        []
+    );
+
+    const convertToWords = useCallback((value: string): string => {
+        if (!value || value.trim() === '') return '';
+        const parsed = parseFloat(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return '';
+        try {
+            return toWords.convert(parsed);
+        } catch {
+            return '';
+        }
+    }, [toWords]);
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [open, setOpen] = useState(false);
@@ -526,6 +563,11 @@ export default function InventoryPage() {
                                 <div className="grid gap-2">
                                     <Label htmlFor="price">Selling Price (rs)</Label>
                                     <Input id="price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required placeholder="0.00" />
+                                    {sellingPrice && (
+                                        <p className="text-xs text-blue-600 font-medium">
+                                            {convertToWords(sellingPrice)}
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <input
@@ -591,6 +633,11 @@ export default function InventoryPage() {
                                                 />
                                                 <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
                                             </div>
+                                            {newUnit.price && (
+                                                <p className="text-xs text-blue-600 font-medium">
+                                                    {convertToWords(newUnit.price)}
+                                                </p>
+                                            )}
                                             <div className="flex flex-wrap gap-2">
                                                 {sellingUnits.map((unit, idx) => (
                                                     <Badge key={idx} variant="secondary" className="gap-2">

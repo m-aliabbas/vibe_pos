@@ -61,6 +61,7 @@ export default function CreateReturnPage() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [returnReason, setReturnReason] = useState("defective");
+  const [settlementMode, setSettlementMode] = useState("auto");
   const [returnNotes, setReturnNotes] = useState("");
   const [processing, setProcessing] = useState(false);
 
@@ -190,6 +191,7 @@ export default function CreateReturnPage() {
           customer_name: customerName || selectedSale.customer_name || null,
           customer_phone: customerPhone || selectedSale.customer_phone || null,
           reason: returnReason,
+          settlement_mode: settlementMode,
           notes: returnNotes || null,
           items: selectedLines.map((line) => ({
             sale_item_id: line.sale_item.id,
@@ -423,6 +425,24 @@ export default function CreateReturnPage() {
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Settlement Mode */}
+              <div className="space-y-2">
+                <Label>Return Settlement *</Label>
+                <Select value={settlementMode} onValueChange={setSettlementMode}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto (Adjust due first, rest cash)</SelectItem>
+                    <SelectItem value="paid_to_customer">Paid to Customer (Cash)</SelectItem>
+                    <SelectItem value="added_to_account">Added to Account (Prepaid Credit)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  "Added to Account" credits the customer ledger (can become prepaid). "Paid to Customer" gives full cash refund.
+                </p>
               </div>
 
               {/* Notes */}

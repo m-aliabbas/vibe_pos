@@ -478,6 +478,8 @@ def post_customer_advance(
     amount: float,
     payment_method: Optional[str],
     created_by: Optional[int],
+    note_text: Optional[str] = None,
+    reference_id: Optional[int] = None,
 ) -> JournalEntry:
     ensure_system_accounts(db)
     lines = [
@@ -497,7 +499,11 @@ def post_customer_advance(
 
     return create_journal_entry(
         db=db,
-        description=f"Customer advance #{customer_id}",
+        description=(
+            f"Customer advance #{reference_id or customer_id}: {note_text.strip()}"
+            if note_text and note_text.strip()
+            else f"Customer advance #{reference_id or customer_id}"
+        ),
         lines=lines,
         source_type="customer_advance",
         source_id=customer_id,

@@ -46,6 +46,7 @@ import {
   Printer,
   Settings,
 } from "lucide-react";
+import { ToWords } from "to-words";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
 
@@ -1339,6 +1340,43 @@ export default function SalesTerminal() {
     return Number.isFinite(v) ? v : 0;
   }, [amountPaid]);
 
+  const toWords = useMemo(
+    () =>
+      new ToWords({
+        localeCode: "en-IN",
+        converterOptions: {
+          currency: true,
+          ignoreDecimal: false,
+          ignoreZeroCurrency: false,
+          doNotAddOnly: false,
+          currencyOptions: {
+            name: "Rupee",
+            plural: "Rupees",
+            symbol: "Rs",
+            fractionalUnit: {
+              name: "Paisa",
+              plural: "Paise",
+              symbol: "P",
+            },
+          },
+        },
+      }),
+    []
+  );
+
+  const amountPaidInWords = useMemo(() => {
+    if (amountPaid.trim() === "") return "";
+
+    const parsed = parseFloat(amountPaid);
+    if (!Number.isFinite(parsed) || parsed < 0) return "";
+
+    try {
+      return toWords.convert(parsed);
+    } catch {
+      return "";
+    }
+  }, [amountPaid, toWords]);
+
   const handleSelectCustomerByName = useCallback((customer: CustomerSimple) => {
     skipNextCustomerLookupRef.current = true;
     setSelectedCustomer(customer);
@@ -2573,6 +2611,9 @@ export default function SalesTerminal() {
                 className="text-sm font-semibold h-8"
               />
               <p className="text-xs text-muted-foreground">Amount received from customer</p>
+              {amountPaidInWords && (
+                <p className="text-xs font-medium text-primary">In words: {amountPaidInWords}</p>
+              )}
             </div>
 
             <div className="border-t pt-2 space-y-1 text-xs">

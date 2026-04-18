@@ -834,6 +834,8 @@ def add_customer_advance(
         amount=amount,
         payment_method=payment_method,
         created_by=current_user.id,
+        note_text=description,
+        reference_id=note.id,
     )
     db.commit()
     db.refresh(customer)
