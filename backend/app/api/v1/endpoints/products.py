@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.models.product import Product, ProductVariation
+from app.models.stock_adjustment import ProductStockAdjustment
 from app.schemas import product as product_schema
 
 router = APIRouter()
@@ -271,6 +272,80 @@ def update_product(
     db.commit()
     db.refresh(product)
     return product
+
+
+@router.post("/{id}/adjust-stock", response_model=product_schema.Product)
+def adjust_product_stock(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    stock_in: product_schema.ProductStockAdjust,
+    current_user = Depends(deps.get_current_active_admin),
+) -> Any:
+    product = db.query(Product).filter(Product.id == id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if not product.allow_decimal_qty and not float(stock_in.quantity_delta).is_integer():
+        raise HTTPException(
+            status_code=400,
+            detail="This product only allows whole-number quantities",
+        )
+
+    quantity_before = float(product.quantity or 0.0)
+    quantity_after = quantity_before + float(stock_in.quantity_delta)
+    product.quantity = quantity_after
+
+    log_entry = ProductStockAdjustment(
+        product_id=product.id,
+        adjusted_by_user_id=current_user.id,
+        quantity_before=quantity_before,
+        quantity_delta=float(stock_in.quantity_delta),
+        quantity_after=quantity_after,
+        reason=stock_in.reason.strip(),
+    )
+
+    db.add(product)
+    db.add(log_entry)
+    db.commit()
+    db.refresh(product)
+    return product
+
+
+@router.get("/{id}/stock-adjustments", response_model=List[product_schema.ProductStockAdjustmentLog])
+def read_product_stock_adjustments(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    limit: int = Query(50, ge=1, le=500),
+    current_user = Depends(deps.get_current_active_admin),
+) -> Any:
+    product = db.query(Product).filter(Product.id == id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    logs = (
+        db.query(ProductStockAdjustment)
+        .filter(ProductStockAdjustment.product_id == id)
+        .order_by(ProductStockAdjustment.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return [
+        {
+            "id": log.id,
+            "product_id": log.product_id,
+            "quantity_before": log.quantity_before,
+            "quantity_delta": log.quantity_delta,
+            "quantity_after": log.quantity_after,
+            "reason": log.reason,
+            "adjusted_by_user_id": log.adjusted_by_user_id,
+            "adjusted_by_username": log.adjusted_by_user.username if log.adjusted_by_user else None,
+            "created_at": log.created_at,
+        }
+        for log in logs
+    ]
 
 @router.delete("/{id}")
 def delete_product(

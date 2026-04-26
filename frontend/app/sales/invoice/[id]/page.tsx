@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
+import { formatPakistanDateTime } from "@/lib/utils";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -191,14 +192,7 @@ export default function InvoicePage() {
   };
 
   const formatDate = (dateString: string): string => {
-    const date = new Date(dateString);
-    return date.toLocaleString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return formatPakistanDateTime(dateString);
   };
 
   const handlePrint = () => {

@@ -520,9 +520,11 @@ def post_vendor_payment(
     prepaid_used: float,
     new_prepaid_from_cash: float,
     created_by: Optional[int],
+    reference_note: Optional[str] = None,
 ) -> List[JournalEntry]:
     ensure_system_accounts(db)
     entries: List[JournalEntry] = []
+    note_suffix = f": {reference_note.strip()}" if reference_note and reference_note.strip() else ""
 
     cash_applied = min(payment_amount, applied_amount)
 
@@ -555,7 +557,7 @@ def post_vendor_payment(
         entries.append(
             create_journal_entry(
                 db=db,
-                description=f"Vendor payment settlement #{vendor_id}",
+                description=f"Vendor payment settlement #{vendor_id}{note_suffix}",
                 lines=lines,
                 source_type="vendor_payment",
                 source_id=vendor_id,
@@ -582,7 +584,7 @@ def post_vendor_payment(
         entries.append(
             create_journal_entry(
                 db=db,
-                description=f"Vendor advance #{vendor_id}",
+                description=f"Vendor advance #{vendor_id}{note_suffix}",
                 lines=lines,
                 source_type="vendor_advance",
                 source_id=vendor_id,

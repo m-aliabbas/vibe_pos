@@ -78,6 +78,18 @@ interface Product {
     variations?: ProductVariation[];
 }
 
+interface StockAdjustmentLogEntry {
+    id: number;
+    product_id: number;
+    quantity_before: number;
+    quantity_delta: number;
+    quantity_after: number;
+    reason: string;
+    adjusted_by_user_id: number;
+    adjusted_by_username?: string | null;
+    created_at: string;
+}
+
 export default function InventoryPage() {
     const router = useRouter();
     const { user } = useAuthStore();
@@ -138,6 +150,15 @@ export default function InventoryPage() {
     const [barcodeOpen, setBarcodeOpen] = useState(false);
     const [barcodeCopies, setBarcodeCopies] = useState(1);
     const barcodeRef = useRef<SVGSVGElement | null>(null);
+    const [stockOpen, setStockOpen] = useState(false);
+    const [stockProduct, setStockProduct] = useState<Product | null>(null);
+    const [stockDelta, setStockDelta] = useState('');
+    const [stockReason, setStockReason] = useState('');
+    const [stockSaving, setStockSaving] = useState(false);
+    const [stockHistoryOpen, setStockHistoryOpen] = useState(false);
+    const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+    const [historyEntries, setHistoryEntries] = useState<StockAdjustmentLogEntry[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     const barcodeCallbackRef = useCallback((node: SVGSVGElement | null) => {
         barcodeRef.current = node;
@@ -419,6 +440,68 @@ export default function InventoryPage() {
         setBarcodeOpen(true);
     };
 
+    const openAddStockDialog = (product: Product) => {
+        setStockProduct(product);
+        setStockDelta('');
+        setStockReason('');
+        setStockOpen(true);
+    };
+
+    const openStockHistoryDialog = async (product: Product) => {
+        setHistoryProduct(product);
+        setStockHistoryOpen(true);
+        setHistoryLoading(true);
+        try {
+            const { data } = await api.get(`/products/${product.id}/stock-adjustments`, {
+                params: { limit: 100 },
+            });
+            setHistoryEntries(data || []);
+        } catch (error: any) {
+            console.error('Failed to fetch stock history', error);
+            setHistoryEntries([]);
+            alert(error?.response?.data?.detail || 'Failed to fetch stock adjustment history.');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const handleAddStock = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!stockProduct) return;
+
+        const qty = Number(stockDelta);
+        if (!Number.isFinite(qty) || qty <= 0) {
+            alert('Please enter a quantity greater than 0.');
+            return;
+        }
+        if (!stockProduct.allow_decimal_qty && !Number.isInteger(qty)) {
+            alert('This product only allows whole-number quantities.');
+            return;
+        }
+        if (!stockReason.trim()) {
+            alert('Reason is required for stock adjustment.');
+            return;
+        }
+
+        try {
+            setStockSaving(true);
+            await api.post(`/products/${stockProduct.id}/adjust-stock`, {
+                quantity_delta: qty,
+                reason: stockReason.trim(),
+            });
+            setStockOpen(false);
+            setStockProduct(null);
+            setStockDelta('');
+            setStockReason('');
+            fetchProducts();
+        } catch (error: any) {
+            console.error('Failed to adjust stock', error);
+            alert(error?.response?.data?.detail || 'Failed to adjust stock.');
+        } finally {
+            setStockSaving(false);
+        }
+    };
+
     const handlePrintBarcode = () => {
         if (!barcodeRef.current || !barcodeProduct) return;
         const svgContent = barcodeRef.current.outerHTML;
@@ -464,7 +547,7 @@ export default function InventoryPage() {
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Product Catalog</h1>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
-                        <p className="text-gray-500">Define the items you sell. Manage stock via Purchases.</p>
+                        <p className="text-gray-500">Define the items you sell. Manage stock via Purchases or Add Stock.</p>
                         <Badge variant="secondary" className="font-normal">
                             Total Products: {totalCount}
                         </Badge>
@@ -541,7 +624,7 @@ export default function InventoryPage() {
                             <DialogHeader>
                                 <DialogTitle>Define New Product</DialogTitle>
                                 <DialogDescription>
-                                    Create a new item definition. Stock is added separately in "Purchases".
+                                    Create a new item definition. Stock can be added from Purchases or with Add Stock in inventory.
                                 </DialogDescription>
                             </DialogHeader>
                             <form onSubmit={handleCreateProduct} className="grid gap-4 py-4">
@@ -690,7 +773,7 @@ export default function InventoryPage() {
                                 </div>
 
                                 <div className="bg-yellow-50 p-3 rounded-md text-xs text-yellow-700 border border-yellow-200">
-                                    Note: Initial quantity will be 0. Use the <strong>Purchases</strong> module to add stock from a vendor.
+                                    Note: Initial quantity will be 0. Use <strong>Purchases</strong> or the <strong>Add Stock</strong> action in inventory.
                                 </div>
 
                                 <DialogFooter>
@@ -772,7 +855,7 @@ export default function InventoryPage() {
                                     </TableCell>
                                     <TableCell className="text-center">
                                         <Badge variant={product.quantity > 0 ? "outline" : "secondary"} className={product.quantity > 0 ? "text-blue-600 border-blue-200" : "bg-red-100 text-red-600 border-red-200"}>
-                                            {product.quantity > 0 ? product.quantity : `0 - Out of Stock`}
+                                            {product.quantity > 0 ? product.quantity : `${product.quantity} - Out of Stock`}
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="text-right">
@@ -786,6 +869,28 @@ export default function InventoryPage() {
                                             >
                                                 <Barcode className="h-4 w-4" />
                                             </Button>
+                                            {isAdmin && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => openAddStockDialog(product)}
+                                                    className="hover:bg-emerald-50 hover:text-emerald-600"
+                                                    title="Add Stock"
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                            {isAdmin && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => openStockHistoryDialog(product)}
+                                                    className="hover:bg-indigo-50 hover:text-indigo-600"
+                                                    title="Stock Adjustment History"
+                                                >
+                                                    <TrendingUp className="h-4 w-4" />
+                                                </Button>
+                                            )}
                                             {isAdmin && product.has_variations && (
                                                 <Button
                                                     variant="ghost"
@@ -868,7 +973,7 @@ export default function InventoryPage() {
                     <DialogHeader>
                         <DialogTitle>Edit Product</DialogTitle>
                         <DialogDescription>
-                            Update product information. Stock is managed separately via Purchases.
+                            Update product information. Stock can be adjusted from Purchases or Add Stock.
                         </DialogDescription>
                     </DialogHeader>
                     <form onSubmit={handleEditProduct} className="grid gap-4 py-4">
@@ -1003,6 +1108,125 @@ export default function InventoryPage() {
                             <Button type="submit">Save Changes</Button>
                         </DialogFooter>
                     </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Add Stock Dialog */}
+            <Dialog open={stockOpen} onOpenChange={setStockOpen}>
+                <DialogContent className="sm:max-w-[420px]">
+                    <DialogHeader>
+                        <DialogTitle>Add Stock</DialogTitle>
+                        <DialogDescription>
+                            Quickly increase inventory quantity for {stockProduct?.name || 'this product'}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleAddStock} className="space-y-4 py-2">
+                        <div className="text-sm text-gray-600">
+                            Current stock: <span className="font-semibold text-gray-900">{stockProduct?.quantity ?? 0}</span>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="stock-delta">Quantity to add</Label>
+                            <Input
+                                id="stock-delta"
+                                type="number"
+                                min="0"
+                                step={stockProduct?.allow_decimal_qty ? 'any' : '1'}
+                                placeholder={stockProduct?.allow_decimal_qty ? 'e.g. 2.5' : 'e.g. 5'}
+                                value={stockDelta}
+                                onChange={(e) => setStockDelta(e.target.value)}
+                                required
+                            />
+                            <p className="text-xs text-gray-500">
+                                {stockProduct?.allow_decimal_qty
+                                    ? 'This product supports decimal quantities.'
+                                    : 'This product supports whole numbers only.'}
+                            </p>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="stock-reason">Reason / Note</Label>
+                            <Input
+                                id="stock-reason"
+                                type="text"
+                                placeholder="e.g. Physical count correction"
+                                value={stockReason}
+                                onChange={(e) => setStockReason(e.target.value)}
+                                required
+                            />
+                            <p className="text-xs text-gray-500">Reason is mandatory for audit history.</p>
+                        </div>
+                        <DialogFooter>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setStockOpen(false)}
+                                disabled={stockSaving}
+                            >
+                                Cancel
+                            </Button>
+                            <Button type="submit" disabled={stockSaving}>
+                                {stockSaving ? 'Saving...' : 'Add Stock'}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
+            {/* Stock History Dialog */}
+            <Dialog open={stockHistoryOpen} onOpenChange={setStockHistoryOpen}>
+                <DialogContent className="sm:max-w-[720px]">
+                    <DialogHeader>
+                        <DialogTitle>Stock Adjustment History</DialogTitle>
+                        <DialogDescription>
+                            {historyProduct ? `Audit log for ${historyProduct.name}` : 'Stock adjustment audit log'}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="max-h-[420px] overflow-auto border rounded-md">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Date</TableHead>
+                                    <TableHead className="text-right">Before</TableHead>
+                                    <TableHead className="text-right">Added</TableHead>
+                                    <TableHead className="text-right">After</TableHead>
+                                    <TableHead>By</TableHead>
+                                    <TableHead>Reason</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {historyLoading && (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="text-center text-gray-500 py-6">
+                                            Loading history...
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                                {!historyLoading && historyEntries.length === 0 && (
+                                    <TableRow>
+                                        <TableCell colSpan={6} className="text-center text-gray-500 py-6">
+                                            No stock adjustments recorded yet.
+                                        </TableCell>
+                                    </TableRow>
+                                )}
+                                {!historyLoading && historyEntries.map((entry) => (
+                                    <TableRow key={entry.id}>
+                                        <TableCell className="text-xs text-gray-600">
+                                            {new Date(entry.created_at).toLocaleString()}
+                                        </TableCell>
+                                        <TableCell className="text-right">{entry.quantity_before}</TableCell>
+                                        <TableCell className="text-right text-emerald-600">+{entry.quantity_delta}</TableCell>
+                                        <TableCell className="text-right font-medium">{entry.quantity_after}</TableCell>
+                                        <TableCell>{entry.adjusted_by_username || `User #${entry.adjusted_by_user_id}`}</TableCell>
+                                        <TableCell className="text-sm">{entry.reason}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setStockHistoryOpen(false)}>
+                            Close
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
 

@@ -46,6 +46,7 @@ import {
   MessageSquare,
   TrendingUp,
   FileText,
+  Printer,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
@@ -589,45 +590,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
   const handlePrintReceipt = () => {
     if (!receiptData) return;
-
-    const content = `
-      <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
-        <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
-          <div style="font-size:16px; font-weight:bold;">${storeInfo.name}</div>
-          ${storeInfo.address ? `<div>${storeInfo.address}</div>` : ""}
-          ${storeInfo.city ? `<div>${storeInfo.city}</div>` : ""}
-          ${storeInfo.phone ? `<div>${storeInfo.phone}</div>` : ""}
-          ${storeInfo.email ? `<div>${storeInfo.email}</div>` : ""}
-        </div>
-        <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
-        <div style="margin-bottom:8px;">
-          <div><strong>Customer:</strong> ${receiptData.customerName}</div>
-          ${receiptData.customerPhone ? `<div><strong>Phone:</strong> ${receiptData.customerPhone}</div>` : ""}
-          <div><strong>Date:</strong> ${new Date(receiptData.date).toLocaleString()}</div>
-        </div>
-        <div style="border-top:1px dashed #999; border-bottom:1px dashed #999; padding:8px 0; margin:8px 0;">
-          <div style="display:flex; justify-content:space-between;"><span>Amount</span><strong>rs ${receiptData.amount.toFixed(2)}</strong></div>
-          ${receiptData.method ? `<div style="display:flex; justify-content:space-between;"><span>Method</span><span>${receiptData.method}</span></div>` : ""}
-          ${receiptData.reference ? `<div style="margin-top:6px;"><strong>Reference:</strong> ${receiptData.reference}</div>` : ""}
-          ${typeof receiptData.balance === "number" ? `<div style="display:flex; justify-content:space-between; margin-top:6px;"><span>Outstanding</span><strong>rs ${receiptData.balance.toFixed(2)}</strong></div>` : ""}
-        </div>
-        <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
-        ${storeInfo.website ? `<div style="text-align:center; color:#999;">${storeInfo.website}</div>` : ""}
-      </div>
-    `;
-
-    const printWindow = window.open("", "_blank", "width=400,height=600");
-    if (!printWindow) return;
-    printWindow.document.write(`
-      <html>
-        <head><title>Receipt</title></head>
-        <body>${content}</body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
+    document.body.classList.add("print-payment-receipt");
+    window.print();
+    document.body.classList.remove("print-payment-receipt");
   };
 
   const handleDeleteNote = async (noteId: number) => {
@@ -1488,64 +1453,88 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       </Tabs>
 
       <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
-          <DialogHeader>
-            <DialogTitle>{receiptData?.title || "Receipt"}</DialogTitle>
-            <DialogDescription>
-              Customer payment/advance receipt.
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-[340px] p-0">
+          <div className="no-print p-4 border-b flex justify-between items-center">
+            <h2 className="font-semibold text-base">{receiptData?.title || "Receipt"}</h2>
+            <Button size="sm" onClick={handlePrintReceipt}>
+              <Printer className="h-4 w-4 mr-1" />
+              Print
+            </Button>
+          </div>
 
           {receiptData && (
-            <div className="space-y-3 text-sm">
-              <div className="text-center border-b border-dashed pb-2">
-                <div className="text-base font-semibold">{storeInfo.name}</div>
-                {storeInfo.address && <div>{storeInfo.address}</div>}
-                {storeInfo.city && <div>{storeInfo.city}</div>}
-                {storeInfo.phone && <div>{storeInfo.phone}</div>}
-              </div>
-              <div>
-                <div><span className="font-medium">Customer:</span> {receiptData.customerName}</div>
-                {receiptData.customerPhone && (
-                  <div><span className="font-medium">Phone:</span> {receiptData.customerPhone}</div>
-                )}
-                <div><span className="font-medium">Date:</span> {new Date(receiptData.date).toLocaleString()}</div>
-              </div>
-              <div className="border-t border-b border-dashed py-2">
-                <div className="flex justify-between">
-                  <span>Amount</span>
-                  <span className="font-semibold">rs {receiptData.amount.toFixed(2)}</span>
+            <div id="payment-receipt-print-area" className="p-4">
+              <div className="thermal-receipt bg-white w-full max-w-[80mm] mx-auto">
+                <div className="text-sm">
+                  {/* Store Header */}
+                  <div className="text-center border-b-2 border-dashed border-gray-400 pb-3 mb-3">
+                    <h1 className="text-xl font-bold text-gray-900 mb-1">{storeInfo.name}</h1>
+                    {storeInfo.address && <p className="text-xs text-gray-600">{storeInfo.address}</p>}
+                    {storeInfo.city && <p className="text-xs text-gray-600">{storeInfo.city}</p>}
+                    {storeInfo.phone && <p className="text-xs text-gray-600">{storeInfo.phone}</p>}
+                    {storeInfo.email && <p className="text-xs text-gray-600">{storeInfo.email}</p>}
+                  </div>
+
+                  {/* Receipt Title */}
+                  <div className="text-center mb-3 pb-3 border-b border-dashed border-gray-300">
+                    <h2 className="text-lg font-bold text-gray-900 mb-1">
+                      {receiptData.type === "advance" ? "ADVANCE RECEIPT" : "PAYMENT RECEIPT"}
+                    </h2>
+                    <p className="text-xs text-gray-600">{new Date(receiptData.date).toLocaleString()}</p>
+                  </div>
+
+                  {/* Customer Info */}
+                  <div className="mb-3 pb-3 border-b border-dashed border-gray-300">
+                    <p className="text-xs font-semibold text-gray-600 mb-1">CUSTOMER:</p>
+                    <p className="text-sm font-medium text-gray-900">{receiptData.customerName}</p>
+                    {receiptData.customerPhone && (
+                      <p className="text-xs text-gray-600">{receiptData.customerPhone}</p>
+                    )}
+                  </div>
+
+                  {/* Payment Details */}
+                  <div className="mb-3 pb-3 border-b-2 border-dashed border-gray-400">
+                    <p className="text-xs font-semibold text-gray-600 mb-2">PAYMENT DETAILS:</p>
+                    <div className="flex justify-between text-base font-bold pt-1 border-t-2 border-gray-900">
+                      <span className="text-gray-900">AMOUNT:</span>
+                      <span className="text-gray-900">rs {receiptData.amount.toFixed(2)}</span>
+                    </div>
+                    {receiptData.method && (
+                      <div className="flex justify-between text-sm mt-1">
+                        <span className="text-gray-600">Method:</span>
+                        <span className="font-medium text-gray-900 capitalize">{receiptData.method}</span>
+                      </div>
+                    )}
+                    {receiptData.reference && (
+                      <div className="text-sm mt-2">
+                        <span className="text-gray-600">Reference: </span>
+                        <span className="font-medium text-gray-900">{receiptData.reference}</span>
+                      </div>
+                    )}
+                    {typeof receiptData.balance === "number" && (
+                      <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed border-gray-300">
+                        <span className="text-gray-600">Outstanding Balance:</span>
+                        <span className={`font-semibold ${receiptData.balance > 0 ? "text-red-600" : "text-green-700"}`}>
+                          rs {receiptData.balance.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="text-center pt-2">
+                    <p className="text-xs text-gray-600">Thank you!</p>
+                    {storeInfo.website && <p className="text-xs text-gray-400 mt-1">{storeInfo.website}</p>}
+                    <p className="text-xs text-gray-400 mt-1">VibePOS (by vibeexe.com)</p>
+                  </div>
                 </div>
-                {receiptData.method && (
-                  <div className="flex justify-between">
-                    <span>Method</span>
-                    <span>{receiptData.method}</span>
-                  </div>
-                )}
-                {receiptData.reference && (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Ref: {receiptData.reference}
-                  </div>
-                )}
-                {typeof receiptData.balance === "number" && (
-                  <div className="flex justify-between mt-2">
-                    <span>Outstanding</span>
-                    <span className="font-semibold">rs {receiptData.balance.toFixed(2)}</span>
-                  </div>
-                )}
               </div>
             </div>
           )}
 
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setReceiptDialogOpen(false)}
-            >
-              Close
-            </Button>
-            <Button onClick={handlePrintReceipt}>Print Receipt</Button>
-          </DialogFooter>
+          <div className="no-print p-3 border-t flex justify-end">
+            <Button variant="outline" onClick={() => setReceiptDialogOpen(false)}>Close</Button>
+          </div>
         </DialogContent>
       </Dialog>
 

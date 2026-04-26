@@ -2,7 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from PIL import Image
 import requests
@@ -19,6 +19,13 @@ import json
 
 RETURN_DIR = Path.home() / "Downloads" / "pos_invoices"
 RETURN_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _convert_utc_to_pakistan(dt: datetime) -> datetime:
+    """Convert UTC/naive datetime to Pakistan timezone (UTC+5)."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone(timedelta(hours=5)))
 
 
 def normalize_phone_number(phone: Optional[str]) -> Optional[str]:
@@ -116,7 +123,8 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
             draw.text(((width - text_width) // 2, y), sale_text, fill='black', font=font_small)
             y += mm(4)
 
-        date_text = ret.created_at.strftime("%Y-%m-%d %H:%M")
+        pakistan_time = _convert_utc_to_pakistan(ret.created_at)
+        date_text = pakistan_time.strftime("%Y-%m-%d %H:%M")
         bbox = draw.textbbox((0, 0), date_text, font=font_small)
         text_width = bbox[2] - bbox[0]
         draw.text(((width - text_width) // 2, y), date_text, fill='black', font=font_small)
@@ -154,10 +162,14 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
         img.save(file_path, "PNG")
 
         whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send"
+        caption_time = _convert_utc_to_pakistan(ret.created_at).strftime("%Y-%m-%d %H:%M")
         payload = {
             "phone_number": phone_number,
             "image_url": str(file_path.absolute()),
-            "caption": f"Return #{str(ret.id).zfill(6)} - Refund: RS{ret.refund_amount:.2f}"
+            "caption": (
+                f"Return #{str(ret.id).zfill(6)} - Refund: RS{ret.refund_amount:.2f}"
+                f" | Date/Time (GMT+5): {caption_time}"
+            )
         }
 
         requests.post(

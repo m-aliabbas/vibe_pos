@@ -132,6 +132,38 @@ class ProductUpdate(BaseModel):
                 return []
         return v
 
+
+class ProductStockAdjust(BaseModel):
+    quantity_delta: float
+    reason: str
+
+    @field_validator('quantity_delta')
+    @classmethod
+    def validate_quantity_delta(cls, v):
+        if v <= 0:
+            raise ValueError('quantity_delta must be greater than 0')
+        return v
+
+    @field_validator('reason')
+    @classmethod
+    def validate_reason(cls, v):
+        value = (v or '').strip()
+        if not value:
+            raise ValueError('reason is required')
+        return value
+
+
+class ProductStockAdjustmentLog(BaseModel):
+    id: int
+    product_id: int
+    quantity_before: float
+    quantity_delta: float
+    quantity_after: float
+    reason: str
+    adjusted_by_user_id: int
+    adjusted_by_username: Optional[str] = None
+    created_at: str
+
 class Product(ProductBase):
     id: int
     quantity: float

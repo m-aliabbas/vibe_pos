@@ -18,6 +18,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Search, Package, RotateCcw } from "lucide-react";
 import api from "@/lib/api";
+import { formatPakistanDateTime } from "@/lib/utils";
 
 interface SaleItem {
   id: number;
@@ -131,7 +132,7 @@ export default function CreateReturnPage() {
           sale_item: item,
           quantity: Math.max(1, Math.min(item.quantity, Math.max(0, item.quantity - (returnedMap[item.id] || 0)))),
           restocked: true,
-          selected: (item.quantity - (returnedMap[item.id] || 0)) > 0,
+          selected: false,
         }))
       );
     } catch (error) {
@@ -280,7 +281,7 @@ export default function CreateReturnPage() {
                             </p>
                           </div>
                           <div className="text-right text-sm text-muted-foreground">
-                            <div>{new Date(sale.created_at).toLocaleString()}</div>
+                            <div>{formatPakistanDateTime(sale.created_at)}</div>
                             <div className="font-semibold">rs {sale.total.toFixed(2)}</div>
                           </div>
                         </div>

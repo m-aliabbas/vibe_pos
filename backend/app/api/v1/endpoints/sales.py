@@ -112,25 +112,17 @@ def _build_whatsapp_invoice_caption(sale: Sale) -> str:
         total_item_discount += item_discount
 
     total_discount = (sale.discount or 0.0) + total_item_discount
-    after_discount = gross_subtotal - total_discount
+    caption_total = max(0.0, gross_subtotal - total_discount)
 
     lines = [
         f"Invoice #{str(sale.id).zfill(6)}",
+        f"Date/Time (GMT+5): {_convert_utc_to_pakistan(sale.created_at).strftime('%Y-%m-%d %H:%M')}",
         f"Subtotal: RS {gross_subtotal:.2f}",
+        f"Total Discount: RS {total_discount:.2f}",
+        f"Total: RS {caption_total:.2f}",
     ]
 
-    if total_discount > 0:
-        lines.append(f"Discount: -RS {total_discount:.2f}")
-        lines.append(f"After Discount: RS {after_discount:.2f}")
-    if sale.tax and sale.tax > 0:
-        lines.append(f"Tax: RS {sale.tax:.2f}")
-    if sale.delivery_charges and sale.delivery_charges > 0:
-        lines.append(f"Delivery: RS {sale.delivery_charges:.2f}")
-
-    lines.extend([
-        f"Total: RS {sale.total:.2f}",
-        "Thank you for your business!",
-    ])
+    lines.append("Thank you for your business!")
     return "\n".join(lines)
 
 

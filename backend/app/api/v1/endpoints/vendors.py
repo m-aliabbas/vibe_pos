@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from app.api import deps
 from app.models.vendor import Vendor
-from app.models.purchase import Purchase, PurchaseStatus
+from app.models.purchase import Purchase
 from app.models.accounting import JournalEntry, JournalLine, Account
 from app.schemas import vendor as vendor_schema
 from app.services import accounting as accounting_service
@@ -147,16 +147,6 @@ def create_vendor(
     db.add(vendor)
     db.commit()
     db.refresh(vendor)
-
-    if vendor.opening_balance and vendor.opening_balance > 0:
-        legacy_purchase = Purchase(
-            vendor_id=vendor.id,
-            total_amount=vendor.opening_balance,
-            amount_paid=0.0,
-            status=PurchaseStatus.UNPAID,
-        )
-        db.add(legacy_purchase)
-        db.commit()
     return vendor
 
 
@@ -215,16 +205,6 @@ async def bulk_import_vendors(
             db.commit()
             db.refresh(vendor)
 
-            if vendor.opening_balance and vendor.opening_balance > 0:
-                legacy_purchase = Purchase(
-                    vendor_id=vendor.id,
-                    total_amount=vendor.opening_balance,
-                    amount_paid=0.0,
-                    status=PurchaseStatus.UNPAID,
-                )
-                db.add(legacy_purchase)
-                db.commit()
-
             created += 1
         except Exception as e:
             db.rollback()
@@ -274,43 +254,7 @@ def update_vendor(
                 status_code=400,
                 detail="Opening balance must be greater than or equal to 0",
             )
-
-        legacy_purchase = db.query(Purchase)
-        legacy_purchase = legacy_purchase.filter(
-            Purchase.vendor_id == id,
-            ~Purchase.items.any(),
-        ).order_by(Purchase.created_at.asc()).first()
-
-
-        if legacy_purchase and legacy_purchase.amount_paid > opening_balance:
-            raise HTTPException(
-                status_code=400,
-                detail="Opening balance cannot be less than already paid amount",
-            )
-
         vendor.opening_balance = float(opening_balance)
-
-        if opening_balance <= 0:
-            if legacy_purchase:
-                db.delete(legacy_purchase)
-        else:
-            if not legacy_purchase:
-                legacy_purchase = Purchase(
-                    vendor_id=vendor.id,
-                    total_amount=float(opening_balance),
-                    amount_paid=0.0,
-                    status=PurchaseStatus.UNPAID,
-                )
-                db.add(legacy_purchase)
-            else:
-                legacy_purchase.total_amount = float(opening_balance)
-                if legacy_purchase.amount_paid >= legacy_purchase.total_amount:
-                    legacy_purchase.amount_paid = legacy_purchase.total_amount
-                    legacy_purchase.status = PurchaseStatus.PAID
-                elif legacy_purchase.amount_paid > 0:
-                    legacy_purchase.status = PurchaseStatus.PARTIAL
-                else:
-                    legacy_purchase.status = PurchaseStatus.UNPAID
     
     db.add(vendor)
     db.commit()
@@ -330,7 +274,10 @@ def export_vendor_report(
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
 
-    purchases = db.query(Purchase).filter(Purchase.vendor_id == id).all()
+    purchases = db.query(Purchase).filter(
+        Purchase.vendor_id == id,
+        Purchase.items.any(),
+    ).all()
 
     accounting_service.ensure_system_accounts(db)
     ap_code = accounting_service.SYSTEM_ACCOUNTS["ACCOUNTS_PAYABLE"]["code"]
@@ -402,6 +349,8 @@ def make_vendor_payment(
     if payment_in.amount <= 0:
         raise HTTPException(status_code=400, detail="Payment amount must be positive")
 
+    reference_note = (payment_in.reference_note or "").strip() or None
+
     # Ledger-level payable balance; keep behavior explicit (no auto clearing of existing advance).
     previous_credit = max(0.0, accounting_service.get_vendor_advance_balance(db, id))
     current_payable = max(0.0, accounting_service.get_vendor_balance(db, id))
@@ -421,11 +370,9 @@ def make_vendor_payment(
         prepaid_used=prepaid_used,
         new_prepaid_from_cash=new_prepaid_from_cash,
         created_by=current_user.id,
+        reference_note=reference_note,
     )
     db.commit()
-
-    # Payable balance after payment from ledger perspective.
-    remaining_balance = max(0.0, current_payable - applied_amount)
     
     # Send WhatsApp notification if vendor has phone
     if vendor.phone:
@@ -433,7 +380,6 @@ def make_vendor_payment(
             send_vendor_payment_notification_async,
             vendor.phone,
             payment_in.amount,
-            remaining_balance,
             vendor.name,
         )
     
@@ -500,7 +446,7 @@ def settle_vendor_balance(
         "new_prepaid_credit": vendor.prepaid_credit,
     }
 
-async def send_vendor_payment_notification_async(phone: str, amount: float, balance: float, vendor_name: str):
+async def send_vendor_payment_notification_async(phone: str, amount: float, vendor_name: str):
     """Send WhatsApp notification for vendor payment without blocking the request path."""
     try:
         # Normalize phone if needed
@@ -510,10 +456,9 @@ async def send_vendor_payment_notification_async(phone: str, amount: float, bala
             phone = '92' + phone
             
         message = f"✅ *Payment Sent to Vendor*\n\n" \
-                  f"Vendor: {vendor_name}\n" \
-                  f"Amount Paid: RS{amount:,.2f}\n" \
-                  f"Remaining Balance: RS{balance:,.2f}\n\n" \
-                  f"Transaction recorded successfully."
+              f"Vendor: {vendor_name}\n" \
+              f"Amount Paid: RS{amount:,.2f}\n\n" \
+              f"Transaction recorded successfully."
         await asyncio.to_thread(
             requests.post,
             "http://127.0.0.1:8000/api/v1/whatsapp/send",

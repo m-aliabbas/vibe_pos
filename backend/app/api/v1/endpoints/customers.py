@@ -928,8 +928,8 @@ def send_payment_notification(phone: str, amount: float, balance: float, payment
             phone = '92' + phone
             
         message = f"✅ *Payment Received*\n\n" \
-                  f"Amount: RS{amount:,.2f}\n" \
-                  f"Remaining Balance: RS{balance:,.2f}\n" \
+                  f"Amount: RS {amount:,.2f}\n" \
+                  f"Remaining Balance: RS {balance:,.2f}\n" \
                   f"Payment ID: #{payment_id}\n\n" \
                   f"Thank you!\n" \
                   f"{_get_store_name()}"
@@ -964,7 +964,7 @@ def send_due_reminder_notification(phone: str, name: str, balance: float, custom
             f"🔔 *Payment Reminder*\n\n"
             f"{store}\n"
             f"Customer: {name}\n"
-            f"Due Amount: RS{balance:,.2f}\n\n"
+            f"Due Amount: RS {balance:,.2f}\n\n"
             f"Please clear your outstanding balance at your earliest convenience.\n"
             f"Customer ID: #{customer_id}\n"
             f"{store}"

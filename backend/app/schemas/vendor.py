@@ -16,6 +16,7 @@ class VendorUpdate(VendorBase):
 
 class VendorPayment(BaseModel):
     amount: float
+    reference_note: Optional[str] = None
 
 
 class VendorSettlement(BaseModel):

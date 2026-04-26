@@ -269,6 +269,7 @@ def read_vendor_purchases(
     purchases = db.query(Purchase)\
         .options(joinedload(Purchase.items).joinedload(PurchaseItem.product))\
         .filter(Purchase.vendor_id == vendor_id)\
+        .filter(Purchase.items.any())\
         .order_by(Purchase.created_at.desc())\
         .offset(skip)\
         .limit(limit)\

@@ -204,3 +204,20 @@
     font-size: 12px;
   }
 }
+
+/* Print Receipt: hide everything except the payment receipt area */
+@media print {
+  body.print-payment-receipt * {
+    visibility: hidden;
+  }
+  body.print-payment-receipt #payment-receipt-print-area,
+  body.print-payment-receipt #payment-receipt-print-area * {
+    visibility: visible;
+  }
+  body.print-payment-receipt #payment-receipt-print-area {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 80mm;
+  }
+}

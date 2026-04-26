@@ -1321,12 +1321,16 @@ def get_customer_ledger(
     for sale_id, created_at, total, amount_paid, amount_due in sales_rows:
         if sale_id in sale_ids_in_journal:
             continue
+        # For cash/full-paid sales there is no AR journal movement, but we still
+        # show amount in both sides for visibility while keeping net balance zero.
+        paid_in_full_without_due = float(amount_due or 0.0) <= 0 and float(amount_paid or 0.0) > 0
+        visible_amount = float(total or amount_paid or 0.0) if paid_in_full_without_due else 0.0
         info_events.append((created_at, 1, {
             "description": f"Sale #{sale_id} (Paid {amount_paid:.2f}, Due {amount_due:.2f}, Total {total:.2f})",
             "source_type": "sale",
             "source_id": sale_id,
-            "debit": 0.0,
-            "credit": 0.0,
+            "debit": visible_amount,
+            "credit": visible_amount,
         }))
 
     for return_id, created_at, refund_amount, sale_id in returns_rows:
@@ -1415,7 +1419,13 @@ def get_vendor_ledger(
         func.coalesce(func.sum(JournalLine.credit), 0.0)
     ).first()
 
-    opening_balance = (vendor.opening_balance or 0.0) + (pre_credit - pre_debit)
+    pre_period_has_journal = base_query.filter(
+        JournalEntry.entry_date < start
+    ).limit(1).first() is not None
+    journal_opening = float((pre_credit or 0.0) - (pre_debit or 0.0))
+    legacy_opening = float(vendor.opening_balance or 0.0)
+    # Prevent double counting when opening balance is already represented in journal history.
+    opening_balance = journal_opening if pre_period_has_journal else legacy_opening
 
     rows = base_query.filter(
         JournalEntry.entry_date >= start,

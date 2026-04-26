@@ -3,10 +3,11 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api, { reportsApi } from '@/lib/api';
+import { formatPakistanDate, formatPakistanDateTime } from '@/lib/utils';
 import { ToWords } from 'to-words';
 import { storeConfig, fetchStoreConfig } from '@/lib/store-config';
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter, FileText } from "lucide-react";
+import { ArrowLeft, Trash2, Edit, CreditCard, ShoppingCart, DollarSign, Filter, FileText, Printer } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
     Select,
@@ -90,6 +91,7 @@ export default function VendorDetailsPage() {
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentReferenceNote, setPaymentReferenceNote] = useState('');
     const [paymentResult, setPaymentResult] = useState<any>(null);
     const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
     const [receiptData, setReceiptData] = useState<{
@@ -99,6 +101,7 @@ export default function VendorDetailsPage() {
         method?: string;
         date: string;
         balance?: number;
+        referenceNote?: string;
     } | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [storeInfo, setStoreInfo] = useState(storeConfig);
@@ -160,8 +163,10 @@ export default function VendorDetailsPage() {
 
     const handleVendorPayment = async () => {
         try {
+            const trimmedReferenceNote = paymentReferenceNote.trim();
             const response = await api.post(`/vendors/${id}/payment`, {
-                amount: parseFloat(paymentAmount)
+                amount: parseFloat(paymentAmount),
+                reference_note: trimmedReferenceNote || undefined,
             });
             setPaymentResult(response.data);
             setPaymentAmount('');
@@ -172,6 +177,7 @@ export default function VendorDetailsPage() {
                 method: "cash",
                 date: new Date().toISOString(),
                 balance: response.data?.new_prepaid_credit ?? undefined,
+                referenceNote: trimmedReferenceNote || undefined,
             });
             setReceiptDialogOpen(true);
             // Refresh purchase data
@@ -196,7 +202,7 @@ export default function VendorDetailsPage() {
             });
             const data = response.data || {};
             alert(
-                `Balance settled.\nSettled Payable: rs ${(data.settled_payable || 0).toFixed(2)}\nSettled Advance: rs ${(data.settled_advance || 0).toFixed(2)}`
+                `Balance settled.\nSettled Payable: Rs ${(data.settled_payable || 0).toFixed(2)}\nSettled Advance: Rs ${(data.settled_advance || 0).toFixed(2)}`
             );
             fetchData();
         } catch (error: any) {
@@ -209,48 +215,15 @@ export default function VendorDetailsPage() {
         setPaymentDialogOpen(false);
         setPaymentResult(null);
         setPaymentAmount('');
+        setPaymentReferenceNote('');
     };
 
-        const handlePrintReceipt = () => {
-                if (!receiptData) return;
-
-                const content = `
-                    <div style="font-family: Arial, sans-serif; max-width: 320px; margin: 0 auto; font-size: 12px;">
-                        <div style="text-align:center; border-bottom:1px dashed #999; padding-bottom:8px; margin-bottom:8px;">
-                            <div style="font-size:16px; font-weight:bold;">${storeInfo.name}</div>
-                            ${storeInfo.address ? `<div>${storeInfo.address}</div>` : ""}
-                            ${storeInfo.city ? `<div>${storeInfo.city}</div>` : ""}
-                            ${storeInfo.phone ? `<div>${storeInfo.phone}</div>` : ""}
-                            ${storeInfo.email ? `<div>${storeInfo.email}</div>` : ""}
-                        </div>
-                        <div style="text-align:center; font-weight:bold; margin-bottom:8px;">${receiptData.title}</div>
-                        <div style="margin-bottom:8px;">
-                            <div><strong>Vendor:</strong> ${receiptData.vendorName}</div>
-                            <div><strong>Date:</strong> ${new Date(receiptData.date).toLocaleString()}</div>
-                        </div>
-                        <div style="border-top:1px dashed #999; border-bottom:1px dashed #999; padding:8px 0; margin:8px 0;">
-                            <div style="display:flex; justify-content:space-between;"><span>Amount</span><strong>rs ${receiptData.amount.toFixed(2)}</strong></div>
-                            ${receiptData.method ? `<div style="display:flex; justify-content:space-between;"><span>Method</span><span>${receiptData.method}</span></div>` : ""}
-                            ${typeof receiptData.balance === "number" ? `<div style="display:flex; justify-content:space-between; margin-top:6px;"><span>Prepaid Credit</span><strong>rs ${receiptData.balance.toFixed(2)}</strong></div>` : ""}
-                        </div>
-                        <div style="text-align:center; color:#777; margin-top:10px;">Thank you!</div>
-                        ${storeInfo.website ? `<div style="text-align:center; color:#999;">${storeInfo.website}</div>` : ""}
-                    </div>
-                `;
-
-                const printWindow = window.open("", "_blank", "width=400,height=600");
-                if (!printWindow) return;
-                printWindow.document.write(`
-                    <html>
-                        <head><title>Receipt</title></head>
-                        <body>${content}</body>
-                    </html>
-                `);
-                printWindow.document.close();
-                printWindow.focus();
-                printWindow.print();
-                printWindow.close();
-        };
+    const handlePrintReceipt = () => {
+        if (!receiptData) return;
+        document.body.classList.add("print-payment-receipt");
+        window.print();
+        document.body.classList.remove("print-payment-receipt");
+    };
 
     const handleVendorReportExport = async () => {
         if (!id) return;
@@ -299,7 +272,7 @@ export default function VendorDetailsPage() {
                 credit: Number(entry.credit || 0),
                 balance: Number(entry.balance || 0),
             }));
-            const formatCurrency = (amount: number) => `rs ${amount.toFixed(2)}`;
+            const formatCurrency = (amount: number) => `Rs ${amount.toFixed(2)}`;
 
             // Extract all purchase IDs from ledger
             const purchaseIds = new Set<number>();
@@ -389,7 +362,7 @@ export default function VendorDetailsPage() {
                          }
               
               return [
-                entry.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+                formatPakistanDate(entry.date),
                 description,
                 entry.debit > 0 ? formatCurrency(entry.debit) : '-',
                 entry.credit > 0 ? formatCurrency(entry.credit) : '-',
@@ -687,13 +660,13 @@ export default function VendorDetailsPage() {
                                                 <div className="flex justify-between items-center mb-2">
                                                     <span className="text-sm font-medium text-blue-900">Outstanding Balance:</span>
                                                     <span className="text-lg font-bold text-red-600">
-                                                        rs {totalBalance.toFixed(2)}
+                                                        Rs {totalBalance.toFixed(2)}
                                                     </span>
                                                 </div>
                                                 {effectivePrepaidCredit > 0 && (
                                                     <div className="flex justify-between items-center mb-2 text-sm">
                                                         <span className="text-blue-900">Existing Credit:</span>
-                                                        <span className="font-bold text-green-600">rs {effectivePrepaidCredit.toFixed(2)}</span>
+                                                        <span className="font-bold text-green-600">Rs {effectivePrepaidCredit.toFixed(2)}</span>
                                                     </div>
                                                 )}
                                                 <p className="text-xs text-blue-700">
@@ -716,8 +689,17 @@ export default function VendorDetailsPage() {
                                                     </p>
                                                 )}
                                                 <p className="text-xs text-gray-500">
-                                                    💡 Tip: Pay the full balance (rs {totalBalance.toFixed(2)}) or any amount
+                                                    💡 Tip: Pay the full balance (Rs {totalBalance.toFixed(2)}) or any amount
                                                 </p>
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="payment-reference-note">Reference Note (Optional)</Label>
+                                                <Input
+                                                    id="payment-reference-note"
+                                                    value={paymentReferenceNote}
+                                                    onChange={e => setPaymentReferenceNote(e.target.value)}
+                                                    placeholder="e.g. cheque #, bank txn id, memo"
+                                                />
                                             </div>
                                         </div>
                                         <DialogFooter>
@@ -738,7 +720,7 @@ export default function VendorDetailsPage() {
                                                     <div>
                                                         <div className="flex justify-between">
                                                             <span className="text-gray-600">Payment Amount:</span>
-                                                            <span className="font-bold">rs {paymentResult.total_payment.toFixed(2)}</span>
+                                                            <span className="font-bold">Rs {paymentResult.total_payment.toFixed(2)}</span>
                                                         </div>
                                                         {paymentResult.total_payment > 0 && (
                                                             <p className="text-xs text-blue-600 font-medium mt-1">
@@ -750,7 +732,7 @@ export default function VendorDetailsPage() {
                                                         <div>
                                                             <div className="flex justify-between">
                                                                 <span className="text-gray-600">Previous Credit Used:</span>
-                                                                <span className="font-medium text-blue-600">rs {paymentResult.prepaid_used.toFixed(2)}</span>
+                                                                <span className="font-medium text-blue-600">Rs {paymentResult.prepaid_used.toFixed(2)}</span>
                                                             </div>
                                                             <p className="text-xs text-blue-600 font-medium mt-1">
                                                                 {convertToWords(paymentResult.prepaid_used)}
@@ -760,7 +742,7 @@ export default function VendorDetailsPage() {
                                                     <div>
                                                         <div className="flex justify-between">
                                                             <span className="text-gray-600">Applied to Payable (Ledger):</span>
-                                                            <span className="font-medium text-green-600">rs {paymentResult.applied_amount.toFixed(2)}</span>
+                                                            <span className="font-medium text-green-600">Rs {paymentResult.applied_amount.toFixed(2)}</span>
                                                         </div>
                                                         {paymentResult.applied_amount > 0 && (
                                                             <p className="text-xs text-blue-600 font-medium mt-1">
@@ -772,7 +754,7 @@ export default function VendorDetailsPage() {
                                                         <div className="border-t pt-2 mt-2">
                                                             <div className="flex justify-between">
                                                                 <span className="text-gray-600">New Prepaid Credit:</span>
-                                                                <span className="font-bold text-blue-600">rs {paymentResult.new_prepaid_credit.toFixed(2)}</span>
+                                                                <span className="font-bold text-blue-600">Rs {paymentResult.new_prepaid_credit.toFixed(2)}</span>
                                                             </div>
                                                             <p className="text-xs text-blue-600 font-medium mt-1">
                                                                 {convertToWords(paymentResult.new_prepaid_credit)}
@@ -794,10 +776,10 @@ export default function VendorDetailsPage() {
                                                             <div key={up.purchase_id} className="bg-gray-50 p-3 rounded-md text-sm border">
                                                                 <div className="flex justify-between items-center">
                                                                     <span className="font-mono text-xs">Purchase #{up.purchase_id}</span>
-                                                                    <span className="text-green-600 font-medium">-${up.payment_applied.toFixed(2)}</span>
+                                                                    <span className="text-green-600 font-medium">-Rs {up.payment_applied.toFixed(2)}</span>
                                                                 </div>
                                                                 <div className="text-xs text-gray-500 mt-1">
-                                                                    New Balance: ${up.new_balance.toFixed(2)}
+                                                                    New Balance: Rs {up.new_balance.toFixed(2)}
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -826,53 +808,81 @@ export default function VendorDetailsPage() {
                     )}
 
                     <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
-                        <DialogContent className="sm:max-w-[420px]">
-                            <DialogHeader>
-                                <DialogTitle>{receiptData?.title || "Receipt"}</DialogTitle>
-                                <DialogDescription>
-                                    Vendor payment receipt.
-                                </DialogDescription>
-                            </DialogHeader>
+                        <DialogContent className="sm:max-w-[340px] p-0">
+                            <div className="no-print p-4 border-b flex justify-between items-center">
+                                <h2 className="font-semibold text-base">{receiptData?.title || "Receipt"}</h2>
+                                <Button size="sm" onClick={handlePrintReceipt}>
+                                    <Printer className="h-4 w-4 mr-1" />
+                                    Print
+                                </Button>
+                            </div>
 
                             {receiptData && (
-                                <div className="space-y-3 text-sm">
-                                    <div className="text-center border-b border-dashed pb-2">
-                                        <div className="text-base font-semibold">{storeInfo.name}</div>
-                                        {storeInfo.address && <div>{storeInfo.address}</div>}
-                                        {storeInfo.city && <div>{storeInfo.city}</div>}
-                                        {storeInfo.phone && <div>{storeInfo.phone}</div>}
-                                    </div>
-                                    <div>
-                                        <div><span className="font-medium">Vendor:</span> {receiptData.vendorName}</div>
-                                        <div><span className="font-medium">Date:</span> {new Date(receiptData.date).toLocaleString()}</div>
-                                    </div>
-                                    <div className="border-t border-b border-dashed py-2">
-                                        <div className="flex justify-between">
-                                            <span>Amount</span>
-                                            <span className="font-semibold">rs {receiptData.amount.toFixed(2)}</span>
+                                <div id="payment-receipt-print-area" className="p-4">
+                                    <div className="thermal-receipt bg-white w-full max-w-[80mm] mx-auto">
+                                        <div className="text-sm">
+                                            {/* Store Header */}
+                                            <div className="text-center border-b-2 border-dashed border-gray-400 pb-3 mb-3">
+                                                <h1 className="text-xl font-bold text-gray-900 mb-1">{storeInfo.name}</h1>
+                                                {storeInfo.address && <p className="text-xs text-gray-600">{storeInfo.address}</p>}
+                                                {storeInfo.city && <p className="text-xs text-gray-600">{storeInfo.city}</p>}
+                                                {storeInfo.phone && <p className="text-xs text-gray-600">{storeInfo.phone}</p>}
+                                                {storeInfo.email && <p className="text-xs text-gray-600">{storeInfo.email}</p>}
+                                            </div>
+
+                                            {/* Receipt Title */}
+                                            <div className="text-center mb-3 pb-3 border-b border-dashed border-gray-300">
+                                                <h2 className="text-lg font-bold text-gray-900 mb-1">PAYMENT RECEIPT</h2>
+                                                <p className="text-xs text-gray-600">{formatPakistanDateTime(receiptData.date)}</p>
+                                            </div>
+
+                                            {/* Vendor Info */}
+                                            <div className="mb-3 pb-3 border-b border-dashed border-gray-300">
+                                                <p className="text-xs font-semibold text-gray-600 mb-1">VENDOR:</p>
+                                                <p className="text-sm font-medium text-gray-900">{receiptData.vendorName}</p>
+                                            </div>
+
+                                            {/* Payment Details */}
+                                            <div className="mb-3 pb-3 border-b-2 border-dashed border-gray-400">
+                                                <p className="text-xs font-semibold text-gray-600 mb-2">PAYMENT DETAILS:</p>
+                                                <div className="flex justify-between text-base font-bold pt-1 border-t-2 border-gray-900">
+                                                    <span className="text-gray-900">AMOUNT PAID:</span>
+                                                    <span className="text-gray-900">Rs {receiptData.amount.toFixed(2)}</span>
+                                                </div>
+                                                {receiptData.method && (
+                                                    <div className="flex justify-between text-sm mt-1">
+                                                        <span className="text-gray-600">Method:</span>
+                                                        <span className="font-medium text-gray-900 capitalize">{receiptData.method}</span>
+                                                    </div>
+                                                )}
+                                                {receiptData.referenceNote && (
+                                                    <div className="text-sm mt-2">
+                                                        <span className="text-gray-600">Reference: </span>
+                                                        <span className="font-medium text-gray-900">{receiptData.referenceNote}</span>
+                                                    </div>
+                                                )}
+                                                {typeof receiptData.balance === "number" && (
+                                                    <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed border-gray-300">
+                                                        <span className="text-gray-600">Prepaid Credit:</span>
+                                                        <span className="font-semibold text-green-700">Rs {receiptData.balance.toFixed(2)}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Footer */}
+                                            <div className="text-center pt-2">
+                                                <p className="text-xs text-gray-600">Thank you!</p>
+                                                {storeInfo.website && <p className="text-xs text-gray-400 mt-1">{storeInfo.website}</p>}
+                                                <p className="text-xs text-gray-400 mt-1">VibePOS (by vibeexe.com)</p>
+                                            </div>
                                         </div>
-                                        {receiptData.method && (
-                                            <div className="flex justify-between">
-                                                <span>Method</span>
-                                                <span>{receiptData.method}</span>
-                                            </div>
-                                        )}
-                                        {typeof receiptData.balance === "number" && (
-                                            <div className="flex justify-between mt-2">
-                                                <span>Prepaid Credit</span>
-                                                <span className="font-semibold">rs {receiptData.balance.toFixed(2)}</span>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             )}
 
-                            <DialogFooter>
-                                <Button variant="outline" onClick={() => setReceiptDialogOpen(false)}>
-                                    Close
-                                </Button>
-                                <Button onClick={handlePrintReceipt}>Print Receipt</Button>
-                            </DialogFooter>
+                            <div className="no-print p-3 border-t flex justify-end">
+                                <Button variant="outline" onClick={() => setReceiptDialogOpen(false)}>Close</Button>
+                            </div>
                         </DialogContent>
                     </Dialog>
                     <Button variant="destructive" disabled title="Delete disabled for safety">
@@ -895,7 +905,7 @@ export default function VendorDetailsPage() {
                         <CardTitle className="text-sm font-medium text-gray-500">Total Paid</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-600">${calculateTotalPaid(purchases).toFixed(2)}</div>
+                        <div className="text-2xl font-bold text-green-600">Rs {calculateTotalPaid(purchases).toFixed(2)}</div>
                     </CardContent>
                 </Card>
                 <Card className={totalBalance > 0 ? "border-red-200 bg-red-50" : ""}>
@@ -904,7 +914,7 @@ export default function VendorDetailsPage() {
                     </CardHeader>
                     <CardContent>
                         <div className={`text-2xl font-bold ${totalBalance > 0 ? "text-red-600" : "text-gray-900"}`}>
-                            ${totalBalance.toFixed(2)}
+                            Rs {totalBalance.toFixed(2)}
                         </div>
                     </CardContent>
                 </Card>
@@ -916,7 +926,7 @@ export default function VendorDetailsPage() {
                         <div>
                             <h3 className="font-semibold text-blue-900">💰 Prepaid Credit Available</h3>
                             <p className="text-sm text-blue-700">
-                                This vendor has a prepaid balance of <span className="font-bold">${effectivePrepaidCredit.toFixed(2)}</span> tracked at ledger level.
+                                This vendor has a prepaid balance of <span className="font-bold">Rs {effectivePrepaidCredit.toFixed(2)}</span> tracked at ledger level.
                             </p>
                         </div>
                     </CardContent>
@@ -964,7 +974,7 @@ export default function VendorDetailsPage() {
                                     }}
                                 >
                                     <TableCell>
-                                        {new Date(row.date).toLocaleDateString()}
+                                        {formatPakistanDate(row.date)}
                                     </TableCell>
                                     <TableCell className="font-mono text-xs">{row.reference}</TableCell>
                                     <TableCell>
@@ -984,13 +994,13 @@ export default function VendorDetailsPage() {
                                         )}
                                     </TableCell>
                                     <TableCell className="text-right font-medium">
-                                        ${row.total_amount.toFixed(2)}
+                                        Rs {row.total_amount.toFixed(2)}
                                     </TableCell>
                                     <TableCell className="text-right text-gray-500">
-                                        ${row.amount_paid.toFixed(2)}
+                                        Rs {row.amount_paid.toFixed(2)}
                                     </TableCell>
                                     <TableCell className="text-right font-medium">
-                                        ${row.balance.toFixed(2)}
+                                        Rs {row.balance.toFixed(2)}
                                     </TableCell>
                                 </TableRow>
                             ))}
