@@ -1159,8 +1159,8 @@ async def send_due_reminder_notification_async(phone: str, name: str, balance: f
 
 
 async def send_due_reminders_batch_async(customers: List[dict]):
-    # Limit to 50 messages per batch to avoid overwhelming
-    max_per_batch = 50
+    # Limit to 200 messages per batch to avoid overwhelming
+    max_per_batch = 200
     if len(customers) > max_per_batch:
         print(f"⚠️ {len(customers)} reminders requested. Limiting to {max_per_batch} per day.")
         customers = customers[:max_per_batch]

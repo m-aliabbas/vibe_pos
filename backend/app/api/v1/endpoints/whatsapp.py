@@ -336,9 +336,9 @@ def run_whatsapp_worker(status_proxy, task_queue):
             last_reset_date = current_date
             print("📊 Daily message counter reset")
 
-        # Daily limit check (50 bulk messages per day to be safe)
-        if is_bulk and daily_message_count >= 50:
-            print(f"⚠️ Daily bulk message limit reached ({daily_message_count}/50). Message queued for tomorrow.")
+        # Daily limit check (200 bulk messages per day)
+        if is_bulk and daily_message_count >= 200:
+            print(f"⚠️ Daily bulk message limit reached ({daily_message_count}/200). Message queued for tomorrow.")
             time.sleep(60)  # Wait a minute before rechecking
             task_queue.put(task)  # Re-queue for later
             continue
@@ -353,10 +353,10 @@ def run_whatsapp_worker(status_proxy, task_queue):
             continue
 
         try:
-            # Random delay BEFORE sending (human-like behavior)
+            # Fixed 3-minute delay BEFORE sending bulk messages
             if is_bulk:
-                delay = random.uniform(90, 180)  # 1.5 to 3 minutes random delay
-                print(f"⏳ Waiting {delay:.1f}s before sending bulk message...")
+                delay = 180  # 3 minutes delay
+                print(f"⏳ Waiting {delay}s (3 min) before sending bulk message...")
                 time.sleep(delay)
             
             if task_type == "text":
@@ -364,7 +364,7 @@ def run_whatsapp_worker(status_proxy, task_queue):
                 client.send_message(jid, task["message"])
                 if is_bulk:
                     daily_message_count += 1
-                    print(f"✅ Bulk message sent ({daily_message_count}/50 today)")
+                    print(f"✅ Bulk message sent ({daily_message_count}/200 today)")
             elif task_type == "image":
                 jid = build_jid(task["phone_number"])
                 client.send_image(jid, task["image_url"], caption=task.get("caption") or "")
