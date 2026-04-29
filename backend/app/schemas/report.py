@@ -86,7 +86,7 @@ class LowStockAlert(BaseModel):
     product_id: int
     product_name: str
     sku: Optional[str]
-    current_stock: int
+    current_stock: float
     threshold: int
     base_unit: str
     category: Optional[str]

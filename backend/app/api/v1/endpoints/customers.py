@@ -960,12 +960,28 @@ def send_due_reminder_notification(phone: str, name: str, balance: float, custom
             phone = '92' + phone
 
         store = _get_store_name()
+        
+        # Vary message slightly to avoid spam detection
+        import random
+        greetings = [
+            "🔔 *Payment Reminder*",
+            "📢 *Payment Due Notice*",
+            "💳 *Outstanding Balance Alert*",
+            "⏰ *Payment Reminder*"
+        ]
+        closings = [
+            "Please clear your outstanding balance at your earliest convenience.",
+            "Kindly settle your pending amount when convenient.",
+            "We request you to clear your due balance soon.",
+            "Please arrange payment of your outstanding balance."
+        ]
+        
         message = (
-            f"🔔 *Payment Reminder*\n\n"
+            f"{random.choice(greetings)}\n\n"
             f"{store}\n"
             f"Customer: {name}\n"
             f"Due Amount: RS {balance:,.2f}\n\n"
-            f"Please clear your outstanding balance at your earliest convenience.\n"
+            f"{random.choice(closings)}\n"
             f"Customer ID: #{customer_id}\n"
             f"{store}"
         )
@@ -974,7 +990,8 @@ def send_due_reminder_notification(phone: str, name: str, balance: float, custom
             "http://127.0.0.1:8000/api/v1/whatsapp/send",
             json={
                 "phone_number": phone,
-                "message": message
+                "message": message,
+                "is_bulk": True
             },
             timeout=2
         )
@@ -1142,14 +1159,21 @@ async def send_due_reminder_notification_async(phone: str, name: str, balance: f
 
 
 async def send_due_reminders_batch_async(customers: List[dict]):
-    for customer in customers:
+    # Limit to 50 messages per batch to avoid overwhelming
+    max_per_batch = 50
+    if len(customers) > max_per_batch:
+        print(f"⚠️ {len(customers)} reminders requested. Limiting to {max_per_batch} per day.")
+        customers = customers[:max_per_batch]
+    
+    for idx, customer in enumerate(customers, 1):
+        print(f"📤 Sending reminder {idx}/{len(customers)} to {customer['name']}")
         await send_due_reminder_notification_async(
             customer["phone"],
             customer["name"],
             customer["balance"],
             customer["id"],
         )
-        await asyncio.sleep(2)
+        # No sleep here - the worker handles delays now
 
 
 # ============ CUSTOMER PURCHASE HISTORY ============

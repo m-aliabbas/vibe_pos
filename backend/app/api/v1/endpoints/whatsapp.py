@@ -66,6 +66,7 @@ print(f"📁 WhatsApp session file: {SESSION_FILE}")
 class SendMessageRequest(BaseModel):
     phone_number: str = Field(..., description="Phone number with country code (e.g., 923171585452)")
     message: str = Field(..., description="Message to send")
+    is_bulk: bool = Field(False, description="Flag for bulk messages (adds delays and rate limiting)")
 
 class SendMessageResponse(BaseModel):
     status: str
@@ -314,6 +315,10 @@ def run_whatsapp_worker(status_proxy, task_queue):
 
     connect_thread = threading.Thread(target=run_whatsapp_client, daemon=True)
     connect_thread.start()
+    
+    # Track messages sent today for rate limiting
+    daily_message_count = 0
+    last_reset_date = datetime.date.today()
 
     while True:
         task = task_queue.get()
@@ -322,6 +327,21 @@ def run_whatsapp_worker(status_proxy, task_queue):
 
         task_type = task.get("type")
         retries = int(task.get("retries", 0))
+        is_bulk = task.get("is_bulk", False)  # Flag for bulk messages
+
+        # Reset daily counter at midnight
+        current_date = datetime.date.today()
+        if current_date > last_reset_date:
+            daily_message_count = 0
+            last_reset_date = current_date
+            print("📊 Daily message counter reset")
+
+        # Daily limit check (50 bulk messages per day to be safe)
+        if is_bulk and daily_message_count >= 50:
+            print(f"⚠️ Daily bulk message limit reached ({daily_message_count}/50). Message queued for tomorrow.")
+            time.sleep(60)  # Wait a minute before rechecking
+            task_queue.put(task)  # Re-queue for later
+            continue
 
         if not connection_status.get("connected"):
             if retries < 5:
@@ -333,9 +353,18 @@ def run_whatsapp_worker(status_proxy, task_queue):
             continue
 
         try:
+            # Random delay BEFORE sending (human-like behavior)
+            if is_bulk:
+                delay = random.uniform(90, 180)  # 1.5 to 3 minutes random delay
+                print(f"⏳ Waiting {delay:.1f}s before sending bulk message...")
+                time.sleep(delay)
+            
             if task_type == "text":
                 jid = build_jid(task["phone_number"])
                 client.send_message(jid, task["message"])
+                if is_bulk:
+                    daily_message_count += 1
+                    print(f"✅ Bulk message sent ({daily_message_count}/50 today)")
             elif task_type == "image":
                 jid = build_jid(task["phone_number"])
                 client.send_image(jid, task["image_url"], caption=task.get("caption") or "")
@@ -347,7 +376,7 @@ def run_whatsapp_worker(status_proxy, task_queue):
                 client.send_document(
                     jid,
                     task["document_url"],
-                    caption=task.get("caption") or "",
+                    caption=task.get("caption") or ",
                     filename=task.get("filename") or "",
                 )
             else:
@@ -421,12 +450,14 @@ async def send_message(request: SendMessageRequest):
     
     - **phone_number**: Phone number with country code (no + or spaces)
     - **message**: The message text to send
+    - **is_bulk**: Set to true for bulk messages (adds delays and rate limiting)
     """
     try:
         _enqueue_task({
             "type": "text",
             "phone_number": request.phone_number,
             "message": request.message,
+            "is_bulk": request.is_bulk,
             "retries": 0,
         })
         return SendMessageResponse(
