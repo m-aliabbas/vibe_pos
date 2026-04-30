@@ -376,7 +376,7 @@ def run_whatsapp_worker(status_proxy, task_queue):
                 client.send_document(
                     jid,
                     task["document_url"],
-                    caption=task.get("caption") or ",
+                    caption=task.get("caption") or "",
                     filename=task.get("filename") or "",
                 )
             else:
