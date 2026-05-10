@@ -261,6 +261,49 @@ async fn open_backup_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
     }
 }
 
+// --------------------- backend discovery ---------------------
+
+fn get_local_ip() -> Option<String> {
+    use std::net::UdpSocket;
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip().to_string())
+}
+
+#[tauri::command]
+async fn discover_backend(port: u16) -> Result<Option<String>, String> {
+    use tokio::net::TcpStream;
+    use tokio::time::timeout;
+
+    let local_ip = get_local_ip().ok_or("Could not determine local IP")?;
+    let parts: Vec<&str> = local_ip.split('.').collect();
+    if parts.len() != 4 {
+        return Err("Invalid local IP format".to_string());
+    }
+    let prefix = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+
+    let mut set = tokio::task::JoinSet::new();
+    for i in 1u8..=254 {
+        let ip = format!("{}.{}", prefix, i);
+        set.spawn(async move {
+            let addr = format!("{}:{}", ip, port);
+            match timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await {
+                Ok(Ok(_)) => Some(ip),
+                _ => None,
+            }
+        });
+    }
+
+    while let Some(res) = set.join_next().await {
+        if let Ok(Some(ip)) = res {
+            set.abort_all();
+            return Ok(Some(ip));
+        }
+    }
+
+    Ok(None)
+}
+
 // --------------------- helpers ---------------------
 
 fn log_path_fallback(_app: &tauri::App) -> PathBuf {
@@ -445,7 +488,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![save_backup_dialog, open_backup_dialog])
+        .invoke_handler(tauri::generate_handler![save_backup_dialog, open_backup_dialog, discover_backend])
         .setup(|app| {
             // create log file path early (best-effort)
             let log_path = log_path_fallback(app);

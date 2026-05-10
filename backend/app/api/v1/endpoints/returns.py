@@ -161,7 +161,7 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
 
         img.save(file_path, "PNG")
 
-        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send"
+        whatsapp_url = "http://127.0.0.1:5025/api/v1/whatsapp/send"
         caption_time = _convert_utc_to_pakistan(ret.created_at).strftime("%Y-%m-%d %H:%M")
         payload = {
             "phone_number": phone_number,

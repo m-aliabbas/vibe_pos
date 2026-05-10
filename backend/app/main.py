@@ -75,16 +75,20 @@ async def startup_event():
     init_whatsapp()
     print("✅ WhatsApp client initialized")
     
-    print("🚀 Starting automatic backup scheduler...")
-    backup_scheduler.start_scheduler()
-    print("✅ Backup scheduler started")
+    if "sqlite" in settings.db_url:
+        print("🚀 Starting automatic backup scheduler...")
+        backup_scheduler.start_scheduler()
+        print("✅ Backup scheduler started")
+    else:
+        print("ℹ️ PostgreSQL detected — SQLite backup scheduler skipped")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Stop backup scheduler on application shutdown"""
-    print("🛑 Stopping backup scheduler...")
-    backup_scheduler.stop_scheduler()
-    print("✅ Backup scheduler stopped")
+    if "sqlite" in settings.db_url:
+        print("🛑 Stopping backup scheduler...")
+        backup_scheduler.stop_scheduler()
+        print("✅ Backup scheduler stopped")
 
 @app.get("/")
 def root():

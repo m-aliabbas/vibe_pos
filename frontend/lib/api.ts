@@ -1,11 +1,12 @@
 import axios from 'axios';
 
-const api = axios.create({
-    baseURL: 'http://127.0.0.1:8000/api/v1',
-});
+const FALLBACK_URL = 'http://127.0.0.1:5025/api/v1';
+
+const api = axios.create({});
 
 api.interceptors.request.use((config) => {
     if (typeof window !== 'undefined') {
+        config.baseURL = sessionStorage.getItem('vibepos_backend_url') || FALLBACK_URL;
         const token = sessionStorage.getItem('token');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;

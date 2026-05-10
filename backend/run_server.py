@@ -228,16 +228,26 @@ def ensure_schema_ready() -> Path:
     Ensures DB file exists and core tables exist.
     - Does NOT delete data
     - If db missing/broken/empty/missing tables -> create_all()
-    Returns the db path actually used.
+    Returns the db path actually used (sqlite path, or a dummy Path for postgres).
     """
+    from app.core.config import settings
+
+    # ── PostgreSQL path ───────────────────────────────────────────────────────
+    if settings.db_url.startswith("postgresql"):
+        print(f"🐘 PostgreSQL mode — running create_all() to ensure schema…")
+        from app.db.session import engine
+        from app.db.base import Base
+        Base.metadata.create_all(bind=engine)
+        print("✅ PostgreSQL schema ready")
+        return Path(os.environ.get("DATA_DIR", "data"))   # dummy, not used for pg
+
+    # ── SQLite path ───────────────────────────────────────────────────────────
     data_dir = Path(os.environ["DATA_DIR"])
     db_path = data_dir / "pos.db"
 
-    # If missing or empty => definitely create schema
     must_create = (not db_path.exists()) or (db_path.exists() and db_path.stat().st_size == 0)
 
     if not must_create:
-        # Check required tables
         try:
             tables = _get_sqlite_tables(db_path)
             missing = REQUIRED_TABLES - tables
@@ -250,9 +260,8 @@ def ensure_schema_ready() -> Path:
 
     if must_create:
         print(f"🛠️ Ensuring schema (create_all) for DB: {db_path}")
-        # IMPORTANT: Import AFTER DATA_DIR is set so session/engine uses correct path
         from app.db.session import engine
-        from app.db.base import Base  # should import all models
+        from app.db.base import Base
         Base.metadata.create_all(bind=engine)
         print("✅ Schema ready")
 
@@ -263,21 +272,34 @@ if __name__ == "__main__":
     if os.name == "nt":
         multiprocessing.freeze_support()
 
-    # 1) Load env first
+    # 1) Load env first (sets DATABASE_URL from .env if previously saved)
     load_env_from_exe_dir()
 
-    # 2) Normalize data dir first (critical for packaged builds)
+    # 2) Normalize data dir
     data_dir = resolve_data_dir()
 
-    # 3) Ensure schema exists before seeding
-    db_path = ensure_schema_ready()
-    ensure_legacy_product_columns(db_path)
+    # 3) Auto-discover PostgreSQL on the LAN (only if DATABASE_URL not already set)
+    #    Must happen BEFORE any app.db.session import so the engine uses the right URL.
+    if not os.environ.get("DATABASE_URL"):
+        from discover_postgres import discover_and_configure
+        env_file = resolve_resource_path(".env")
+        discover_and_configure(env_path=env_file)
+    else:
+        print(f"  ℹ️  DATABASE_URL already set — skipping LAN scan.")
 
-    # 4) Now seed safely
+    # 4) Ensure schema exists (handles both PostgreSQL and SQLite)
+    db_path = ensure_schema_ready()
+
+    # 5) SQLite-only: patch legacy columns
+    from app.core.config import settings
+    if not settings.db_url.startswith("postgresql"):
+        ensure_legacy_product_columns(db_path)
+
+    # 6) Seed default users + sample data (works on both PG and SQLite)
     from seed import ensure_seeded
     ensure_seeded()
 
-    port = int(os.environ.get("AP_PORT", "8000"))
+    port = int(os.environ.get("AP_PORT", "5025"))
 
     print(f"✅ Starting FastAPI server")
     print(f"   exe_dir:  {exe_dir()}")
@@ -288,7 +310,7 @@ if __name__ == "__main__":
 
     try:
         from app.main import app
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
         sys.exit(1)

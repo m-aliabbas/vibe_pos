@@ -935,7 +935,7 @@ def send_payment_notification(phone: str, amount: float, balance: float, payment
                   f"{_get_store_name()}"
                   
         requests.post(
-            "http://127.0.0.1:8000/api/v1/whatsapp/send",
+            "http://127.0.0.1:5025/api/v1/whatsapp/send",
             json={
                 "phone_number": phone,
                 "message": message
@@ -987,7 +987,7 @@ def send_due_reminder_notification(phone: str, name: str, balance: float, custom
         )
 
         requests.post(
-            "http://127.0.0.1:8000/api/v1/whatsapp/send",
+            "http://127.0.0.1:5025/api/v1/whatsapp/send",
             json={
                 "phone_number": phone,
                 "message": message,

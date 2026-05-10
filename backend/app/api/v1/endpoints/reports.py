@@ -1979,7 +1979,7 @@ def send_daily_summary_text(
     
     # Send via WhatsApp
     try:
-        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send"
+        whatsapp_url = "http://127.0.0.1:5025/api/v1/whatsapp/send"
         payload = {
             "phone_number": phone_number,
             "message": report_text
@@ -2022,7 +2022,7 @@ def send_weekly_summary_text(
     
     # Send via WhatsApp
     try:
-        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send"
+        whatsapp_url = "http://127.0.0.1:5025/api/v1/whatsapp/send"
         payload = {
             "phone_number": phone_number,
             "message": report_text

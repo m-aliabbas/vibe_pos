@@ -507,7 +507,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         _render_invoice_image(sale, file_path, dpi=300)
         
         # Send to WhatsApp
-        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"
+        whatsapp_url = "http://127.0.0.1:5025/api/v1/whatsapp/send-image"
         payload = {
             "phone_number": phone_number,
             "image_url": str(file_path.absolute()),
@@ -1151,7 +1151,7 @@ def send_invoice(
         _render_invoice_image(sale, file_path, dpi=300)
         
         # Send to WhatsApp API
-        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"
+        whatsapp_url = "http://127.0.0.1:5025/api/v1/whatsapp/send-image"
         payload = {
             "phone_number": normalized_phone,
             "image_url": str(file_path.absolute()),

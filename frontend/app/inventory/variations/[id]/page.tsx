@@ -219,7 +219,7 @@ export default function ManageVariationsPage() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-screen">
+            <div className="h-full flex items-center justify-center">
                 <div className="text-lg">Loading...</div>
             </div>
         );
@@ -227,14 +227,14 @@ export default function ManageVariationsPage() {
 
     if (!product) {
         return (
-            <div className="flex items-center justify-center h-screen">
+            <div className="h-full flex items-center justify-center">
                 <div className="text-lg text-red-600">Product not found</div>
             </div>
         );
     }
 
     return (
-        <div className="container mx-auto p-6 max-w-[1600px]">
+        <div className="h-full overflow-y-auto p-6 max-w-[1600px] mx-auto">
             {/* Breadcrumb */}
             <Breadcrumb className="mb-6">
                 <BreadcrumbList>

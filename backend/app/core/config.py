@@ -9,16 +9,28 @@ class Settings(BaseSettings):
     # Store branding
     STORE_NAME: str = "MyStore"
     STORE_ADDRESS: str = "Gulberg Islamabad"
-    
+
     # Database
+    # If DATABASE_URL is set (via .env or environment), it takes priority.
+    # Otherwise falls back to SQLite in DATA_DIR.
+    DATABASE_URL: Optional[str] = None
+
     # Data Directory
     DATA_DIR: str = "data"
     # WhatsApp
     WHATSAPP_PHONE: Optional[str] = None
 
     @property
-    def DATABASE_URL(self) -> str:
-        return f"sqlite:///{self.DATA_DIR}/pos.db"
+    def db_url(self) -> str:
+        """Effective database URL — PostgreSQL if discovered, else SQLite fallback."""
+        return self.DATABASE_URL or f"sqlite:///{self.DATA_DIR}/pos.db"
+
+    @property
+    def self_api_url(self) -> str:
+        """Base URL for internal backend-to-backend HTTP calls."""
+        import os
+        port = int(os.environ.get("AP_PORT", "5025"))
+        return f"http://127.0.0.1:{port}/api/v1"
     
     # Security
     SECRET_KEY: str = "vibe_pos_1234"

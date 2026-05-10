@@ -293,7 +293,7 @@ export default function AccountingPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="h-full overflow-y-auto p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Accounting</h1>

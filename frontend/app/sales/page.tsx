@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { getBackendUrl } from "@/lib/discovery";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -560,7 +561,7 @@ export default function SalesTerminal() {
     const { label, payload, signature } = buildHoldRequest(snapshot);
     if (signature === lastAutoHoldSignatureRef.current) return;
 
-    const endpoint = "http://127.0.0.1:8000/api/v1/hold-sales/";
+    const endpoint = `${getBackendUrl()}/hold-sales/`;
     fetch(endpoint, {
       method: "POST",
       headers: {
@@ -1817,7 +1818,7 @@ export default function SalesTerminal() {
   }, [products]);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="h-full overflow-y-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>

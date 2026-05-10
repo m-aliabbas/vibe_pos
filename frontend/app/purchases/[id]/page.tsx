@@ -201,8 +201,8 @@ export default function PurchaseDetailPage() {
             .slice(0, 20);
     };
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-    if (!purchase) return <div className="min-h-screen flex items-center justify-center">Purchase not found</div>;
+    if (loading) return <div className="flex items-center justify-center h-full">Loading...</div>;
+    if (!purchase) return <div className="flex items-center justify-center h-full">Purchase not found</div>;
 
     const balance = purchase.total_amount - purchase.amount_paid;
 

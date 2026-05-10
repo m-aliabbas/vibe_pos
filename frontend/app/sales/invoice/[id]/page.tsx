@@ -227,7 +227,7 @@ export default function InvoicePage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-8 flex items-center justify-center min-h-screen">
+      <div className="container mx-auto p-8 flex items-center justify-center h-full">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading invoice...</p>
@@ -251,7 +251,7 @@ export default function InvoicePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="bg-gray-50">
       {/* Action Buttons - Hidden when printing */}
       <div className="no-print bg-white border-b sticky top-0 z-10">
         <div className="container mx-auto px-4 py-3 flex justify-between items-center">

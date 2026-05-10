@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import api, { holdPurchasesApi, HoldPurchaseResponse } from '@/lib/api';
+import { getBackendUrl } from '@/lib/discovery';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
@@ -197,7 +198,7 @@ function PurchasePageContent() {
             const { label, payload, signature } = buildHoldRequest(snapshot);
             if (signature === lastAutoHoldSignatureRef.current) return;
 
-            const endpoint = 'http://127.0.0.1:8000/api/v1/hold-purchases/';
+            const endpoint = `${getBackendUrl()}/hold-purchases/`;
             fetch(endpoint, {
                 method: 'POST',
                 headers: {

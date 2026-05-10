@@ -35,7 +35,7 @@ const AdminRouteGuard: React.FC<AdminRouteGuardProps> = ({
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <Card className="p-6">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
           <p className="text-center mt-4 text-gray-600">Loading...</p>
@@ -46,7 +46,7 @@ const AdminRouteGuard: React.FC<AdminRouteGuardProps> = ({
 
   if (!user) {
     return fallback || (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <Card className="p-6 max-w-md">
           <h2 className="text-xl font-semibold mb-2">Authentication Required</h2>
           <p className="text-gray-600 mb-4">Please log in to access this page.</p>
@@ -60,7 +60,7 @@ const AdminRouteGuard: React.FC<AdminRouteGuardProps> = ({
 
   if (user.role !== 'admin') {
     return fallback || (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <Card className="p-6 max-w-md">
           <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
           <p className="text-gray-600 mb-4">

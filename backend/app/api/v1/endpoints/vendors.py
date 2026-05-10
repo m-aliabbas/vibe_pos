@@ -461,7 +461,7 @@ async def send_vendor_payment_notification_async(phone: str, amount: float, vend
               f"Transaction recorded successfully."
         await asyncio.to_thread(
             requests.post,
-            "http://127.0.0.1:8000/api/v1/whatsapp/send",
+            "http://127.0.0.1:5025/api/v1/whatsapp/send",
             json={
                 "phone_number": phone,
                 "message": message
