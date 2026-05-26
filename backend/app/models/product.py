@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 from datetime import datetime
+from app.core.timezone import now_pkt
 
 class Product(Base):
     __tablename__ = "products"
@@ -46,8 +47,8 @@ class ProductVariation(Base):
     barcode = Column(String, index=True, unique=True, nullable=True)
     
     # Timestamps
-    created_at = Column(String, default=lambda: datetime.utcnow().isoformat())
-    updated_at = Column(String, default=lambda: datetime.utcnow().isoformat(), onupdate=lambda: datetime.utcnow().isoformat())
+    created_at = Column(String, default=lambda: now_pkt().isoformat())
+    updated_at = Column(String, default=lambda: now_pkt().isoformat(), onupdate=lambda: now_pkt().isoformat())
     
     # Relationships
     product = relationship("Product", back_populates="variations")

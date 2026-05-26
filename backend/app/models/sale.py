@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boo
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
+from app.core.timezone import now_pkt
 import enum
 
 class PaymentMethod(str, enum.Enum):
@@ -37,7 +38,7 @@ class Sale(Base):
     amount_due = Column(Float, default=0.0)   # Remaining balance (udhar)
     change_amount = Column(Float, default=0.0)  # Change to return
     
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=now_pkt, index=True)
     
     # Relationships
     user = relationship("User", backref="sales")

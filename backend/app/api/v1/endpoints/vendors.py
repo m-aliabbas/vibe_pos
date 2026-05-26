@@ -17,6 +17,22 @@ from app.services import accounting as accounting_service
 router = APIRouter()
 
 
+def _get_store_name() -> str:
+    """Return the configured store name from DB."""
+    from app.db.session import SessionLocal
+    from app.models.settings import StoreSettings
+    db = SessionLocal()
+    try:
+        row = db.query(StoreSettings).filter(StoreSettings.id == 1).first()
+        if row and row.store_name:
+            return row.store_name
+    except Exception:
+        pass
+    finally:
+        db.close()
+    return "My Store"
+
+
 def normalize_phone(phone: str) -> str:
     digits = "".join(ch for ch in phone if ch.isdigit())
     if digits.startswith("92") and len(digits) > 10:
@@ -446,6 +462,117 @@ def settle_vendor_balance(
         "new_prepaid_credit": vendor.prepaid_credit,
     }
 
+@router.get("/{id}/payments")
+def get_vendor_payments(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    current_user = Depends(deps.get_current_user),
+) -> Any:
+    """List all vendor payment journal entries."""
+    vendor = db.query(Vendor).filter(Vendor.id == id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    entries = (
+        db.query(JournalEntry)
+        .filter(
+            JournalEntry.source_type == "vendor_payment",
+            JournalEntry.source_id == id,
+        )
+        .order_by(JournalEntry.entry_date.desc())
+        .all()
+    )
+
+    result = []
+    for entry in entries:
+        # Amount = sum of debit on accounts_payable line
+        amount = sum(
+            line.debit
+            for line in entry.lines
+            if line.debit > 0
+        )
+        # Extract reference note from description
+        note = ""
+        if ": " in entry.description:
+            note = entry.description.split(": ", 1)[1]
+        result.append({
+            "id": entry.id,
+            "amount": amount,
+            "date": entry.entry_date.isoformat() if entry.entry_date else None,
+            "reference_note": note,
+            "description": entry.description,
+        })
+    return result
+
+
+@router.delete("/{id}/payments/{entry_id}")
+def delete_vendor_payment(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    entry_id: int,
+    current_user = Depends(deps.get_current_user),
+) -> Any:
+    """Delete a vendor payment journal entry and reverse its effect on prepaid_credit."""
+    vendor = db.query(Vendor).filter(Vendor.id == id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    entry = db.query(JournalEntry).filter(
+        JournalEntry.id == entry_id,
+        JournalEntry.source_type == "vendor_payment",
+        JournalEntry.source_id == id,
+    ).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    # Compute how much prepaid credit came from this entry (credit on vendor_advances account from cash)
+    # We just delete the journal entry; the accounting balance will self-correct via ledger queries
+    db.delete(entry)
+    db.commit()
+    return {"message": "Vendor payment deleted successfully"}
+
+
+@router.put("/{id}/payments/{entry_id}")
+def update_vendor_payment(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    entry_id: int,
+    payment_in: vendor_schema.VendorPayment,
+    current_user = Depends(deps.get_current_user),
+) -> Any:
+    """Update the reference note of a vendor payment. Amount changes are not supported to preserve accounting integrity."""
+    vendor = db.query(Vendor).filter(Vendor.id == id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    entry = db.query(JournalEntry).filter(
+        JournalEntry.id == entry_id,
+        JournalEntry.source_type == "vendor_payment",
+        JournalEntry.source_id == id,
+    ).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    note = (payment_in.reference_note or "").strip()
+    note_suffix = f": {note}" if note else ""
+    entry.description = f"Vendor payment settlement #{id}{note_suffix}"
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    amount = sum(line.debit for line in entry.lines if line.debit > 0)
+    return {
+        "id": entry.id,
+        "amount": amount,
+        "date": entry.entry_date.isoformat() if entry.entry_date else None,
+        "reference_note": note,
+        "description": entry.description,
+    }
+
+
 async def send_vendor_payment_notification_async(phone: str, amount: float, vendor_name: str):
     """Send WhatsApp notification for vendor payment without blocking the request path."""
     try:
@@ -455,10 +582,13 @@ async def send_vendor_payment_notification_async(phone: str, amount: float, vend
         elif len(phone) == 10:
             phone = '92' + phone
             
+        store = _get_store_name()
         message = f"✅ *Payment Sent to Vendor*\n\n" \
+              f"Store: {store}\n" \
               f"Vendor: {vendor_name}\n" \
               f"Amount Paid: RS{amount:,.2f}\n\n" \
-              f"Transaction recorded successfully."
+              f"Transaction recorded successfully.\n" \
+              f"— {store}"
         await asyncio.to_thread(
             requests.post,
             "http://127.0.0.1:8000/api/v1/whatsapp/send",

@@ -25,11 +25,7 @@ export default function Home() {
       // Redirect based on user role
       if (user) {
         setHasRedirected(true);
-        if (user.role === 'admin') {
-          router.replace('/admin');
-        } else {
-          router.replace('/sales');
-        }
+        router.replace('/sales');
       }
     };
 

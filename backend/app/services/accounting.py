@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.accounting import Account, AccountType, JournalEntry, JournalLine
+from app.core.timezone import now_pkt
 
 
 SYSTEM_ACCOUNTS: Dict[str, Dict[str, str]] = {
@@ -187,7 +188,7 @@ def create_journal_entry(
         raise ValueError("Journal entry is not balanced")
 
     entry = JournalEntry(
-        entry_date=entry_date or datetime.utcnow(),
+        entry_date=entry_date or now_pkt(),
         description=description,
         source_type=source_type,
         source_id=source_id,
@@ -371,7 +372,7 @@ def post_purchase_payment_delta(
         source_type="purchase_payment",
         source_id=purchase.id,
         created_by=created_by,
-        entry_date=datetime.utcnow(),
+        entry_date=now_pkt(),
     )
 
 
@@ -468,7 +469,7 @@ def post_customer_payment(
         source_type="customer_payment",
         source_id=customer_id,
         created_by=created_by,
-        entry_date=datetime.utcnow(),
+        entry_date=now_pkt(),
     )
 
 
@@ -508,7 +509,7 @@ def post_customer_advance(
         source_type="customer_advance",
         source_id=customer_id,
         created_by=created_by,
-        entry_date=datetime.utcnow(),
+        entry_date=now_pkt(),
     )
 
 
@@ -562,7 +563,7 @@ def post_vendor_payment(
                 source_type="vendor_payment",
                 source_id=vendor_id,
                 created_by=created_by,
-                entry_date=datetime.utcnow(),
+                entry_date=now_pkt(),
             )
         )
 
@@ -589,7 +590,7 @@ def post_vendor_payment(
                 source_type="vendor_advance",
                 source_id=vendor_id,
                 created_by=created_by,
-                entry_date=datetime.utcnow(),
+                entry_date=now_pkt(),
             )
         )
 
@@ -648,5 +649,5 @@ def post_vendor_settlement(
         source_type="vendor_settlement",
         source_id=vendor_id,
         created_by=created_by,
-        entry_date=datetime.utcnow(),
+        entry_date=now_pkt(),
     )

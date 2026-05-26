@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timezone, timedelta
+from app.core.timezone import now_pkt
 from pathlib import Path
 from PIL import Image
 import requests
@@ -22,10 +23,8 @@ RETURN_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _convert_utc_to_pakistan(dt: datetime) -> datetime:
-    """Convert UTC/naive datetime to Pakistan timezone (UTC+5)."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone(timedelta(hours=5)))
+    """Times are stored as naive PKT (GMT+5) in the DB — return as-is."""
+    return dt
 
 
 def normalize_phone_number(phone: Optional[str]) -> Optional[str]:
@@ -51,7 +50,7 @@ def generate_and_send_return_invoice(return_id: int, phone_number: str):
 
         sale = db.query(Sale).filter(Sale.id == ret.sale_id).first() if ret.sale_id else None
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         filename = f"return_{timestamp}.png"
         file_path = RETURN_DIR / filename
 
@@ -429,7 +428,7 @@ def create_return(
                 
                 # Update customer stats
                 customer.total_spent = max(0, customer.total_spent - refund_amount)
-                customer.updated_at = datetime.utcnow()
+                customer.updated_at = now_pkt()
 
     if settlement_mode == "added_to_account" and ar_reduction <= 0 and refund_amount > 0:
         raise HTTPException(

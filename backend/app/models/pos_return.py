@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Tex
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
+from app.core.timezone import now_pkt
 import enum
 
 class ReturnReason(str, enum.Enum):
@@ -36,8 +37,8 @@ class PosReturn(Base):
     subtotal = Column(Float, default=0.0)  # Sum of returned items
     refund_amount = Column(Float, default=0.0)  # Actual refund amount (may differ from subtotal)
     
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_pkt, index=True)
+    updated_at = Column(DateTime, default=now_pkt, onupdate=now_pkt)
     
     # Relationships
     sale = relationship("Sale", backref="returns")

@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api, { reportsApi } from '@/lib/api';
-import { formatPakistanDate, formatPakistanDateTime } from '@/lib/utils';
+import { formatPakistanDate, formatPakistanDateTime, todayPKTDateString } from '@/lib/utils';
 import { ToWords } from 'to-words';
 import { storeConfig, fetchStoreConfig } from '@/lib/store-config';
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function VendorDetailsPage() {
     const { id } = useParams();
@@ -107,6 +108,14 @@ export default function VendorDetailsPage() {
     const [storeInfo, setStoreInfo] = useState(storeConfig);
     const [ledgerBalance, setLedgerBalance] = useState<number | null>(null);
     const [vendorLedgerEntries, setVendorLedgerEntries] = useState<any[]>([]);
+    const [vendorPayments, setVendorPayments] = useState<any[]>([]);
+    const [editPaymentEntry, setEditPaymentEntry] = useState<{ id: number; note: string } | null>(null);
+    const [editPaymentDialogOpen, setEditPaymentDialogOpen] = useState(false);
+    const [editPaymentSaving, setEditPaymentSaving] = useState(false);
+    const [deletePaymentId, setDeletePaymentId] = useState<number | null>(null);
+    const [deletePaymentDialogOpen, setDeletePaymentDialogOpen] = useState(false);
+    const [deletingPayment, setDeletingPayment] = useState(false);
+    const [activeTab, setActiveTab] = useState('purchases');
     const [editVendor, setEditVendor] = useState({
         name: '',
         contact_name: '',
@@ -146,6 +155,9 @@ export default function VendorDetailsPage() {
             const ledgerRes = await reportsApi.getVendorLedger(parseInt(id as string));
             setLedgerBalance(ledgerRes.closing_balance ?? null);
             setVendorLedgerEntries(ledgerRes.entries || []);
+
+            const paymentsRes = await api.get(`/vendors/${id}/payments`);
+            setVendorPayments(paymentsRes.data || []);
         } catch (error) {
             console.error("Failed to fetch details", error);
         } finally {
@@ -218,11 +230,67 @@ export default function VendorDetailsPage() {
         setPaymentReferenceNote('');
     };
 
+    const handleVendorPaymentEditSave = async () => {
+        if (!editPaymentEntry) return;
+        setEditPaymentSaving(true);
+        try {
+            await api.put(`/vendors/${id}/payments/${editPaymentEntry.id}`, {
+                amount: 0,
+                reference_note: editPaymentEntry.note,
+            });
+            setEditPaymentDialogOpen(false);
+            fetchData();
+        } catch (err) {
+            console.error("Failed to update vendor payment", err);
+        } finally {
+            setEditPaymentSaving(false);
+        }
+    };
+
+    const handleVendorPaymentDelete = async () => {
+        if (!deletePaymentId) return;
+        setDeletingPayment(true);
+        try {
+            await api.delete(`/vendors/${id}/payments/${deletePaymentId}`);
+            setDeletePaymentDialogOpen(false);
+            setDeletePaymentId(null);
+            fetchData();
+        } catch (err) {
+            console.error("Failed to delete vendor payment", err);
+        } finally {
+            setDeletingPayment(false);
+        }
+    };
+
     const handlePrintReceipt = () => {
         if (!receiptData) return;
+        const printArea = document.getElementById('payment-receipt-print-area');
+        if (!printArea) return;
+        const parent = printArea.parentNode as Node;
+        const nextSib = printArea.nextSibling;
+        document.body.appendChild(printArea);
+
+        // Measure content height in screen px, convert to mm (96dpi: 1px = 0.2646mm)
+        const inner = printArea.querySelector('.thermal-receipt') as HTMLElement | null;
+        const heightPx = inner ? inner.offsetHeight : printArea.offsetHeight;
+        const heightMm = Math.max(80, Math.ceil(heightPx * 0.2646) + 20);
+
+        // Inject explicit page size so WebKit doesn't default to A4
+        const pageStyle = document.createElement('style');
+        pageStyle.id = 'thermal-receipt-page-style';
+        pageStyle.textContent = `@media print { @page { size: 80mm ${heightMm}mm; margin: 2mm; } }`;
+        document.head.appendChild(pageStyle);
+
         document.body.classList.add("print-payment-receipt");
         window.print();
         document.body.classList.remove("print-payment-receipt");
+
+        pageStyle.remove();
+        if (nextSib) {
+            parent.insertBefore(printArea, nextSib);
+        } else {
+            parent.appendChild(printArea);
+        }
     };
 
     const handleVendorReportExport = async () => {
@@ -321,7 +389,7 @@ export default function VendorDetailsPage() {
             doc.text(`Vendor: ${vendor.name || 'N/A'}`, 40, 120);
             if (vendor.contact_name) doc.text(`Contact: ${vendor.contact_name}`, 40, 134);
             if (vendor.phone) doc.text(`Phone: ${vendor.phone}`, 300, 120);
-            doc.text(`Date: ${new Date().toLocaleDateString()}`, 300, 134);
+            doc.text(`Date: ${todayPKTDateString()}`, 300, 134);
             
             // Opening Balance
             doc.setFontSize(10);
@@ -445,7 +513,7 @@ export default function VendorDetailsPage() {
             const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').substring(0, 30);
             const storeName = sanitize(storeInfo.name || 'Store');
             const vendorName = sanitize(vendor.name || `Vendor_${vendor.id || id}`);
-            const date = new Date().toISOString().split('T')[0];
+            const date = todayPKTDateString();
             
             doc.save(`${storeName}_${vendorName}_Ledger_${date}.pdf`);
         } catch (error: any) {
@@ -818,7 +886,7 @@ export default function VendorDetailsPage() {
                             </div>
 
                             {receiptData && (
-                                <div id="payment-receipt-print-area" className="p-4">
+                                <div id="payment-receipt-print-area" className="p-4 flex justify-center">
                                     <div className="thermal-receipt bg-white w-full max-w-[80mm] mx-auto">
                                         <div className="text-sm">
                                             {/* Store Header */}
@@ -934,80 +1002,185 @@ export default function VendorDetailsPage() {
             )}
 
             <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                    <h2 className="text-xl font-semibold">Purchase History</h2>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="w-48">
-                            <Filter className="h-4 w-4 mr-2" />
-                            <SelectValue placeholder="Filter by Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectItem value="all">All Status</SelectItem>
-                            <SelectItem value="paid">Paid</SelectItem>
-                            <SelectItem value="partial">Partial</SelectItem>
-                            <SelectItem value="unpaid">Unpaid</SelectItem>
-                            <SelectItem value="returns">Returns / Adjustments</SelectItem>
-                        </SelectContent>
-                    </Select>
-                </div>
-                <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-                    <Table>
-                        <TableHeader>
-                            <TableRow className="bg-gray-50/50">
-                                <TableHead>Date</TableHead>
-                                <TableHead>Reference</TableHead>
-                                <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Total Amount</TableHead>
-                                <TableHead className="text-right">Paid</TableHead>
-                                <TableHead className="text-right">Balance</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filteredHistory.map((row) => (
-                                <TableRow
-                                    key={row.id}
-                                    className={row.kind === 'purchase' ? "cursor-pointer hover:bg-gray-50 transition-colors" : "bg-slate-50/40"}
-                                    onClick={() => {
-                                        if (row.kind === 'purchase') {
-                                            router.push(`/purchases/${row.reference.replace('#', '')}`);
-                                        }
-                                    }}
-                                >
-                                    <TableCell>
-                                        {formatPakistanDate(row.date)}
-                                    </TableCell>
-                                    <TableCell className="font-mono text-xs">{row.reference}</TableCell>
-                                    <TableCell>
-                                        <Badge variant="outline" className={
-                                            row.kind === 'return'
-                                                ? 'bg-blue-100 text-blue-700 border-blue-200'
-                                                : row.status === 'paid'
-                                                    ? 'bg-green-100 text-green-700 border-green-200'
-                                                    : row.status === 'partial'
-                                                        ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
-                                                        : 'bg-red-100 text-red-700 border-red-200'
-                                        }>
-                                            {row.kind === 'return' ? 'RETURN / ADJ' : String(row.status || '').toUpperCase()}
-                                        </Badge>
-                                        {row.kind === 'return' && row.description && (
-                                            <p className="text-xs text-gray-500 mt-1 max-w-[260px] truncate" title={row.description}>{row.description}</p>
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-right font-medium">
-                                        Rs {row.total_amount.toFixed(2)}
-                                    </TableCell>
-                                    <TableCell className="text-right text-gray-500">
-                                        Rs {row.amount_paid.toFixed(2)}
-                                    </TableCell>
-                                    <TableCell className="text-right font-medium">
-                                        Rs {row.balance.toFixed(2)}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </div>
+                <Tabs value={activeTab} defaultValue="purchases" onValueChange={setActiveTab}>
+                    <TabsList>
+                        <TabsTrigger value="purchases">Purchase History</TabsTrigger>
+                        <TabsTrigger value="payments">Payment History ({vendorPayments.length})</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="purchases">
+                        <div className="flex justify-between items-center mb-3">
+                            <span />
+                            <Select value={statusFilter} onValueChange={setStatusFilter}>
+                                <SelectTrigger className="w-48">
+                                    <Filter className="h-4 w-4 mr-2" />
+                                    <SelectValue placeholder="Filter by Status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Status</SelectItem>
+                                    <SelectItem value="paid">Paid</SelectItem>
+                                    <SelectItem value="partial">Partial</SelectItem>
+                                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                                    <SelectItem value="returns">Returns / Adjustments</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="bg-gray-50/50">
+                                        <TableHead>Date</TableHead>
+                                        <TableHead>Reference</TableHead>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead className="text-right">Total Amount</TableHead>
+                                        <TableHead className="text-right">Paid</TableHead>
+                                        <TableHead className="text-right">Balance</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {filteredHistory.map((row) => (
+                                        <TableRow
+                                            key={row.id}
+                                            className={row.kind === 'purchase' ? "cursor-pointer hover:bg-gray-50 transition-colors" : "bg-slate-50/40"}
+                                            onClick={() => {
+                                                if (row.kind === 'purchase') {
+                                                    router.push(`/purchases/${row.reference.replace('#', '')}`);
+                                                }
+                                            }}
+                                        >
+                                            <TableCell>
+                                                {formatPakistanDate(row.date)}
+                                            </TableCell>
+                                            <TableCell className="font-mono text-xs">{row.reference}</TableCell>
+                                            <TableCell>
+                                                <Badge variant="outline" className={
+                                                    row.kind === 'return'
+                                                        ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                                        : row.status === 'paid'
+                                                            ? 'bg-green-100 text-green-700 border-green-200'
+                                                            : row.status === 'partial'
+                                                                ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
+                                                                : 'bg-red-100 text-red-700 border-red-200'
+                                                }>
+                                                    {row.kind === 'return' ? 'RETURN / ADJ' : String(row.status || '').toUpperCase()}
+                                                </Badge>
+                                                {row.kind === 'return' && row.description && (
+                                                    <p className="text-xs text-gray-500 mt-1 max-w-[260px] truncate" title={row.description}>{row.description}</p>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-right font-medium">
+                                                Rs {row.total_amount.toFixed(2)}
+                                            </TableCell>
+                                            <TableCell className="text-right text-gray-500">
+                                                Rs {row.amount_paid.toFixed(2)}
+                                            </TableCell>
+                                            <TableCell className="text-right font-medium">
+                                                Rs {row.balance.toFixed(2)}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="payments">
+                        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                            {vendorPayments.length === 0 ? (
+                                <p className="text-center py-8 text-muted-foreground">No payment history yet.</p>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="bg-gray-50/50">
+                                            <TableHead>Date</TableHead>
+                                            <TableHead>Amount</TableHead>
+                                            <TableHead>Note</TableHead>
+                                            <TableHead>Actions</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {vendorPayments.map((p: any) => (
+                                            <TableRow key={p.id}>
+                                                <TableCell>{p.date ? formatPakistanDate(p.date) : '-'}</TableCell>
+                                                <TableCell className="font-medium text-green-600">Rs {(p.amount as number).toFixed(2)}</TableCell>
+                                                <TableCell>{p.reference_note || '-'}</TableCell>
+                                                <TableCell>
+                                                    <div className="flex gap-1">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                setEditPaymentEntry({ id: p.id, note: p.reference_note || '' });
+                                                                setEditPaymentDialogOpen(true);
+                                                            }}
+                                                        >
+                                                            Edit
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="text-destructive hover:text-destructive"
+                                                            onClick={() => {
+                                                                setDeletePaymentId(p.id);
+                                                                setDeletePaymentDialogOpen(true);
+                                                            }}
+                                                        >
+                                                            Delete
+                                                        </Button>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </div>
+                    </TabsContent>
+                </Tabs>
             </div>
+
+            {/* Edit Vendor Payment Note Dialog */}
+            <Dialog open={editPaymentDialogOpen} onOpenChange={setEditPaymentDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Edit Payment Note</DialogTitle>
+                    </DialogHeader>
+                    {editPaymentEntry && (
+                        <div className="space-y-4">
+                            <div>
+                                <Label>Reference Note</Label>
+                                <Input
+                                    value={editPaymentEntry.note}
+                                    onChange={(e) => setEditPaymentEntry({ ...editPaymentEntry, note: e.target.value })}
+                                    placeholder="Optional note"
+                                />
+                            </div>
+                            <div className="flex justify-end gap-2">
+                                <Button variant="outline" onClick={() => setEditPaymentDialogOpen(false)}>Cancel</Button>
+                                <Button onClick={handleVendorPaymentEditSave} disabled={editPaymentSaving}>
+                                    {editPaymentSaving ? 'Saving...' : 'Save'}
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Delete Vendor Payment Confirm Dialog */}
+            <Dialog open={deletePaymentDialogOpen} onOpenChange={setDeletePaymentDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Payment</DialogTitle>
+                    </DialogHeader>
+                    <p className="text-sm text-muted-foreground">Are you sure you want to delete this payment? The vendor ledger balance will be recalculated.</p>
+                    <div className="flex justify-end gap-2 mt-4">
+                        <Button variant="outline" onClick={() => setDeletePaymentDialogOpen(false)}>Cancel</Button>
+                        <Button variant="destructive" onClick={handleVendorPaymentDelete} disabled={deletingPayment}>
+                            {deletingPayment ? 'Deleting...' : 'Delete'}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

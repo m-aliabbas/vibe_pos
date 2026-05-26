@@ -1,5 +1,6 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, Float, String, ForeignKey
+from app.core.timezone import now_pkt
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
@@ -15,7 +16,7 @@ class ProductStockAdjustment(Base):
     quantity_delta = Column(Float, nullable=False)
     quantity_after = Column(Float, nullable=False, default=0.0)
     reason = Column(String, nullable=False)
-    created_at = Column(String, nullable=False, default=lambda: datetime.utcnow().isoformat())
+    created_at = Column(String, nullable=False, default=lambda: now_pkt().isoformat())
 
     product = relationship("Product")
     adjusted_by_user = relationship("User")

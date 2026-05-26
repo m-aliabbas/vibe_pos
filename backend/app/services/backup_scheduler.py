@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from app.core.timezone import now_pkt
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +64,13 @@ async def create_automatic_backup():
             return
         
         # Create timestamped backup filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         backup_filename = f"auto_backup_{timestamp}.zip"
         backup_path = backup_dir / backup_filename
         
         # Create backup metadata
         backup_metadata = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": now_pkt().isoformat(),
             "type": "automatic",
             "files": [],
             "total_size": 0
@@ -112,7 +113,7 @@ def cleanup_old_backups(backup_dir: Path, days_to_keep: int = 7):
     """
     try:
         from datetime import timedelta
-        cutoff_time = datetime.now() - timedelta(days=days_to_keep)
+        cutoff_time = now_pkt() - timedelta(days=days_to_keep)
         
         deleted_count = 0
         for backup_file in backup_dir.glob("auto_backup_*.zip"):

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import api from "@/lib/api";
+import { formatPakistanDateTime } from "@/lib/utils";
 import {
   Receipt,
   Search,
@@ -114,10 +115,15 @@ export default function SalesHistory() {
   const [editOpen, setEditOpen] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editSale, setEditSale] = useState<Sale | null>(null);
+  const [editCustPhone, setEditCustPhone] = useState("");
+  const [editCustResults, setEditCustResults] = useState<{ id: number; name: string; phone: string | null; customer_id: string | null }[]>([]);
+  const [editCustSearching, setEditCustSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   // Calculate revenue by payment method
   const getRevenueByPaymentMethod = () => {
@@ -196,7 +202,11 @@ export default function SalesHistory() {
     }
     
     setFilteredSales(filtered);
+    setCurrentPage(1);
   }, [searchQuery, sales, paymentMethodFilter, dateFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSales.length / PAGE_SIZE));
+  const paginatedSales = filteredSales.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const fetchSales = async () => {
     try {
@@ -280,11 +290,43 @@ export default function SalesHistory() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setEditSale(response.data);
+      setEditCustPhone("");
+      setEditCustResults([]);
       setEditOpen(true);
     } catch (error) {
       console.error("Failed to fetch sale for edit:", error);
       alert("Failed to load sale for editing");
     }
+  };
+
+  const searchCustomerForEdit = async () => {
+    const q = editCustPhone.trim();
+    if (!q) return;
+    try {
+      setEditCustSearching(true);
+      setEditCustResults([]);
+      const res = await api.get("/customers/", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { search: q, limit: 20 },
+      });
+      setEditCustResults(res.data || []);
+    } catch {
+      setEditCustResults([]);
+    } finally {
+      setEditCustSearching(false);
+    }
+  };
+
+  const assignCustomerToEdit = (c: { id: number; name: string; phone: string | null; customer_id: string | null }) => {
+    if (!editSale) return;
+    setEditSale({
+      ...editSale,
+      customer_ref_id: c.id,
+      customer_name: c.name,
+      customer_phone: c.phone || "",
+    });
+    setEditCustResults([]);
+    setEditCustPhone("");
   };
 
   const updateEditItem = (index: number, field: "quantity" | "unit_price" | "item_discount", value: string) => {
@@ -354,16 +396,7 @@ export default function SalesHistory() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const formatDate = (dateString: string) => formatPakistanDateTime(dateString);
 
   const getPaymentMethodBadge = (method: string) => {
     const colors: { [key: string]: string } = {
@@ -498,7 +531,7 @@ export default function SalesHistory() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredSales.map((sale) => (
+                  {paginatedSales.map((sale) => (
                     <TableRow
                       key={sale.id}
                       className="cursor-pointer hover:bg-muted/50"
@@ -586,6 +619,71 @@ export default function SalesHistory() {
                   ))}
                 </TableBody>
               </Table>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-2 pt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredSales.length)} of {filteredSales.length} sales
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                    >
+                      «
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      ‹
+                    </Button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                      .reduce<(number | string)[]>((acc, p, idx, arr) => {
+                        if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
+                        acc.push(p);
+                        return acc;
+                      }, [])
+                      .map((item, idx) =>
+                        item === '...' ? (
+                          <span key={`ellipsis-${idx}`} className="px-2 text-muted-foreground">…</span>
+                        ) : (
+                          <Button
+                            key={item}
+                            variant={currentPage === item ? 'default' : 'outline'}
+                            size="sm"
+                            className="w-9"
+                            onClick={() => setCurrentPage(item as number)}
+                          >
+                            {item}
+                          </Button>
+                        )
+                      )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      ›
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                    >
+                      »
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -788,20 +886,76 @@ export default function SalesHistory() {
 
           {editSale && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Customer Name</label>
+              {/* Customer section */}
+              <div className="border rounded-lg p-3 space-y-3">
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  <User className="h-4 w-4" /> Customer
+                </p>
+
+                {/* Current customer */}
+                {editSale.customer_name || editSale.customer_phone ? (
+                  <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded px-3 py-2 text-sm">
+                    <div>
+                      <p className="font-semibold text-green-800">{editSale.customer_name || "—"}</p>
+                      <p className="text-xs text-green-600">
+                        {editSale.customer_phone && `Phone: ${editSale.customer_phone}`}
+                        {editSale.customer_ref_id && ` • ID: ${editSale.customer_ref_id}`}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 h-7 text-xs"
+                      onClick={() => setEditSale({ ...editSale, customer_ref_id: null, customer_name: null, customer_phone: null })}>
+                      Clear
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">No customer assigned</p>
+                )}
+
+                {/* Search by phone */}
+                <div className="flex gap-2">
                   <Input
-                    value={editSale.customer_name || ""}
-                    onChange={(e) => setEditSale({ ...editSale, customer_name: e.target.value || null })}
+                    placeholder="Search by phone or name..."
+                    value={editCustPhone}
+                    className="h-8 text-sm"
+                    onChange={(e) => setEditCustPhone(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void searchCustomerForEdit()}
                   />
+                  <Button size="sm" variant="outline" className="h-8 shrink-0" onClick={() => void searchCustomerForEdit()} disabled={editCustSearching}>
+                    <Search className="h-3.5 w-3.5 mr-1" />{editCustSearching ? "..." : "Search"}
+                  </Button>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Customer Phone</label>
-                  <Input
-                    value={editSale.customer_phone || ""}
-                    onChange={(e) => setEditSale({ ...editSale, customer_phone: e.target.value || null })}
-                  />
+
+                {/* Results */}
+                {editCustResults.length > 0 && (
+                  <div className="border rounded divide-y max-h-40 overflow-y-auto">
+                    {editCustResults.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between px-3 py-2 hover:bg-muted/40 cursor-pointer text-sm"
+                        onClick={() => assignCustomerToEdit(c)}>
+                        <div>
+                          <p className="font-medium">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {c.phone && `Phone: ${c.phone}`}{c.customer_id && ` • ${c.customer_id}`}
+                          </p>
+                        </div>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-primary">Assign</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {editCustResults.length === 0 && editCustPhone && !editCustSearching && (
+                  <p className="text-xs text-muted-foreground">No customers found. You can still type a name/phone manually below.</p>
+                )}
+
+                {/* Manual override */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground">Name (manual)</label>
+                    <Input className="h-8 text-sm" value={editSale.customer_name || ""} onChange={(e) => setEditSale({ ...editSale, customer_name: e.target.value || null, customer_ref_id: null })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground">Phone (manual)</label>
+                    <Input className="h-8 text-sm" value={editSale.customer_phone || ""} onChange={(e) => setEditSale({ ...editSale, customer_phone: e.target.value || null, customer_ref_id: null })} />
+                  </div>
                 </div>
               </div>
 
@@ -909,6 +1063,37 @@ export default function SalesHistory() {
                   ))}
                 </CardContent>
               </Card>
+
+              {/* Totals summary */}
+              {(() => {
+                const subtotal = editSale.items.reduce((s, i) => s + i.unit_price * i.quantity - (i.item_discount || 0), 0);
+                const grandTotal = subtotal - (editSale.discount || 0) + (editSale.tax || 0) + (editSale.delivery_charges || 0);
+                const due = grandTotal - (editSale.amount_paid || 0);
+                return (
+                  <div className="border rounded-lg p-3 bg-muted/30 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs">Sub Total</p>
+                      <p className="font-semibold">rs {subtotal.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">Discount / Tax / Delivery</p>
+                      <p className="font-semibold text-red-600">
+                        -{(editSale.discount || 0).toFixed(2)} / +{(editSale.tax || 0).toFixed(2)} / +{(editSale.delivery_charges || 0).toFixed(2)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">Grand Total</p>
+                      <p className="font-bold text-primary text-base">rs {grandTotal.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">Amount Due</p>
+                      <p className={`font-bold text-base ${due > 0 ? "text-red-600" : "text-green-600"}`}>
+                        rs {due.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setEditOpen(false)} disabled={savingEdit}>

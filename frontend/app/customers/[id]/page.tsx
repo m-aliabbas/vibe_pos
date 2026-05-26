@@ -29,6 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import api, { customerApi, CustomerResponse, CustomerNote, CustomerPayment } from "@/lib/api";
 import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
+import { formatPakistanDate, formatPakistanDateTime, todayPKTDateString } from "@/lib/utils";
 import {
   User,
   Phone,
@@ -457,7 +458,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       doc.text(`Customer: ${customer.name || 'N/A'}`, 40, 120);
       doc.text(`ID: ${customer.customer_id || 'N/A'}`, 40, 134);
       if (customer.phone) doc.text(`Phone: ${customer.phone}`, 300, 120);
-      doc.text(`Date: ${new Date().toLocaleDateString()}`, 300, 134);
+      doc.text(`Date: ${todayPKTDateString()}`, 300, 134);
       
       // Opening Balance
       doc.setFontSize(10);
@@ -497,7 +498,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
         }
         
         return [
-          entry.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+          formatPakistanDate(entry.date),
           description,
           entry.debit > 0 ? formatCurrency(entry.debit) : '-',
           entry.credit > 0 ? formatCurrency(entry.credit) : '-',
@@ -579,7 +580,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').substring(0, 30);
       const storeName = sanitize(storeInfo.name || 'Store');
       const customerName = sanitize(customer.name || `Customer_${customer.customer_id || customerId}`);
-      const date = new Date().toISOString().split('T')[0];
+      const date = todayPKTDateString();
       
       doc.save(`${storeName}_${customerName}_Ledger_${date}.pdf`);
     } catch (error: any) {
@@ -590,9 +591,33 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
   const handlePrintReceipt = () => {
     if (!receiptData) return;
+    const printArea = document.getElementById('payment-receipt-print-area');
+    if (!printArea) return;
+    const parent = printArea.parentNode as Node;
+    const nextSib = printArea.nextSibling;
+    document.body.appendChild(printArea);
+
+    // Measure content height in screen px, convert to mm (96dpi: 1px = 0.2646mm)
+    const inner = printArea.querySelector('.thermal-receipt') as HTMLElement | null;
+    const heightPx = inner ? inner.offsetHeight : printArea.offsetHeight;
+    const heightMm = Math.max(80, Math.ceil(heightPx * 0.2646) + 20);
+
+    // Inject explicit page size so WebKit doesn't default to A4
+    const pageStyle = document.createElement('style');
+    pageStyle.id = 'thermal-receipt-page-style';
+    pageStyle.textContent = `@media print { @page { size: 80mm ${heightMm}mm; margin: 2mm; } }`;
+    document.head.appendChild(pageStyle);
+
     document.body.classList.add("print-payment-receipt");
     window.print();
     document.body.classList.remove("print-payment-receipt");
+
+    pageStyle.remove();
+    if (nextSib) {
+      parent.insertBefore(printArea, nextSib);
+    } else {
+      parent.appendChild(printArea);
+    }
   };
 
   const handleDeleteNote = async (noteId: number) => {
@@ -616,15 +641,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     return `rs ${formatted}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const formatDate = (dateString: string) => formatPakistanDateTime(dateString);
 
   // Calculate advance payment status using round-robin reconciliation
   const calculateAdvanceStatus = (advances: any[], payments: CustomerPayment[]) => {
@@ -1404,7 +1421,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
               <CardTitle>Payment History</CardTitle>
             </CardHeader>
             <CardContent>
-              <AllPaymentsTab customerId={customerId} customerPayments={customer.payments} />
+              <AllPaymentsTab customerId={customerId} customerPayments={customer.payments} onRefresh={fetchCustomerData} />
             </CardContent>
           </Card>
         </TabsContent>
@@ -1463,7 +1480,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </div>
 
           {receiptData && (
-            <div id="payment-receipt-print-area" className="p-4">
+            <div id="payment-receipt-print-area" className="p-4 flex justify-center">
               <div className="thermal-receipt bg-white w-full max-w-[80mm] mx-auto">
                 <div className="text-sm">
                   {/* Store Header */}
@@ -1480,7 +1497,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                     <h2 className="text-lg font-bold text-gray-900 mb-1">
                       {receiptData.type === "advance" ? "ADVANCE RECEIPT" : "PAYMENT RECEIPT"}
                     </h2>
-                    <p className="text-xs text-gray-600">{new Date(receiptData.date).toLocaleString()}</p>
+                    <p className="text-xs text-gray-600">{formatPakistanDateTime(receiptData.date)}</p>
                   </div>
 
                   {/* Customer Info */}
@@ -1553,9 +1570,15 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   );
 }
 
-function AllPaymentsTab({ customerId, customerPayments }: { customerId: number, customerPayments: CustomerPayment[] }) {
+function AllPaymentsTab({ customerId, customerPayments, onRefresh }: { customerId: number, customerPayments: CustomerPayment[], onRefresh: () => void }) {
   const [purchases, setPurchases] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [editPayment, setEditPayment] = useState<{ id: number; amount: number; method: string; note: string } | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchPurchases();
@@ -1573,6 +1596,39 @@ function AllPaymentsTab({ customerId, customerPayments }: { customerId: number, 
     }
   };
 
+  const handleEditSave = async () => {
+    if (!editPayment) return;
+    setEditSaving(true);
+    try {
+      await customerApi.updateCustomerPayment(customerId, editPayment.id, {
+        amount: editPayment.amount,
+        payment_method: editPayment.method,
+        reference_note: editPayment.note,
+      });
+      setEditDialogOpen(false);
+      onRefresh();
+    } catch (err) {
+      console.error("Failed to update payment", err);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteConfirmId) return;
+    setDeleting(true);
+    try {
+      await customerApi.deleteCustomerPayment(customerId, deleteConfirmId);
+      setDeleteDialogOpen(false);
+      setDeleteConfirmId(null);
+      onRefresh();
+    } catch (err) {
+      console.error("Failed to delete payment", err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const formatCurrency = (amount: number) => {
     const formatted = new Intl.NumberFormat('en-IN', {
       minimumFractionDigits: 2,
@@ -1581,15 +1637,7 @@ function AllPaymentsTab({ customerId, customerPayments }: { customerId: number, 
     return `rs ${formatted}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const formatDate = (dateString: string) => formatPakistanDateTime(dateString);
 
   if (loading) {
     return (
@@ -1655,39 +1703,135 @@ function AllPaymentsTab({ customerId, customerPayments }: { customerId: number, 
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Date</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Amount</TableHead>
-          <TableHead>Method</TableHead>
-          <TableHead>Note</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {allPayments.map((payment) => (
-          <TableRow key={payment.id}>
-            <TableCell>{formatDate(payment.date)}</TableCell>
-            <TableCell>
-              <Badge variant={payment.type === 'customer_payment' ? 'default' : 'secondary'}>
-                {payment.type === 'customer_payment' ? 'Account Payment' : 'Sale Payment'}
-              </Badge>
-            </TableCell>
-            <TableCell className="font-medium text-green-600">
-              {formatCurrency(payment.amount)}
-              {payment.type === 'purchase_payment' && payment.total && (
-                <span className="text-xs text-muted-foreground ml-1">
-                  / {formatCurrency(payment.total)}
-                </span>
-              )}
-            </TableCell>
-            <TableCell className="capitalize">{payment.method.replace('_', ' ')}</TableCell>
-            <TableCell>{payment.note}</TableCell>
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Date</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Amount</TableHead>
+            <TableHead>Method</TableHead>
+            <TableHead>Note</TableHead>
+            <TableHead>Actions</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {allPayments.map((payment) => (
+            <TableRow key={payment.id}>
+              <TableCell>{formatDate(payment.date)}</TableCell>
+              <TableCell>
+                <Badge variant={payment.type === 'customer_payment' ? 'default' : 'secondary'}>
+                  {payment.type === 'customer_payment' ? 'Account Payment' : 'Sale Payment'}
+                </Badge>
+              </TableCell>
+              <TableCell className="font-medium text-green-600">
+                {formatCurrency(payment.amount)}
+                {payment.type === 'purchase_payment' && payment.total && (
+                  <span className="text-xs text-muted-foreground ml-1">
+                    / {formatCurrency(payment.total)}
+                  </span>
+                )}
+              </TableCell>
+              <TableCell className="capitalize">{payment.method.replace('_', ' ')}</TableCell>
+              <TableCell>{payment.note}</TableCell>
+              <TableCell>
+                {payment.type === 'customer_payment' && (
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const rawId = parseInt(payment.id.replace('cp-', ''));
+                        setEditPayment({ id: rawId, amount: payment.amount, method: payment.method, note: payment.note === '-' ? '' : payment.note });
+                        setEditDialogOpen(true);
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        const rawId = parseInt(payment.id.replace('cp-', ''));
+                        setDeleteConfirmId(rawId);
+                        setDeleteDialogOpen(true);
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      {/* Edit Payment Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+          </DialogHeader>
+          {editPayment && (
+            <div className="space-y-4">
+              <div>
+                <Label>Amount</Label>
+                <Input
+                  type="number"
+                  value={editPayment.amount}
+                  onChange={(e) => setEditPayment({ ...editPayment, amount: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+              <div>
+                <Label>Payment Method</Label>
+                <select
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  value={editPayment.method}
+                  onChange={(e) => setEditPayment({ ...editPayment, method: e.target.value })}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="card">Card</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <Label>Note</Label>
+                <Input
+                  value={editPayment.note}
+                  onChange={(e) => setEditPayment({ ...editPayment, note: e.target.value })}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleEditSave} disabled={editSaving}>
+                  {editSaving ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Payment</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Are you sure you want to delete this payment? This will reverse the payment on the customer's balance.</p>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1721,13 +1865,7 @@ function PurchaseHistoryTab({ customerId }: { customerId: number }) {
     return `rs ${formatted}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const formatDate = (dateString: string) => formatPakistanDate(dateString);
 
   const handleRowClick = (purchaseId: number) => {
     setSelectedPurchaseId(purchaseId);
@@ -1851,13 +1989,7 @@ function ReturnHistoryTab({ customerId }: { customerId: number }) {
     return `rs ${formatted}`;
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const formatDate = (dateString: string) => formatPakistanDate(dateString);
 
   if (loading) {
     return (

@@ -2,6 +2,7 @@ import os
 import zipfile
 import json
 from datetime import datetime
+from app.core.timezone import now_pkt
 from pathlib import Path
 from typing import List
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
@@ -126,13 +127,13 @@ def create_backup():
             raise HTTPException(status_code=404, detail="No database files found")
         
         # Create timestamped backup filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         backup_filename = f"pos_backup_{timestamp}.zip"
         backup_path = backup_dir / backup_filename
         
         # Create backup metadata
         backup_metadata = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": now_pkt().isoformat(),
             "files": [],
             "total_size": 0
         }
@@ -207,7 +208,7 @@ async def restore_backup(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="Invalid file type. Must be a ZIP file")
         
         # Save uploaded file temporarily
-        temp_backup_path = data_dir.parent / f"temp_restore_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        temp_backup_path = data_dir.parent / f"temp_restore_{now_pkt().strftime('%Y%m%d_%H%M%S')}.zip"
         
         try:
             # Write uploaded file

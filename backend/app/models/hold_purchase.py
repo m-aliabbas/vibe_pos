@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
+from app.core.timezone import now_pkt
 
 
 class HoldPurchase(Base):
@@ -11,7 +12,7 @@ class HoldPurchase(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     label = Column(String, nullable=True)
     payload = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_pkt, index=True)
+    updated_at = Column(DateTime, default=now_pkt, onupdate=now_pkt)
 
     user = relationship("User", backref="hold_purchases")

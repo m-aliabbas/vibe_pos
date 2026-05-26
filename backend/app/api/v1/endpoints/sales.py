@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from datetime import datetime, date, timezone, timedelta
+from app.core.timezone import now_pkt
 from pathlib import Path
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import mm
@@ -88,16 +89,11 @@ def _get_store_details():
     return name, address, ""
 
 
-def _convert_utc_to_pakistan(utc_dt: datetime) -> datetime:
+def _convert_utc_to_pakistan(dt: datetime) -> datetime:
     """
-    Convert UTC datetime to Pakistan timezone (UTC+5).
+    Times are now stored as naive PKT (GMT+5) in the DB — return as-is.
     """
-    if utc_dt.tzinfo is None:
-        # Assume UTC if no timezone info
-        utc_dt = utc_dt.replace(tzinfo=timezone.utc)
-    
-    pakistan_tz = timezone(timedelta(hours=5))
-    return utc_dt.astimezone(pakistan_tz)
+    return dt
 
 
 def _build_whatsapp_invoice_caption(sale: Sale) -> str:
@@ -461,7 +457,7 @@ def resolve_sale_customer(db: Session, sale_in: SaleCreate):
                 customer_id=new_customer_id,
                 phone=normalized_phone,
                 name=sale_in.customer_name,
-                member_since=datetime.utcnow(),
+                member_since=now_pkt(),
             )
             db.add(customer)
             db.flush()
@@ -501,7 +497,7 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
             print(f"Sale {sale_id} not found")
             return
         # Generate invoice image
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         filename = f"invoice_{timestamp}.png"
         file_path = INVOICE_DIR / filename
         _render_invoice_image(sale, file_path, dpi=300)
@@ -760,7 +756,7 @@ def create_sale(
         if db_sale.amount_due > 0:
             customer.outstanding_balance += db_sale.amount_due
             
-        customer.updated_at = datetime.utcnow()
+        customer.updated_at = now_pkt()
         db.add(customer)
     
     # Commit transaction
@@ -836,7 +832,7 @@ def update_sale(
             old_customer.total_purchases = max(0, (old_customer.total_purchases or 0) - 1)
             old_customer.total_spent = max(0.0, (old_customer.total_spent or 0.0) - old_total)
             old_customer.outstanding_balance = (old_customer.outstanding_balance or 0.0) - old_due
-            old_customer.updated_at = datetime.utcnow()
+            old_customer.updated_at = now_pkt()
             db.add(old_customer)
 
     old_entries = db.query(JournalEntry).filter(
@@ -984,7 +980,7 @@ def update_sale(
         customer.total_spent += total
         if amount_due > 0:
             customer.outstanding_balance += amount_due
-        customer.updated_at = datetime.utcnow()
+        customer.updated_at = now_pkt()
         db.add(customer)
 
     try:
@@ -1145,7 +1141,7 @@ def send_invoice(
     
     try:
         # Generate invoice image
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         filename = f"invoice_{timestamp}.png"
         file_path = INVOICE_DIR / filename
         _render_invoice_image(sale, file_path, dpi=300)

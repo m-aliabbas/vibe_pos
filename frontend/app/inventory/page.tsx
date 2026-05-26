@@ -505,7 +505,7 @@ export default function InventoryPage() {
     const handlePrintBarcode = () => {
         if (!barcodeRef.current || !barcodeProduct) return;
         const svgContent = barcodeRef.current.outerHTML;
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        const printWindow = window.open('', '_blank', 'width=400,height=600');
         if (!printWindow) return;
         const copies = Array(barcodeCopies).fill(null).map(() => `
             <div class="label">
@@ -520,14 +520,57 @@ export default function InventoryPage() {
             <head>
                 <title>Barcode — ${barcodeProduct.name}</title>
                 <style>
+                    @page {
+                        size: 80mm auto;
+                        margin: 2mm;
+                    }
                     * { box-sizing: border-box; margin: 0; padding: 0; }
-                    body { font-family: sans-serif; padding: 8px; }
-                    .labels { display: flex; flex-wrap: wrap; gap: 6px; }
-                    .label { display: flex; flex-direction: column; align-items: center; border: 1px dashed #ccc; padding: 6px 4px; page-break-inside: avoid; }
-                    .prod-name { font-size: 10px; font-weight: 600; text-align: center; max-width: 180px; margin-bottom: 2px; }
-                    .prod-price { font-size: 12px; font-weight: bold; margin-top: 2px; }
-                    svg { max-width: 180px; }
-                    @media print { body { padding: 0; } }
+                    body {
+                        font-family: sans-serif;
+                        width: 76mm;
+                        margin: 0 auto;
+                        background: #fff;
+                        color: #000;
+                    }
+                    .labels {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 3mm;
+                        width: 76mm;
+                    }
+                    .label {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        border: 0.5px dashed #999;
+                        padding: 2mm 1mm;
+                        page-break-inside: avoid;
+                        width: 76mm;
+                    }
+                    .prod-name {
+                        font-size: 10pt;
+                        font-weight: 700;
+                        text-align: center;
+                        width: 100%;
+                        word-break: break-word;
+                        margin-bottom: 1mm;
+                        line-height: 1.2;
+                    }
+                    .prod-price {
+                        font-size: 11pt;
+                        font-weight: bold;
+                        margin-top: 1mm;
+                        letter-spacing: 0.5px;
+                    }
+                    svg {
+                        width: 70mm !important;
+                        height: auto !important;
+                        display: block;
+                    }
+                    @media print {
+                        body { width: 76mm; margin: 0; }
+                        .labels { gap: 3mm; }
+                    }
                 </style>
             </head>
             <body>
@@ -829,6 +872,7 @@ export default function InventoryPage() {
                                 <TableHead>Product Name</TableHead>
                                 <TableHead>SKU</TableHead>
                                 <TableHead>Category</TableHead>
+                                <TableHead className="text-right">Purchase Price</TableHead>
                                 <TableHead className="text-right">Selling Price</TableHead>
                                 <TableHead className="text-center">Current Stock</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
@@ -849,6 +893,9 @@ export default function InventoryPage() {
                                     <TableCell className="font-mono text-xs text-gray-500">{product.sku || '-'}</TableCell>
                                     <TableCell>
                                         <Badge variant="secondary" className="font-normal">{product.category}</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right font-medium text-orange-600">
+                                        rs {product.cost_price > 0 ? product.cost_price.toFixed(2) : '-'}
                                     </TableCell>
                                     <TableCell className="text-right font-medium text-emerald-600">
                                         rs {product.selling_price.toFixed(2)}

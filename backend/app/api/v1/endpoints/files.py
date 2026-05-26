@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 import os
 from pathlib import Path
 from datetime import datetime
-
+from app.core.timezone import now_pkt
 router = APIRouter()
 
 # Save to Downloads folder
@@ -18,7 +18,7 @@ async def upload_invoice(file: UploadFile = File(...)):
     """
     try:
         # Generate filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         file_extension = file.filename.split(".")[-1] if file.filename else "png"
         filename = f"invoice_{timestamp}.{file_extension}"
         file_path = UPLOAD_DIR / filename

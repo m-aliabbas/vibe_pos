@@ -11,9 +11,9 @@ function parseApiDate(dateValue: string | Date): Date {
   const raw = String(dateValue || "").trim();
   if (!raw) return new Date(NaN);
 
-  // Backend often returns naive ISO strings; treat them as UTC for consistency.
+  // Backend returns naive ISO strings in PKT (GMT+5); treat them as such.
   const hasTimezone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(raw);
-  return new Date(hasTimezone ? raw : `${raw}Z`);
+  return new Date(hasTimezone ? raw : `${raw}+05:00`);
 }
 
 export function formatPakistanDateTime(
@@ -44,4 +44,27 @@ export function formatPakistanDate(
     day: "numeric",
     ...options,
   });
+}
+
+/** Today's date in PKT as YYYY-MM-DD (e.g. for API calls, filenames). */
+export function todayPKTDateString(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/** Current PKT date+time formatted for display. */
+export function nowPKTFormatted(options?: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Karachi",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    ...options,
+  }).format(new Date());
 }

@@ -278,247 +278,214 @@ export default function InvoicePage() {
           ref={invoiceRef}
           className="thermal-receipt bg-white shadow-lg w-full max-w-[80mm] mx-auto"
         >
-          <div className="p-4 text-sm">
-            {/* Store Header - Centered */}
-            <div className="text-center border-b-2 border-dashed border-gray-400 pb-3 mb-3">
-              <h1 className="text-xl font-bold text-gray-900 mb-1">
+          <div className="p-2 text-xs">
+            {/* Store Header */}
+            <div className="text-center border-b-2 border-dashed border-gray-400 pb-2 mb-2">
+              <h1 className="text-base font-bold text-gray-900 leading-tight">
                 {storeInfo.name}
               </h1>
-              {storeInfo.address && (
-                <p className="text-xs text-gray-600">{storeInfo.address}</p>
-              )}
-              {storeInfo.city && (
-                <p className="text-xs text-gray-600">{storeInfo.city}</p>
+              {(storeInfo.address || storeInfo.city) && (
+                <p className="text-xs text-gray-600 leading-tight">
+                  {[storeInfo.address, storeInfo.city].filter(Boolean).join(", ")}
+                </p>
               )}
               {storeInfo.phone && (
-                <p className="text-xs text-gray-600">{storeInfo.phone}</p>
+                <p className="text-xs text-gray-600 leading-tight">{storeInfo.phone}</p>
               )}
               {storeInfo.email && (
-                <p className="text-xs text-gray-600">{storeInfo.email}</p>
+                <p className="text-xs text-gray-600 leading-tight">{storeInfo.email}</p>
               )}
               {storeInfo.taxId && (
-                <p className="text-xs text-gray-600">Tax ID: {storeInfo.taxId}</p>
+                <p className="text-xs text-gray-600 leading-tight">NTN: {storeInfo.taxId}</p>
               )}
             </div>
 
-            {/* Invoice Info */}
-            <div className="text-center mb-3 pb-3 border-b border-dashed border-gray-300">
-              <h2 className="text-lg font-bold text-gray-900 mb-1">INVOICE</h2>
-              <p className="text-xs text-gray-600">
-                #{formatInvoiceNumber(sale.id)}
-              </p>
-              <p className="text-xs text-gray-600">
-                {formatDate(sale.created_at)}
-              </p>
-              <p className="text-xs text-gray-600">
-                Cashier: {sale.user?.full_name || sale.user?.username || "N/A"}
-              </p>
-            </div>
-
-            {/* Customer Info */}
-            <div className="mb-3 pb-3 border-b border-dashed border-gray-300">
-              <p className="text-xs font-semibold text-gray-600 mb-1">CUSTOMER:</p>
-              <p className="text-sm font-medium text-gray-900">
-                {sale.customer_name || "Walk-in Customer"}
-              </p>
+            {/* Invoice Meta — compact two-row layout */}
+            <div className="mb-2 pb-2 border-b border-dashed border-gray-300">
+              <div className="flex justify-between">
+                <span className="font-bold">INV #{formatInvoiceNumber(sale.id)}</span>
+                <span className="text-gray-600">{formatDate(sale.created_at)}</span>
+              </div>
+              <div className="flex justify-between mt-0.5">
+                <span className="text-gray-600">
+                  Cashier: {sale.user?.full_name || sale.user?.username || "N/A"}
+                </span>
+                <span className="font-medium">
+                  {sale.customer_name || "Walk-in"}
+                </span>
+              </div>
             </div>
 
             {/* Vehicle Info (Oil Change Details) */}
             {sale.customer && (sale.customer.current_mileage || sale.customer.oil_change_interval) && (
-              <div className="mb-3 pb-3 border-b border-dashed border-gray-300">
-                <p className="text-xs font-semibold text-gray-600 mb-1">VEHICLE INFO:</p>
-                {sale.customer.current_mileage && (
-                  <div className="flex justify-between text-xs text-gray-700">
-                    <span>Current KM:</span>
-                    <span className="font-medium">{sale.customer.current_mileage.toLocaleString()}</span>
-                  </div>
-                )}
+              <div className="mb-2 pb-2 border-b border-dashed border-gray-300">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Current KM:</span>
+                  <span className="font-medium">{sale.customer.current_mileage?.toLocaleString() ?? "—"}</span>
+                </div>
                 {sale.customer.oil_change_interval && (
-                  <div className="flex justify-between text-xs text-gray-700">
-                    <span>Oil Interval:</span>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Oil Interval:</span>
                     <span className="font-medium">{sale.customer.oil_change_interval.toLocaleString()} KM</span>
                   </div>
                 )}
                 {sale.customer.next_oil_change_mileage && (
-                  <div className="flex justify-between text-xs text-green-700 font-semibold mt-1">
-                    <span>Next Oil Change:</span>
+                  <div className="flex justify-between font-semibold text-green-700">
+                    <span>Next Change:</span>
                     <span>{sale.customer.next_oil_change_mileage.toLocaleString()} KM</span>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Items */}
-            <div className="mb-3 pb-3 border-b-2 border-dashed border-gray-400">
-              <p className="text-xs font-semibold text-gray-600 mb-2">ITEMS:</p>
-              {sale.items.map((item, index) => (
-                <div key={item.id} className="mb-3">
-                  <div className="flex justify-between items-start mb-1">
-                    <span className="text-sm font-medium text-gray-900 flex-1">
-                      {item.product_name || item.product?.name || `Product #${item.product_id}`}
-                    </span>
-                  </div>
-                  {(item.variation_attributes || item.variation?.attributes) && (
-                    <div className="text-xs text-purple-600 mb-1">
-                      {Object.entries(item.variation_attributes || item.variation!.attributes).map(([k, v]) => `${k}: ${v}`).join(', ')}
-                    </div>
-                  )}
-                  {item.variation?.sku && (
-                    <div className="text-xs text-gray-500 mb-1">
-                      SKU: {item.variation.sku}
-                    </div>
-                  )}
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>{item.quantity} {item.unit} x rs {item.unit_price.toFixed(2)}</span>
-                    <span className="text-gray-700">
-                      rs {(item.unit_price * item.quantity).toFixed(2)}
-                    </span>
-                  </div>
-                  {item.item_discount && item.item_discount > 0 && (
-                    <div className="flex justify-between text-xs text-gray-900">
-                      <span>Discount:</span>
-                      <span>-rs {item.item_discount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-xs font-semibold mt-1">
-                    <span className="text-gray-900">Final Price:</span>
-                    <span className="text-gray-900">
-                      rs {item.total_price.toFixed(2)}
-                    </span>
-                  </div>
-                  {(returnedBySaleItem[item.id] || 0) > 0 && (
-                    <div className="text-xs text-orange-600 mt-1">
-                      Returned: {returnedBySaleItem[item.id]} {item.unit}
-                    </div>
-                  )}
+            {/* Items Table */}
+            {(() => {
+              const hasDiscount = sale.items.some(i => (i.item_discount ?? 0) > 0);
+              return (
+                <div className="mb-2 pb-2 border-b-2 border-dashed border-gray-400">
+                  <table className="w-full" style={{ borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr className="border-b border-gray-400">
+                        <th className="text-left py-0.5 font-semibold">Item</th>
+                        <th className="text-center py-0.5 font-semibold w-10">Qty</th>
+                        <th className="text-right py-0.5 font-semibold w-14">Rate</th>
+                        {hasDiscount && (
+                          <th className="text-right py-0.5 font-semibold w-12">Disc</th>
+                        )}
+                        <th className="text-right py-0.5 font-semibold w-16">Amt</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sale.items.map((item) => {
+                        const varAttrs = item.variation_attributes || item.variation?.attributes;
+                        const varLabel = varAttrs
+                          ? Object.entries(varAttrs).map(([, v]) => `${v}`).join("/")
+                          : null;
+                        const returned = returnedBySaleItem[item.id] || 0;
+                        const disc = item.item_discount ?? 0;
+                        return (
+                          <>
+                            <tr key={item.id}>
+                              <td className="py-0.5 pr-1 leading-tight">
+                                <span className="font-medium">
+                                  {item.product_name || item.product?.name || `#${item.product_id}`}
+                                </span>
+                                {varLabel && (
+                                  <span className="text-purple-600 block text-xs">{varLabel}</span>
+                                )}
+                              </td>
+                              <td className="text-center py-0.5 whitespace-nowrap">
+                                {item.quantity} {item.unit}
+                              </td>
+                              <td className="text-right py-0.5">{item.unit_price.toFixed(0)}</td>
+                              {hasDiscount && (
+                                <td className="text-right py-0.5 text-gray-500">
+                                  {disc > 0 ? `-${disc.toFixed(0)}` : "—"}
+                                </td>
+                              )}
+                              <td className="text-right py-0.5 font-medium">{item.total_price.toFixed(0)}</td>
+                            </tr>
+                            {returned > 0 && (
+                              <tr key={`ret-${item.id}`} className="text-orange-600">
+                                <td colSpan={hasDiscount ? 5 : 4} className="pb-0.5 pl-2">
+                                  ↩ Returned: {returned} {item.unit}
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             {/* Totals */}
-            <div className="space-y-1 mb-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal:</span>
-                <span className="font-medium text-gray-900">
-                  rs {sale.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0).toFixed(2)}
-                </span>
+            <div className="mb-2 space-y-0.5">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Subtotal</span>
+                <span>rs {sale.items.reduce((s, i) => s + i.unit_price * i.quantity, 0).toFixed(0)}</span>
               </div>
-
-              {(sale.discount > 0 || sale.items.some(item => (item.item_discount || 0) > 0)) && (
+              {(sale.discount > 0 || sale.items.some(i => (i.item_discount || 0) > 0)) && (
                 <>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total Discount:</span>
-                    <span className="font-medium text-gray-900">
-                      -rs {(sale.discount + sale.items.reduce((sum, item) => sum + (item.item_discount || 0), 0)).toFixed(2)}
-                    </span>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Discount</span>
+                    <span>-rs {(sale.discount + sale.items.reduce((s, i) => s + (i.item_discount || 0), 0)).toFixed(0)}</span>
                   </div>
-                  <div className="flex justify-between text-sm font-semibold border-t pt-1">
-                    <span className="text-gray-700">After Discount:</span>
-                    <span className="text-gray-900">
-                      rs {sale.subtotal.toFixed(2)}
-                    </span>
+                  <div className="flex justify-between font-semibold">
+                    <span>After Disc.</span>
+                    <span>rs {sale.subtotal.toFixed(0)}</span>
                   </div>
                 </>
               )}
-
               {sale.tax > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Tax:</span>
-                  <span className="font-medium text-gray-900">
-                    rs {sale.tax.toFixed(2)}
-                  </span>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Tax</span>
+                  <span>rs {sale.tax.toFixed(0)}</span>
                 </div>
               )}
-
               {sale.delivery_charges > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Delivery:</span>
-                  <span className="font-medium text-gray-900">
-                    rs {sale.delivery_charges.toFixed(2)}
-                  </span>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Delivery</span>
+                  <span>rs {sale.delivery_charges.toFixed(0)}</span>
                 </div>
               )}
-
-              <div className="flex justify-between text-base font-bold pt-2 border-t-2 border-gray-900">
-                <span className="text-gray-900">TOTAL TO PAY:</span>
-                <span className="text-gray-900">
-                  rs {sale.total.toFixed(2)}
-                </span>
+              <div className="flex justify-between font-bold text-sm border-t-2 border-gray-900 pt-1 mt-1">
+                <span>TOTAL</span>
+                <span>rs {sale.total.toFixed(0)}</span>
               </div>
               {returnRefundTotal > 0 && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Returned (Refunded):</span>
-                  <span className="font-medium text-red-600">
-                    -rs {returnRefundTotal.toFixed(2)}
-                  </span>
+                <div className="flex justify-between text-red-600">
+                  <span>Refunded</span>
+                  <span>-rs {returnRefundTotal.toFixed(0)}</span>
                 </div>
               )}
               {returnRefundTotal > 0 && (
-                <div className="flex justify-between text-sm font-semibold">
-                  <span className="text-gray-700">Net Total:</span>
-                  <span className="text-gray-900">
-                    rs {(sale.total - returnRefundTotal).toFixed(2)}
-                  </span>
+                <div className="flex justify-between font-semibold">
+                  <span>Net Total</span>
+                  <span>rs {(sale.total - returnRefundTotal).toFixed(0)}</span>
                 </div>
               )}
             </div>
 
-            {/* Payment Details */}
-            <div className="mb-3 pb-3 border-b border-dashed border-gray-300">
-              <p className="text-xs font-semibold text-gray-600 mb-2">PAYMENT:</p>
-              <div className="space-y-1">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Method:</span>
-                  <span className="font-medium text-gray-900 capitalize">
-                    {sale.payment_method}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Paid:</span>
-                  <span className="font-medium text-gray-900">
-                    rs {sale.amount_paid.toFixed(2)}
-                  </span>
-                </div>
-                {sale.change_amount > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Change:</span>
-                    <span className="font-semibold text-green-600">
-                      rs {sale.change_amount.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                {sale.amount_due > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Due:</span>
-                    <span className="font-semibold text-red-600">
-                      rs {sale.amount_due.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                {returnRefundTotal > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Net Due:</span>
-                    <span className="font-semibold text-red-600">
-                      rs {Math.max(0, sale.amount_due - returnRefundTotal).toFixed(2)}
-                    </span>
-                  </div>
-                )}
+            {/* Payment */}
+            <div className="mb-2 pb-2 border-b border-dashed border-gray-300 space-y-0.5">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Method</span>
+                <span className="capitalize font-medium">{sale.payment_method}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Paid</span>
+                <span className="font-medium">rs {sale.amount_paid.toFixed(0)}</span>
+              </div>
+              {sale.change_amount > 0 && (
+                <div className="flex justify-between text-green-700 font-semibold">
+                  <span>Change</span>
+                  <span>rs {sale.change_amount.toFixed(0)}</span>
+                </div>
+              )}
+              {sale.amount_due > 0 && (
+                <div className="flex justify-between text-red-600 font-semibold">
+                  <span>Due (Udhar)</span>
+                  <span>rs {sale.amount_due.toFixed(0)}</span>
+                </div>
+              )}
+              {returnRefundTotal > 0 && (
+                <div className="flex justify-between text-red-600 font-semibold">
+                  <span>Net Due</span>
+                  <span>rs {Math.max(0, sale.amount_due - returnRefundTotal).toFixed(0)}</span>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
-            <div className="text-center pt-3 border-t-2 border-dashed border-gray-400">
-              <p className="text-xs text-gray-600 mb-1">
-                Thank you for your business!
-              </p>
+            <div className="text-center pt-1">
+              <p className="text-xs text-gray-600">Thank you for your business!</p>
               {storeInfo.website && (
-                <p className="text-xs text-gray-500">
-                  {storeInfo.website}
-                </p>
+                <p className="text-xs text-gray-500">{storeInfo.website}</p>
               )}
-              <p className="text-xs text-gray-400 mt-2">
-                VibePOS (by vibeexe.com)
-              </p>
+              <p className="text-xs text-gray-400 mt-1">VibePOS (by vibeexe.com)</p>
             </div>
           </div>
         </Card>

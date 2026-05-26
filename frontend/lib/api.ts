@@ -292,6 +292,17 @@ export const customerApi = {
         return response.data;
     },
 
+    // Update an existing customer payment
+    updateCustomerPayment: async (id: number, paymentId: number, payment: CustomerPaymentCreate): Promise<CustomerPayment> => {
+        const response = await api.put(`/customers/${id}/payments/${paymentId}`, payment);
+        return response.data;
+    },
+
+    // Delete a customer payment
+    deleteCustomerPayment: async (id: number, paymentId: number): Promise<void> => {
+        await api.delete(`/customers/${id}/payments/${paymentId}`);
+    },
+
     // Add advance payment (buy on behalf of customer)
     addCustomerAdvance: async (id: number, advance: {
         amount: number;
@@ -455,5 +466,27 @@ export const vendorReportsApi = {
             responseType: 'blob',
         });
         return response.data;
+    },
+};
+
+export interface VendorPaymentRecord {
+    id: number;
+    amount: number;
+    date: string | null;
+    reference_note: string;
+    description: string;
+}
+
+export const vendorPaymentsApi = {
+    getVendorPayments: async (id: number): Promise<VendorPaymentRecord[]> => {
+        const response = await api.get(`/vendors/${id}/payments`);
+        return response.data;
+    },
+    updateVendorPayment: async (id: number, entryId: number, note: string): Promise<VendorPaymentRecord> => {
+        const response = await api.put(`/vendors/${id}/payments/${entryId}`, { amount: 0, reference_note: note });
+        return response.data;
+    },
+    deleteVendorPayment: async (id: number, entryId: number): Promise<void> => {
+        await api.delete(`/vendors/${id}/payments/${entryId}`);
     },
 };

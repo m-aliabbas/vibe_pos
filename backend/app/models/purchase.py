@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
+from app.core.timezone import now_pkt
 import enum
 
 class PurchaseStatus(str, enum.Enum):
@@ -14,7 +15,7 @@ class Purchase(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     vendor_id = Column(Integer, ForeignKey("vendors.id"))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_pkt)
     
     total_amount = Column(Float, default=0.0)
     amount_paid = Column(Float, default=0.0)

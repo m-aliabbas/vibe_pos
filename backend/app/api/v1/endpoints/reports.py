@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, extract, and_, or_
 from datetime import datetime, date, timedelta, timezone
+from app.core.timezone import now_pkt
 from typing import List, Optional, Any, Dict
 import csv
 import io
@@ -35,9 +36,8 @@ router = APIRouter()
 
 
 def _get_pakistan_time() -> datetime:
-    """Get current time in Pakistan timezone (UTC+5)."""
-    pakistan_tz = timezone(timedelta(hours=5))
-    return datetime.now(pakistan_tz)
+    """Get current time in Pakistan timezone (GMT+5)."""
+    return now_pkt()
 
 
 # Helper function to validate date range
@@ -48,7 +48,7 @@ def validate_date_range(start_date: Optional[str], end_date: Optional[str]):
         except:
             raise HTTPException(status_code=400, detail="Invalid start_date format")
     else:
-        start = datetime.now() - timedelta(days=30)
+        start = now_pkt() - timedelta(days=30)
 
     if end_date:
         try:
@@ -56,7 +56,7 @@ def validate_date_range(start_date: Optional[str], end_date: Optional[str]):
         except:
             raise HTTPException(status_code=400, detail="Invalid end_date format")
     else:
-        end = datetime.now()
+        end = now_pkt()
 
     if start > end:
         raise HTTPException(status_code=400, detail="start_date cannot be after end_date")
@@ -1999,7 +1999,7 @@ def send_daily_summary_text(
             "status": "success",
             "message": "Daily report sent successfully",
             "phone_number": phone_number,
-            "sent_at": datetime.now().isoformat()
+            "sent_at": now_pkt().isoformat()
         }
         
     except requests.exceptions.RequestException as e:
@@ -2042,7 +2042,7 @@ def send_weekly_summary_text(
             "status": "success",
             "message": "Weekly report sent successfully",
             "phone_number": phone_number,
-            "sent_at": datetime.now().isoformat()
+            "sent_at": now_pkt().isoformat()
         }
         
     except requests.exceptions.RequestException as e:

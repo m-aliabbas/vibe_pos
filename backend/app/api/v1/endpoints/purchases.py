@@ -2,6 +2,7 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timedelta
+from app.core.timezone import now_pkt
 from app.api import deps
 from app.models.purchase import Purchase, PurchaseItem, PurchaseStatus
 from app.models.product import Product, ProductVariation
@@ -58,7 +59,7 @@ def create_purchase(
         
         # Create Purchase Item
         # Default expiry 6 months if not set
-        expiry = item.expiry_date or (datetime.utcnow() + timedelta(days=180))
+        expiry = item.expiry_date or (now_pkt() + timedelta(days=180))
         
         db_item = PurchaseItem(
             product_id=item.product_id,
@@ -199,7 +200,7 @@ def update_purchase(
         item_total = item.quantity * item.unit_cost
         total_amount += item_total
 
-        expiry = item.expiry_date or (datetime.utcnow() + timedelta(days=180))
+        expiry = item.expiry_date or (now_pkt() + timedelta(days=180))
 
         db_item = PurchaseItem(
             product_id=item.product_id,

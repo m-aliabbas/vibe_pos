@@ -1,6 +1,6 @@
 from typing import Any, List, Optional
 from datetime import date, datetime
-
+from app.core.timezone import now_pkt
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
@@ -88,7 +88,7 @@ def create_manual_entry(
             source_type=entry_in.source_type,
             source_id=entry_in.source_id,
             created_by=current_user.id,
-            entry_date=entry_in.entry_date or datetime.utcnow(),
+            entry_date=entry_in.entry_date or now_pkt(),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

@@ -2,6 +2,7 @@ from sqlalchemy import Column, ForeignKey, Integer, String, Float, DateTime, Uni
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 from datetime import datetime
+from app.core.timezone import now_pkt
 
 
 class Customer(Base):
@@ -34,9 +35,9 @@ class Customer(Base):
     next_oil_change_mileage = Column(Integer, nullable=True)  # Next mileage for oil change
     
     # Metadata
-    member_since = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    member_since = Column(DateTime, default=now_pkt)
+    created_at = Column(DateTime, default=now_pkt, index=True)
+    updated_at = Column(DateTime, default=now_pkt, onupdate=now_pkt)
     
     # Relationships
     sales = relationship("Sale", back_populates="customer")
@@ -59,8 +60,8 @@ class CustomerNote(Base):
     note_type = Column(String, default="general")  # general, credit_history, special_instruction, reminder, preference
     note_text = Column(String, nullable=False)
     
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=now_pkt, index=True)
+    updated_at = Column(DateTime, default=now_pkt, onupdate=now_pkt)
     
     # Relationships
     customer = relationship("Customer", back_populates="notes")
@@ -74,11 +75,11 @@ class CustomerPayment(Base):
     
     amount = Column(Float, nullable=False)  # Amount paid towards udhar
     payment_method = Column(String, default="cash")  # cash, card, mobile, etc.
-    payment_date = Column(DateTime, default=datetime.utcnow)
+    payment_date = Column(DateTime, default=now_pkt)
     
     reference_note = Column(String, nullable=True)  # Optional reference or notes
     
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=now_pkt, index=True)
     
     # Relationships
     customer = relationship("Customer", back_populates="payments")

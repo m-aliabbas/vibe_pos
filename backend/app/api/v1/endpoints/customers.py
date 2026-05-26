@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, F
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from datetime import datetime
-
+from app.core.timezone import now_pkt
 from app.api import deps
 from app.models.user import User
 from app.models.customer import Customer, CustomerNote, CustomerPayment
@@ -273,7 +273,7 @@ def create_customer(
         opening_balance=customer_in.opening_balance or 0.0,
         outstanding_balance=customer_in.opening_balance or 0.0,
         credit_limit=customer_in.credit_limit,
-        member_since=datetime.utcnow(),
+        member_since=now_pkt(),
     )
     
     db.add(customer)
@@ -354,7 +354,7 @@ async def bulk_import_customers(
                 address=address,
                 opening_balance=opening_balance,
                 outstanding_balance=opening_balance,
-                member_since=datetime.utcnow(),
+                member_since=now_pkt(),
             )
 
             db.add(customer)
@@ -479,7 +479,7 @@ def find_or_create_customer(
         next_oil_change_mileage=customer_in.next_oil_change_mileage,
         opening_balance=customer_in.opening_balance or 0.0,
         outstanding_balance=customer_in.opening_balance or 0.0,
-        member_since=datetime.utcnow(),
+        member_since=now_pkt(),
     )
     
     db.add(customer)
@@ -588,7 +588,7 @@ def update_customer(
             raise HTTPException(status_code=400, detail="Credit limit must be a positive value or null (unlimited)")
         customer.credit_limit = customer_in.credit_limit
 
-    customer.updated_at = datetime.utcnow()
+    customer.updated_at = now_pkt()
     
     db.add(customer)
     db.commit()
@@ -747,7 +747,7 @@ def record_customer_payment(
     # Apply payment at customer level. This can go negative (prepaid credit).
     customer.outstanding_balance = (customer.outstanding_balance or 0.0) - payment_in.amount
     
-    customer.updated_at = datetime.utcnow()
+    customer.updated_at = now_pkt()
     
     db.add(payment)
     db.add(customer)
@@ -774,6 +774,83 @@ def record_customer_payment(
         )
 
     return payment
+
+
+@router.put("/{id}/payments/{payment_id}", response_model=customer_schema.CustomerPayment)
+def update_customer_payment(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    payment_id: int,
+    payment_in: customer_schema.CustomerPaymentCreate,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Edit an existing customer payment (amount / method / note). Balance is recalculated."""
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    payment = db.query(CustomerPayment).filter(
+        CustomerPayment.id == payment_id,
+        CustomerPayment.customer_id == id,
+    ).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    if payment_in.amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be positive")
+
+    old_amount = float(payment.amount)
+    payment.amount = payment_in.amount
+    payment.payment_method = payment_in.payment_method
+    payment.reference_note = payment_in.reference_note
+    db.add(payment)
+
+    # Recompute outstanding balance from ledger
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db, customer.id, customer.opening_balance or 0.0
+    )
+    # Adjust for the delta (new - old) since accounting entry still uses old value
+    customer.outstanding_balance = customer.outstanding_balance - payment_in.amount + old_amount
+    customer.updated_at = now_pkt()
+    db.add(customer)
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.delete("/{id}/payments/{payment_id}")
+def delete_customer_payment(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    payment_id: int,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Delete a customer payment and reverse its effect on the outstanding balance."""
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    payment = db.query(CustomerPayment).filter(
+        CustomerPayment.id == payment_id,
+        CustomerPayment.customer_id == id,
+    ).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    amount = float(payment.amount)
+    db.delete(payment)
+
+    # Reverse effect: add the amount back to outstanding balance
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db, customer.id, customer.opening_balance or 0.0
+    )
+    customer.outstanding_balance = (customer.outstanding_balance or 0.0) + amount
+    customer.updated_at = now_pkt()
+    db.add(customer)
+    db.commit()
+    return {"message": "Payment deleted successfully"}
 
 
 @router.post("/{id}/add-advance")
@@ -817,7 +894,7 @@ def add_customer_advance(
 
     # Increase customer's outstanding balance
     customer.outstanding_balance += amount
-    customer.updated_at = datetime.utcnow()
+    customer.updated_at = now_pkt()
     
     # Create a note to track this advance
     note = CustomerNote(

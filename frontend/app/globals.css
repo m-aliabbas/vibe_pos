@@ -130,14 +130,22 @@
   .no-print {
     display: none !important;
   }
-  
-  /* Reset body styles for printing */
-  body {
-    margin: 0;
-    padding: 0;
-    background: white;
+
+  /* Reset body/html for printing — collapse min-h-screen to prevent blank 2nd page */
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
-  
+
+  /* Collapse min-h-screen so it doesn't force a 2nd blank page */
+  .min-h-screen {
+    min-height: 0 !important;
+  }
+
   /* Thermal receipt specific styles */
   .thermal-receipt {
     width: 80mm !important;
@@ -147,7 +155,7 @@
     box-shadow: none !important;
     border: none !important;
   }
-  
+
   /* Invoice container adjustments for thermal */
   .invoice-container {
     padding: 0 !important;
@@ -157,29 +165,29 @@
     display: flex !important;
     justify-content: center !important;
   }
-  
-  /* Use exact 80mm thermal width; height auto-fits content — prevents blank extra page */
+
+  /* 80mm thermal width; auto height fits content; small margin to prevent printer clipping */
   @page {
     size: 80mm auto;
-    margin: 4mm;
+    margin: 2mm;
   }
-  
+
   /* Prevent page breaks inside important elements */
   .thermal-receipt > div {
     page-break-inside: avoid;
   }
-  
+
   /* Ensure black text for printing */
   h1, h2, h3, h4, h5, h6, p, span, td, th {
     color: #000 !important;
   }
-  
+
   /* Remove background colors for better printing on thermal paper */
   * {
     background: transparent !important;
     box-shadow: none !important;
   }
-  
+
   /* Dashed borders for thermal receipt look */
   .border-dashed {
     border-style: dashed !important;
@@ -188,36 +196,31 @@
 }
 
 /* Print Estimate: hide everything except the estimate area */
+/* The print area is moved to a direct body child via JS before window.print() */
 @media print {
-  body.print-estimate * {
-    visibility: hidden;
+  body.print-estimate > * {
+    display: none !important;
   }
-  body.print-estimate #estimate-print-area,
-  body.print-estimate #estimate-print-area * {
-    visibility: visible;
-  }
-  body.print-estimate #estimate-print-area {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 80mm;
+  body.print-estimate > #estimate-print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    padding: 0 1mm !important;
     font-size: 12px;
   }
 }
 
 /* Print Receipt: hide everything except the payment receipt area */
+/* The print area is moved to a direct body child via JS before window.print() */
 @media print {
-  body.print-payment-receipt * {
-    visibility: hidden;
+  body.print-payment-receipt > * {
+    display: none !important;
   }
-  body.print-payment-receipt #payment-receipt-print-area,
-  body.print-payment-receipt #payment-receipt-print-area * {
-    visibility: visible;
-  }
-  body.print-payment-receipt #payment-receipt-print-area {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 80mm;
+  body.print-payment-receipt > #payment-receipt-print-area {
+    display: flex !important;
+    justify-content: center !important;
+    position: static !important;
+    width: 100% !important;
+    padding: 0 !important;
   }
 }
