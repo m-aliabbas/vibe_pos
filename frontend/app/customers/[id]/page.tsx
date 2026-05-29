@@ -514,6 +514,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
       autoTable(doc, {
         startY: 170,
+        margin: { bottom: 30 },
         head: [['Date', 'Description', 'Debit (DR)', 'Credit (CR)', 'Balance']],
         body: tableData,
         theme: 'grid',
@@ -538,49 +539,71 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           fillColor: [245, 245, 245],
         },
         didDrawPage: (data: any) => {
-          // Footer
-          const pageCount = doc.getNumberOfPages();
-          doc.setFontSize(8);
-          doc.setFont('helvetica', 'normal');
-          doc.text(
-            `Page ${data.pageNumber} of ${pageCount}`,
-            doc.internal.pageSize.getWidth() / 2,
-            doc.internal.pageSize.getHeight() - 20,
-            { align: 'center' }
-          );
+          // Compact header on continuation pages (page 1 already has the full header)
+          if (data.pageNumber > 1) {
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`${customer.name || 'Customer'} — CUSTOMER LEDGER (continued)`, 40, 25);
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'normal');
+            doc.text(storeInfo.name || 'Store', doc.internal.pageSize.getWidth() - 40, 25, { align: 'right' });
+          }
         },
       });
 
-      // Closing Balance Summary
+      // Closing Balance Summary — add new page if not enough room
       const finalY = (doc as any).lastAutoTable.finalY || 170;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let summaryY: number;
+      if (finalY + 100 > pageHeight - 30) {
+        doc.addPage();
+        summaryY = 40;
+      } else {
+        summaryY = finalY + 20;
+      }
+
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
       
       // Summary box
       doc.setDrawColor(52, 73, 94);
       doc.setLineWidth(1);
-      doc.rect(doc.internal.pageSize.getWidth() - 250, finalY + 20, 210, 60);
+      doc.rect(doc.internal.pageSize.getWidth() - 250, summaryY, 210, 60);
       
-      doc.text('SUMMARY', doc.internal.pageSize.getWidth() - 145, finalY + 38, { align: 'center' });
+      doc.text('SUMMARY', doc.internal.pageSize.getWidth() - 145, summaryY + 18, { align: 'center' });
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       
       const totalDebit = ledgerEntries.reduce((sum, e) => sum + e.debit, 0);
       const totalCredit = ledgerEntries.reduce((sum, e) => sum + e.credit, 0);
       
-      doc.text(`Total Debit:`, doc.internal.pageSize.getWidth() - 240, finalY + 52);
-      doc.text(formatCurrency(totalDebit), doc.internal.pageSize.getWidth() - 50, finalY + 52, { align: 'right' });
+      doc.text(`Total Debit:`, doc.internal.pageSize.getWidth() - 240, summaryY + 32);
+      doc.text(formatCurrency(totalDebit), doc.internal.pageSize.getWidth() - 50, summaryY + 32, { align: 'right' });
       
-      doc.text(`Total Credit:`, doc.internal.pageSize.getWidth() - 240, finalY + 66);
-      doc.text(formatCurrency(totalCredit), doc.internal.pageSize.getWidth() - 50, finalY + 66, { align: 'right' });
+      doc.text(`Total Credit:`, doc.internal.pageSize.getWidth() - 240, summaryY + 46);
+      doc.text(formatCurrency(totalCredit), doc.internal.pageSize.getWidth() - 50, summaryY + 46, { align: 'right' });
       
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
-      doc.text(`Closing Balance:`, doc.internal.pageSize.getWidth() - 240, finalY + 80);
+      doc.text(`Closing Balance:`, doc.internal.pageSize.getWidth() - 240, summaryY + 60);
       const closingBalance = ledgerReport.closing_balance || 0;
       doc.setTextColor(closingBalance > 0 ? 220 : 0, closingBalance > 0 ? 53 : 150, closingBalance > 0 ? 69 : 0);
-      doc.text(formatCurrency(closingBalance), doc.internal.pageSize.getWidth() - 50, finalY + 80, { align: 'right' });
+      doc.text(formatCurrency(closingBalance), doc.internal.pageSize.getWidth() - 50, summaryY + 60, { align: 'right' });
       doc.setTextColor(0, 0, 0);
+
+      // Page footers — drawn after all content so total page count is correct
+      const totalPages = doc.getNumberOfPages();
+      for (let pg = 1; pg <= totalPages; pg++) {
+        doc.setPage(pg);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(
+          `Page ${pg} of ${totalPages}`,
+          doc.internal.pageSize.getWidth() / 2,
+          pageHeight - 10,
+          { align: 'center' }
+        );
+      }
 
       // Generate filename with store name and customer name
       const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').substring(0, 30);
