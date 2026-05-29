@@ -356,7 +356,7 @@ if __name__ == "__main__":
 
     try:
         from app.main import app
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
         sys.exit(1)

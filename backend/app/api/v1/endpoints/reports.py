@@ -1160,6 +1160,9 @@ def get_customer_ledger(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
+    # Default to full history for ledger (not the rolling 30-day window used by reports)
+    if not start_date:
+        start_date = "2000-01-01"
     start, end = validate_date_range(start_date, end_date)
 
     accounting_service.ensure_system_accounts(db)
@@ -1395,6 +1398,9 @@ def get_vendor_ledger(
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
 
+    # Default to full history for ledger (not the rolling 30-day window used by reports)
+    if not start_date:
+        start_date = "2000-01-01"
     start, end = validate_date_range(start_date, end_date)
 
     accounting_service.ensure_system_accounts(db)

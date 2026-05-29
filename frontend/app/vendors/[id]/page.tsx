@@ -116,6 +116,9 @@ export default function VendorDetailsPage() {
     const [deletePaymentDialogOpen, setDeletePaymentDialogOpen] = useState(false);
     const [deletingPayment, setDeletingPayment] = useState(false);
     const [activeTab, setActiveTab] = useState('purchases');
+    const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
+    const [ledgerStartDate, setLedgerStartDate] = useState('');
+    const [ledgerEndDate, setLedgerEndDate] = useState(todayPKTDateString());
     const [editVendor, setEditVendor] = useState({
         name: '',
         contact_name: '',
@@ -293,10 +296,13 @@ export default function VendorDetailsPage() {
         }
     };
 
-    const handleVendorReportExport = async () => {
+    const handleVendorReportExport = async (startDate?: string, endDate?: string) => {
         if (!id) return;
         try {
-            const blob = await reportsApi.exportVendorLedger(parseInt(id as string));
+            const blob = await reportsApi.exportVendorLedger(parseInt(id as string), {
+                start_date: startDate || undefined,
+                end_date: endDate || undefined,
+            });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
@@ -311,10 +317,13 @@ export default function VendorDetailsPage() {
         }
     };
 
-    const handleVendorReportPdf = async () => {
+    const handleVendorReportPdf = async (startDate?: string, endDate?: string) => {
         if (!id || !vendor) return;
         try {
-            const ledger = await reportsApi.getVendorLedger(parseInt(id as string));
+            const ledger = await reportsApi.getVendorLedger(parseInt(id as string), {
+                start_date: startDate || undefined,
+                end_date: endDate || undefined,
+            });
             if (!ledger?.entries || ledger.entries.length === 0) {
                 alert("No data to export");
                 return;
@@ -698,12 +707,50 @@ export default function VendorDetailsPage() {
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
-                    <Button variant="outline" onClick={handleVendorReportExport}>
+                    <Button variant="outline" onClick={() => setLedgerDialogOpen(true)}>
                         <FileText className="mr-2 h-4 w-4" /> Make Report (CSV)
                     </Button>
-                    <Button variant="outline" onClick={handleVendorReportPdf}>
+                    <Button variant="outline" onClick={() => setLedgerDialogOpen(true)}>
                         <FileText className="mr-2 h-4 w-4" /> Download PDF
                     </Button>
+                    <Dialog open={ledgerDialogOpen} onOpenChange={setLedgerDialogOpen}>
+                        <DialogContent className="sm:max-w-[400px]">
+                            <DialogHeader>
+                                <DialogTitle>Ledger Date Range</DialogTitle>
+                                <DialogDescription>Select a date range for the ledger. Leave start date empty to include full history.</DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="ledger-start">Start Date</Label>
+                                    <Input
+                                        id="ledger-start"
+                                        type="date"
+                                        value={ledgerStartDate}
+                                        onChange={(e) => setLedgerStartDate(e.target.value)}
+                                        placeholder="Leave empty for full history"
+                                    />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="ledger-end">End Date</Label>
+                                    <Input
+                                        id="ledger-end"
+                                        type="date"
+                                        value={ledgerEndDate}
+                                        onChange={(e) => setLedgerEndDate(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <DialogFooter className="flex gap-2">
+                                <Button variant="outline" onClick={() => setLedgerDialogOpen(false)}>Cancel</Button>
+                                <Button variant="outline" onClick={() => { setLedgerDialogOpen(false); handleVendorReportExport(ledgerStartDate || undefined, ledgerEndDate || undefined); }}>
+                                    <FileText className="mr-2 h-4 w-4" /> CSV
+                                </Button>
+                                <Button onClick={() => { setLedgerDialogOpen(false); handleVendorReportPdf(ledgerStartDate || undefined, ledgerEndDate || undefined); }}>
+                                    <FileText className="mr-2 h-4 w-4" /> PDF
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                     <Button variant="outline" onClick={() => router.push(`/inventory/purchase?vendorId=${vendor.id}`)}>
                         <ShoppingCart className="mr-2 h-4 w-4" /> New Purchase
                     </Button>

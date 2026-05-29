@@ -102,6 +102,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
+  const [ledgerStartDate, setLedgerStartDate] = useState('');
+  const [ledgerEndDate, setLedgerEndDate] = useState(todayPKTDateString());
   const [creditLimitAlert, setCreditLimitAlert] = useState<{
     limit: number; current: number; available: number; attempted?: number;
   } | null>(null);
@@ -386,10 +389,13 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     return rows.filter((r) => r.length > 0);
   };
 
-  const handleCustomerReportPdf = async () => {
+  const handleCustomerReportPdf = async (startDate?: string, endDate?: string) => {
     if (!isValidId || !customer) return;
     try {
-      const ledgerReport = await customerApi.getCustomerLedger(customerId);
+      const ledgerReport = await customerApi.getCustomerLedger(customerId, {
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+      });
 
       interface LedgerEntry {
         date: Date;
@@ -728,9 +734,44 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleCustomerReportPdf}>
+          <Button variant="outline" onClick={() => setLedgerDialogOpen(true)}>
             <FileText className="h-4 w-4 mr-2" /> Download Ledger
           </Button>
+          <Dialog open={ledgerDialogOpen} onOpenChange={setLedgerDialogOpen}>
+            <DialogContent className="sm:max-w-[400px]">
+              <DialogHeader>
+                <DialogTitle>Ledger Date Range</DialogTitle>
+                <DialogDescription>Select a date range for the ledger. Leave start date empty to include full history.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="ledger-start">Start Date</Label>
+                  <Input
+                    id="ledger-start"
+                    type="date"
+                    value={ledgerStartDate}
+                    onChange={(e) => setLedgerStartDate(e.target.value)}
+                    placeholder="Leave empty for full history"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ledger-end">End Date</Label>
+                  <Input
+                    id="ledger-end"
+                    type="date"
+                    value={ledgerEndDate}
+                    onChange={(e) => setLedgerEndDate(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setLedgerDialogOpen(false)}>Cancel</Button>
+                <Button onClick={() => { setLedgerDialogOpen(false); handleCustomerReportPdf(ledgerStartDate || undefined, ledgerEndDate || undefined); }}>
+                  <FileText className="h-4 w-4 mr-2" /> Download PDF
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
