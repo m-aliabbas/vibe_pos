@@ -97,7 +97,9 @@
 import os
 import sys
 from pathlib import Path
+import socket
 import sqlite3
+import threading
 import multiprocessing
 import uvicorn
 from dotenv import load_dotenv
@@ -161,6 +163,62 @@ def resolve_data_dir() -> Path:
     p.mkdir(parents=True, exist_ok=True)
     os.environ["DATA_DIR"] = str(p.resolve())
     return Path(os.environ["DATA_DIR"])
+
+
+# ---- mDNS advertisement (pos.local -> this machine, LAN-wide, zero client config) ----
+
+LOCAL_DOMAIN = "pos.local"
+LOCAL_PORT = 4321
+
+
+def get_local_ip() -> str:
+    """Return the machine's LAN IP (no packet actually sent)."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def start_mdns(domain: str, ip: str, port: int) -> None:
+    """
+    Advertise *domain* via mDNS so every device on the LAN can resolve it
+    without touching /etc/hosts or DNS settings.
+    Runs in a daemon thread; stops automatically when the process exits.
+    """
+    try:
+        from zeroconf import Zeroconf, ServiceInfo
+    except ImportError:
+        print("⚠️  zeroconf not installed — run: pip install zeroconf")
+        return
+
+    # Normalise: mDNS names must end with '.'
+    fqdn = domain.rstrip(".") + "."
+    svc_type = "_http._tcp.local."
+    svc_name = f"POS.{svc_type}"
+
+    info = ServiceInfo(
+        svc_type,
+        svc_name,
+        addresses=[socket.inet_aton(ip)],
+        port=port,
+        properties={"path": "/"},
+        server=fqdn,
+    )
+
+    zc = Zeroconf(interfaces=[ip])
+    zc.register_service(info)
+    print(f"🌐 mDNS: {domain} -> {ip}:{port}  (visible to all LAN devices)")
+
+    # Block this thread until the process dies (daemon=True handles cleanup)
+    try:
+        threading.Event().wait()
+    finally:
+        zc.unregister_service(info)
+        zc.close()
 
 
 # ---- DB sanity checks ----
@@ -265,6 +323,16 @@ if __name__ == "__main__":
 
     # 1) Load env first
     load_env_from_exe_dir()
+
+    # 1b) Advertise pos.local on the LAN via mDNS (no client config needed)
+    local_ip = get_local_ip()
+    mdns_thread = threading.Thread(
+        target=start_mdns,
+        args=(LOCAL_DOMAIN, local_ip, LOCAL_PORT),
+        daemon=True,
+        name="mdns",
+    )
+    mdns_thread.start()
 
     # 2) Normalize data dir first (critical for packaged builds)
     data_dir = resolve_data_dir()

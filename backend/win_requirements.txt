@@ -15,5 +15,6 @@ requests
 #neonize==0.3.12
 neonize==0.3.16.post0
 python-dotenv
+zeroconf
 firebase-admin
 protobuf==6.32.1

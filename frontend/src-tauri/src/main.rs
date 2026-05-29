@@ -469,17 +469,7 @@ fn main() {
                 start_backend_visible(&app.handle(), &log_path);
 
                 // 2) Next server
-                let port: u16 = match std::net::TcpListener::bind("127.0.0.1:0")
-                    .and_then(|l| l.local_addr())
-                    .map(|a| a.port())
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        append_log(&log_path, &format!("next: failed to pick free port: {e}"));
-                        let _ = window.eval("document.body.innerHTML='<h3>Failed to pick a port</h3>';"); 
-                        return Ok(());
-                    }
-                };
+                let port: u16 = 4321;
 
                 append_log(&log_path, &format!("next: chosen port={port}"));
 

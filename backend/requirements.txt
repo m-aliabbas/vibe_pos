@@ -12,6 +12,7 @@ pillow==12.1.0
 requests
 neonize==0.3.12
 python-dotenv
+zeroconf
 firebase-admin
 passlib[argon2]
 argon2-cffi

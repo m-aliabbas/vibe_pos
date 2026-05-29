@@ -61,6 +61,7 @@ pyinstaller ^
  --collect-all cryptography ^
  --collect-all neonize ^
  --collect-all apscheduler ^
+ --collect-all zeroconf ^
  --hidden-import=uvicorn.logging ^
  --hidden-import=uvicorn.loops.auto ^
  --hidden-import=uvicorn.protocols.http.auto ^
