@@ -565,7 +565,7 @@ function PurchasePageContent() {
         };
 
     return (
-        <div className="container mx-auto p-6 max-w-[1400px]">
+        <div className="container mx-auto p-6 max-w-[1400px] h-full overflow-y-auto">
             <h1 className="text-3xl font-bold mb-8">New Purchase Order</h1>
 
             <div className="space-y-6">

@@ -585,8 +585,8 @@ export default function InventoryPage() {
     const isAdmin = user?.role === 'admin';
 
     return (
-        <div className="p-8 max-w-7xl mx-auto space-y-8">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+            <div className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Product Catalog</h1>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -828,9 +828,9 @@ export default function InventoryPage() {
                 </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="flex-1 min-h-0 flex flex-col gap-4">
                 {/* Search and Filters */}
-                <div className="flex flex-col sm:flex-row gap-4">
+                <div className="shrink-0 flex flex-col sm:flex-row gap-4">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <Input
@@ -865,7 +865,7 @@ export default function InventoryPage() {
                     </Select>
                 </div>
 
-                <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                <div className="flex-1 min-h-0 bg-white rounded-lg border shadow-sm overflow-y-auto">
                     <Table>
                         <TableHeader>
                             <TableRow className="bg-gray-50/50">

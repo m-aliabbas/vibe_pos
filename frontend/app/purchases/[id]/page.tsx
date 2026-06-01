@@ -201,13 +201,13 @@ export default function PurchaseDetailPage() {
             .slice(0, 20);
     };
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
-    if (!purchase) return <div className="min-h-screen flex items-center justify-center">Purchase not found</div>;
+    if (loading) return <div className="h-full flex items-center justify-center">Loading...</div>;
+    if (!purchase) return <div className="h-full flex items-center justify-center">Purchase not found</div>;
 
     const balance = purchase.total_amount - purchase.amount_paid;
 
     return (
-        <div className="p-8 max-w-7xl mx-auto space-y-8">
+        <div className="p-8 max-w-7xl mx-auto h-full overflow-y-auto space-y-8">
             <Button variant="ghost" onClick={() => router.back()} className="mb-4">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
             </Button>

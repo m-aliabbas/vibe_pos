@@ -207,8 +207,8 @@ export default function VendorsPage() {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto space-y-8">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+            <div className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Vendors</h1>
                     <p className="text-gray-500 mt-1">Manage your suppliers and partners.</p>
@@ -345,7 +345,7 @@ export default function VendorsPage() {
                 </div>
             </div>
 
-            <div className="bg-white rounded-lg border shadow-sm p-4">
+            <div className="shrink-0 bg-white rounded-lg border shadow-sm p-4">
                 <Input
                     placeholder="Search vendors by name, contact, email, or phone..."
                     value={search}
@@ -353,6 +353,7 @@ export default function VendorsPage() {
                 />
             </div>
 
+            <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {vendors.map((vendor) => (
                     <Card key={vendor.id} onClick={() => router.push(`/vendors/${vendor.id}`)} className="hover:shadow-md transition-shadow group cursor-pointer border-l-4 border-l-transparent hover:border-l-indigo-500">
@@ -386,8 +387,9 @@ export default function VendorsPage() {
                     </div>
                 )}
             </div>
+            </div>
 
-            <div className="flex items-center justify-between">
+            <div className="shrink-0 flex items-center justify-between">
                 <p className="text-sm text-gray-500">
                     {totalCount === 0
                         ? "Showing 0 of 0"

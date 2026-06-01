@@ -136,7 +136,7 @@ export default function ProfilePage() {
     }
 
     return (
-        <div className="p-8 max-w-3xl mx-auto space-y-8">
+        <div className="p-8 max-w-3xl mx-auto h-full overflow-y-auto space-y-8">
             {/* Header */}
             <div>
                 <Button

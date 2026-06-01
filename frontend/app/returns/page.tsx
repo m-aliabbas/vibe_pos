@@ -81,9 +81,9 @@ export default function ReturnsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="p-6 space-y-6">
+      <div className="p-6 h-full flex flex-col gap-6">
         {/* Header */}
-        <div className="flex justify-between items-center">
+        <div className="shrink-0 flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <RotateCcw className="h-8 w-8" />
@@ -98,6 +98,7 @@ export default function ReturnsPage() {
         </div>
 
         {/* Returns List */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
         <Card>
           <CardHeader>
             <CardTitle>Return History</CardTitle>
@@ -141,6 +142,7 @@ export default function ReturnsPage() {
             )}
           </CardContent>
         </Card>
+        </div>
 
         {/* View Return Dialog */}
         <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>

@@ -984,8 +984,9 @@ export default function SalesTerminal() {
     setVariationUnitPrice("");
     setVariationPriceOverrideEnabled(false);
     setEditingCartIndex(null);
-    
+
     // Auto-focus search bar for next item
+    setSearchQuery("");
     setTimeout(() => productSearchInputRef.current?.focus(), 50);
   }, [
     selectedProductForVariation,
@@ -1135,8 +1136,9 @@ export default function SalesTerminal() {
     setQuantityForUnit("1");
     setSelectedUnitForRegular("piece");
     setUnitDiscount(0);
-    
+
     // Auto-focus search bar for next item
+    setSearchQuery("");
     setTimeout(() => productSearchInputRef.current?.focus(), 50);
     setUnitPriceOverride("");
     setUnitPriceOverrideEnabled(false);
@@ -1819,9 +1821,9 @@ export default function SalesTerminal() {
   }, [products]);
 
   return (
-    <div className="p-3 space-y-2">
+    <div className="p-3 h-full flex flex-col gap-2">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="shrink-0 flex justify-between items-center">
         <div>
           <h1 className="text-xl font-bold leading-tight">Sales Terminal</h1>
           <p className="text-xs text-muted-foreground">Cashier: {user?.username}</p>
@@ -1838,7 +1840,7 @@ export default function SalesTerminal() {
       </div>
 
       {summaryOpen && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="shrink-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -1904,7 +1906,7 @@ export default function SalesTerminal() {
       )}
 
       {/* POS Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 border rounded-lg overflow-hidden shadow-sm" style={{ height: "calc(100vh - 185px)", minHeight: 480 }}>
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-5 border rounded-lg overflow-hidden shadow-sm">
 
         {/* ── LEFT: Cart ──────────────────────────────────── */}
         <div className="lg:col-span-3 flex flex-col border-r overflow-hidden">

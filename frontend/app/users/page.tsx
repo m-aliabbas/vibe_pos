@@ -179,8 +179,8 @@ export default function UsersPage() {
     }
 
     return (
-        <div className="p-8 max-w-6xl mx-auto space-y-6">
-            <div className="flex justify-between items-center">
+        <div className="p-8 max-w-6xl mx-auto h-full flex flex-col gap-6">
+            <div className="shrink-0 flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
                     <p className="text-gray-500">Manage cashier and admin accounts.</p>
@@ -232,7 +232,7 @@ export default function UsersPage() {
                 </Dialog>
             </div>
 
-            <div className="bg-white rounded-md border shadow-sm">
+            <div className="flex-1 min-h-0 overflow-y-auto bg-white rounded-md border shadow-sm">
                 <Table>
                     <TableHeader>
                         <TableRow>

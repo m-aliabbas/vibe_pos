@@ -141,6 +141,13 @@
     overflow: visible !important;
   }
 
+  /* Ensure main content is not clipped during print */
+  main {
+    overflow: visible !important;
+    height: auto !important;
+    flex: none !important;
+  }
+
   /* Collapse min-h-screen so it doesn't force a 2nd blank page */
   .min-h-screen {
     min-height: 0 !important;

@@ -46,7 +46,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   // Check if user is admin
   if (!user || user.role !== 'admin') {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
           <p className="text-gray-600">You need admin privileges to access this page.</p>
@@ -135,7 +135,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-full flex flex-col bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -160,9 +160,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </div>
       </header>
 
-      <div className="flex">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-64 bg-white shadow-sm min-h-[calc(100vh-4rem)]">
+        <aside className="w-64 bg-white shadow-sm overflow-y-auto shrink-0">
           <nav className="p-4 space-y-2">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -187,7 +187,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 min-h-0 p-6 overflow-y-auto">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

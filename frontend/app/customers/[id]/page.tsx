@@ -740,9 +740,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 h-full flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" onClick={() => router.push("/customers")}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -1114,7 +1114,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       </div>
 
       {/* Customer Profile Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="shrink-0 grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Profile Info */}
         <Card>
           <CardHeader>
@@ -1290,8 +1290,8 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
 
       {/* Tabs for detailed information */}
-      <Tabs defaultValue="purchases" className="space-y-4">
-        <TabsList>
+      <Tabs defaultValue="purchases" className="flex-1 min-h-0 flex flex-col gap-4">
+        <TabsList className="shrink-0">
           <TabsTrigger value="purchases">Purchase History</TabsTrigger>
           <TabsTrigger value="returns">Return History</TabsTrigger>
           <TabsTrigger value="advances">Journel Entries ({customer.notes.filter((n: CustomerNote) => n.note_type === 'advance_payment').length})</TabsTrigger>
@@ -1299,15 +1299,15 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           <TabsTrigger value="notes">Notes ({customer.notes.filter((n: CustomerNote) => n.note_type !== 'advance_payment').length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="purchases">
+        <TabsContent value="purchases" className="flex-1 min-h-0 overflow-y-auto">
           <PurchaseHistoryTab customerId={customerId} />
         </TabsContent>
 
-        <TabsContent value="returns">
+        <TabsContent value="returns" className="flex-1 min-h-0 overflow-y-auto">
           <ReturnHistoryTab customerId={customerId} />
         </TabsContent>
 
-        <TabsContent value="advances">
+        <TabsContent value="advances" className="flex-1 min-h-0 overflow-y-auto">
           <Card>
             <CardHeader>
               <CardTitle>Buy on Behalf History</CardTitle>
@@ -1479,7 +1479,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </Card>
         </TabsContent>
 
-        <TabsContent value="payments">
+        <TabsContent value="payments" className="flex-1 min-h-0 overflow-y-auto">
           <Card>
             <CardHeader>
               <CardTitle>Payment History</CardTitle>
@@ -1490,7 +1490,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </Card>
         </TabsContent>
 
-        <TabsContent value="notes">
+        <TabsContent value="notes" className="flex-1 min-h-0 overflow-y-auto">
           <Card>
             <CardHeader>
               <CardTitle>Customer Notes</CardTitle>

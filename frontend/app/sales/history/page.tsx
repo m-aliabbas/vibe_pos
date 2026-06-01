@@ -409,9 +409,9 @@ export default function SalesHistory() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 h-full flex flex-col gap-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="shrink-0 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Sales History</h1>
           <p className="text-muted-foreground">
@@ -421,7 +421,7 @@ export default function SalesHistory() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="shrink-0 grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card className="px-4 py-3">
           <p className="text-sm text-muted-foreground">Total Sales</p>
           <p className="text-2xl font-bold">{sales.length}</p>
@@ -460,6 +460,7 @@ export default function SalesHistory() {
       </div>
 
       {/* Search and Filters */}
+      <div className="shrink-0">
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row gap-4">
@@ -500,8 +501,10 @@ export default function SalesHistory() {
           </div>
         </CardContent>
       </Card>
+      </div>
 
       {/* Sales Table */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -688,6 +691,7 @@ export default function SalesHistory() {
           )}
         </CardContent>
       </Card>
+      </div>
 
       {/* Sale Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>

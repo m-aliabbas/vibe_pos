@@ -30,17 +30,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased h-screen flex flex-col overflow-hidden`}
       >
         <AuthProvider>
           <ConfirmCloseGuard />
-          <div className="no-print">
+          <div className="no-print shrink-0">
             <Navbar />
           </div>
-          <div className="no-print">
+          <div className="no-print shrink-0">
             <AutoBreadcrumb />
           </div>
-          {children}
+          <main className="flex-1 min-h-0 overflow-hidden">
+            {children}
+          </main>
         </AuthProvider>
       </body>
     </html>

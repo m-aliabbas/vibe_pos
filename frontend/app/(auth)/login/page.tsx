@@ -33,7 +33,7 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 p-4">
+        <div className="h-full flex items-center justify-center bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 p-4">
             <Card className="w-full max-w-md bg-white/95 backdrop-blur shadow-2xl border-0">
                 <CardHeader className="space-y-1">
                     <CardTitle className="text-3xl font-bold text-center text-blue-900 tracking-tight">VibePOS</CardTitle>

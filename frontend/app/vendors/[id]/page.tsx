@@ -621,12 +621,12 @@ export default function VendorDetailsPage() {
     });
 
     return (
-        <div className="p-8 max-w-7xl mx-auto space-y-8">
-            <Button variant="ghost" onClick={() => router.back()} className="mb-4">
+        <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+            <Button variant="ghost" onClick={() => router.back()} className="shrink-0 self-start">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back to Vendors
             </Button>
 
-            <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+            <div className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">{vendor.name}</h1>
                     <div className="flex items-center gap-4 text-gray-500 mt-2">
@@ -1028,7 +1028,7 @@ export default function VendorDetailsPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="shrink-0 grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-gray-500">Total Purchases</CardTitle>
@@ -1058,7 +1058,7 @@ export default function VendorDetailsPage() {
             </div>
 
             {effectivePrepaidCredit > 0 && (
-                <Card className="border-blue-200 bg-blue-50">
+                <Card className="shrink-0 border-blue-200 bg-blue-50">
                     <CardContent className="flex items-center justify-between p-6">
                         <div>
                             <h3 className="font-semibold text-blue-900">💰 Prepaid Credit Available</h3>
@@ -1070,14 +1070,14 @@ export default function VendorDetailsPage() {
                 </Card>
             )}
 
-            <div className="space-y-4">
-                <Tabs value={activeTab} defaultValue="purchases" onValueChange={setActiveTab}>
-                    <TabsList>
+            <div className="flex-1 min-h-0 flex flex-col gap-4">
+                <Tabs value={activeTab} defaultValue="purchases" onValueChange={setActiveTab} className="flex-1 min-h-0 flex flex-col">
+                    <TabsList className="shrink-0">
                         <TabsTrigger value="purchases">Purchase History</TabsTrigger>
                         <TabsTrigger value="payments">Payment History ({vendorPayments.length})</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent value="purchases">
+                    <TabsContent value="purchases" className="flex-1 min-h-0 overflow-y-auto">
                         <div className="flex justify-between items-center mb-3">
                             <span />
                             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -1153,7 +1153,7 @@ export default function VendorDetailsPage() {
                         </div>
                     </TabsContent>
 
-                    <TabsContent value="payments">
+                    <TabsContent value="payments" className="flex-1 min-h-0 overflow-y-auto">
                         <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
                             {vendorPayments.length === 0 ? (
                                 <p className="text-center py-8 text-muted-foreground">No payment history yet.</p>

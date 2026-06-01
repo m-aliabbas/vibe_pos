@@ -270,7 +270,7 @@ export default function CustomersPage() {
   // Show loading while checking auth
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
@@ -290,9 +290,9 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 h-full flex flex-col gap-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="shrink-0 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Customers</h1>
           <p className="text-muted-foreground">
@@ -511,6 +511,7 @@ export default function CustomersPage() {
       </div>
 
       {/* Search */}
+      <div className="shrink-0">
       <Card>
         <CardContent className="p-4">
           <div className="flex items-center space-x-2">
@@ -527,8 +528,12 @@ export default function CustomersPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
 
+      {/* Customers Table + Pagination */}
+      <div className="flex-1 min-h-0 flex flex-col gap-4">
       {/* Customers Table */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -630,8 +635,9 @@ export default function CustomersPage() {
           )}
         </CardContent>
       </Card>
+      </div>
 
-      <div className="flex items-center justify-between">
+      <div className="shrink-0 flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {totalCount === 0
             ? "Showing 0 of 0"
@@ -656,6 +662,7 @@ export default function CustomersPage() {
           </Button>
         </div>
       </div>
-    </div >
+      </div>
+    </div>
   );
 }

@@ -221,7 +221,7 @@ export default function CreateReturnPage() {
 
   return (
     <ProtectedRoute>
-      <div className="p-6 space-y-6">
+      <div className="p-6 h-full overflow-y-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
           <Button

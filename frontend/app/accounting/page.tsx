@@ -293,8 +293,8 @@ export default function AccountingPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col md:flex-row justify-between gap-4">
+    <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+      <div className="shrink-0 flex flex-col md:flex-row justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Accounting</h1>
           <p className="text-gray-500">Double-entry ledger, journal, and trial balance</p>
@@ -312,15 +312,15 @@ export default function AccountingPage() {
         </div>
       )}
 
-      <Tabs defaultValue="accounts">
-        <TabsList>
+      <Tabs defaultValue="accounts" className="flex-1 min-h-0 flex flex-col">
+        <TabsList className="shrink-0">
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="journal">Journal</TabsTrigger>
           <TabsTrigger value="trial">Trial Balance</TabsTrigger>
           <TabsTrigger value="manual">Manual Entry</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="accounts" className="space-y-6">
+        <TabsContent value="accounts" className="flex-1 min-h-0 overflow-y-auto space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -405,7 +405,7 @@ export default function AccountingPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="journal" className="space-y-6">
+        <TabsContent value="journal" className="flex-1 min-h-0 overflow-y-auto space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -498,7 +498,7 @@ export default function AccountingPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="trial" className="space-y-6">
+        <TabsContent value="trial" className="flex-1 min-h-0 overflow-y-auto space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -566,7 +566,7 @@ export default function AccountingPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="manual" className="space-y-6">
+        <TabsContent value="manual" className="flex-1 min-h-0 overflow-y-auto space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>Manual Journal Entry</CardTitle>
