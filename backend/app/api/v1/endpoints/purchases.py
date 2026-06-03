@@ -8,8 +8,19 @@ from app.models.purchase import Purchase, PurchaseItem, PurchaseStatus
 from app.models.product import Product, ProductVariation
 from app.models.accounting import JournalEntry
 from app.models.vendor import Vendor
+from app.models.stock_batch import StockBatch, BatchStatus
 from app.schemas import purchase as purchase_schema
 from app.services import accounting as accounting_service
+
+
+def _generate_batch_number(db: Session, product_id: int) -> str:
+    from app.core.timezone import now_pkt
+    from sqlalchemy import func
+    today = now_pkt().strftime("%Y%m%d")
+    count = db.query(func.count(StockBatch.id)).filter(
+        StockBatch.product_id == product_id
+    ).scalar() or 0
+    return f"BATCH-{today}-P{product_id}-{count + 1:03d}"
 
 router = APIRouter()
 
@@ -28,13 +39,14 @@ def create_purchase(
     # 2. Calculate Totals & Status
     total_amount = 0.0
     db_items = []
-    
+    price_changed_items = []
+
     for item in purchase_in.items:
         # Validate Product
         product = db.query(Product).filter(Product.id == item.product_id).first()
         if not product:
             raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
-        
+
         # Validate Variation if specified
         if item.variation_id:
             if not product.has_variations:
@@ -42,25 +54,24 @@ def create_purchase(
                     status_code=400,
                     detail=f"Product {product.name} does not support variations"
                 )
-            
+
             variation = db.query(ProductVariation).filter(
                 ProductVariation.id == item.variation_id,
                 ProductVariation.product_id == item.product_id
             ).first()
-            
+
             if not variation:
                 raise HTTPException(
                     status_code=404,
                     detail=f"Variation {item.variation_id} not found for product {product.name}"
                 )
-        
+
         item_total = item.quantity * item.unit_cost
         total_amount += item_total
-        
-        # Create Purchase Item
+
         # Default expiry 6 months if not set
         expiry = item.expiry_date or (now_pkt() + timedelta(days=180))
-        
+
         db_item = PurchaseItem(
             product_id=item.product_id,
             variation_id=item.variation_id,
@@ -70,16 +81,27 @@ def create_purchase(
             expiry_date=expiry
         )
         db_items.append(db_item)
-        
+
+        # Detect cost price change for non-variation products
+        old_cost = product.cost_price or 0.0
+        if not item.variation_id and abs(item.unit_cost - old_cost) > 0.001:
+            suggested_selling = round(item.unit_cost * (product.selling_price / old_cost), 2) if old_cost > 0 else product.selling_price
+            price_changed_items.append({
+                "product_id": product.id,
+                "product_name": product.name,
+                "old_cost": old_cost,
+                "new_cost": item.unit_cost,
+                "current_selling_price": product.selling_price,
+                "suggested_selling_price": suggested_selling,
+            })
+
         # 3. Update Stock & Cost
         if item.variation_id:
-            # Update variation stock
             variation.quantity += item.quantity
             db.add(variation)
         else:
-            # Update product stock (for products without variations)
             product.quantity += item.quantity
-            product.cost_price = item.unit_cost 
+            product.cost_price = item.unit_cost
             if item.update_selling_price and item.selling_price is not None:
                 if item.selling_price < 0:
                     raise HTTPException(
@@ -130,9 +152,36 @@ def create_purchase(
         prepaid_used=prepaid_used,
         created_by=current_user.id,
     )
+
+    # Create a StockBatch for each purchase item
+    for db_item in purchase.items:
+        product = db.query(Product).filter(Product.id == db_item.product_id).first()
+        batch_num = _generate_batch_number(db, db_item.product_id)
+        selling_price = product.selling_price if product else 0.0
+        batch = StockBatch(
+            product_id=db_item.product_id,
+            variation_id=db_item.variation_id,
+            purchase_item_id=db_item.id,
+            batch_number=batch_num,
+            quantity_received=db_item.quantity,
+            quantity_remaining=db_item.quantity,
+            unit_cost=db_item.unit_cost,
+            selling_price=selling_price,
+            purchase_date=purchase.created_at,
+            expiry_date=db_item.expiry_date,
+            status=BatchStatus.ACTIVE,
+        )
+        db.add(batch)
+        db.flush()
+        db_item.batch_id = batch.id
+        db.add(db_item)
+
     db.commit()
     db.refresh(purchase)
-    return purchase
+
+    result = purchase_schema.Purchase.model_validate(purchase)
+    result.price_changed_items = price_changed_items
+    return result
 
 
 @router.put("/{purchase_id}", response_model=purchase_schema.Purchase)
@@ -166,6 +215,18 @@ def update_purchase(
         else:
             product.quantity -= existing_item.quantity
             db.add(product)
+
+    # Retire old batches linked to this purchase's items
+    for existing_item in existing_items:
+        if existing_item.batch_id:
+            old_batch = db.query(StockBatch).filter(StockBatch.id == existing_item.batch_id).first()
+            if old_batch and old_batch.status == BatchStatus.ACTIVE:
+                if old_batch.quantity_remaining == old_batch.quantity_received:
+                    db.delete(old_batch)
+                else:
+                    old_batch.status = BatchStatus.MERGED
+                    old_batch.notes = "Purchase updated — batch replaced"
+                    db.add(old_batch)
 
     for existing_item in existing_items:
         db.delete(existing_item)
@@ -255,9 +316,36 @@ def update_purchase(
         created_by=current_user.id,
     )
 
+    db.flush()
+    # Create new batches for updated purchase items
+    for db_item in purchase.items:
+        product = db.query(Product).filter(Product.id == db_item.product_id).first()
+        batch_num = _generate_batch_number(db, db_item.product_id)
+        selling_price = product.selling_price if product else 0.0
+        batch = StockBatch(
+            product_id=db_item.product_id,
+            variation_id=db_item.variation_id,
+            purchase_item_id=db_item.id,
+            batch_number=batch_num,
+            quantity_received=db_item.quantity,
+            quantity_remaining=db_item.quantity,
+            unit_cost=db_item.unit_cost,
+            selling_price=selling_price,
+            purchase_date=purchase.created_at,
+            expiry_date=db_item.expiry_date,
+            status=BatchStatus.ACTIVE,
+        )
+        db.add(batch)
+        db.flush()
+        db_item.batch_id = batch.id
+        db.add(db_item)
+
     db.commit()
     db.refresh(purchase)
-    return purchase
+
+    result = purchase_schema.Purchase.model_validate(purchase)
+    result.price_changed_items = []
+    return result
 
 @router.get("/vendor/{vendor_id}", response_model=List[purchase_schema.Purchase])
 def read_vendor_purchases(

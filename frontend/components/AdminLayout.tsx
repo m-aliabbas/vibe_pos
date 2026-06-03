@@ -31,7 +31,8 @@ import {
   FileText,
   Store,
   Truck,
-  Tags
+  Tags,
+  Layers
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -74,6 +75,12 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       label: 'Inventory',
       icon: Tags,
       description: 'Manage products & stock'
+    },
+    {
+      href: '/stock-audit',
+      label: 'Stock Audit',
+      icon: Layers,
+      description: 'Batch costing & audit'
     },
     {
       href: '/vendors',

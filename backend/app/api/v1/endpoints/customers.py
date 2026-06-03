@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, F
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from datetime import datetime
+from app.core.config import settings
 from app.core.timezone import now_pkt
 from app.api import deps
 from app.models.user import User
@@ -67,6 +68,24 @@ def _get_store_name() -> str:
     finally:
         db.close()
     return "My Store"
+
+
+def _format_whatsapp_phone(phone: str) -> Optional[str]:
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if not digits:
+        return None
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if digits.startswith("0"):
+        digits = digits[1:]
+    if len(digits) == 10:
+        return f"92{digits}"
+    if digits.startswith("92"):
+        return digits
+    if len(digits) > 10:
+        last_ten_digits = digits[-10:]
+        return f"92{last_ten_digits}"
+    return digits
 
 
 def normalize_phone(phone: str) -> str:
@@ -855,6 +874,7 @@ def add_customer_advance(
     db: Session = Depends(deps.get_db),
     id: int,
     advance_in: dict,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """
@@ -913,6 +933,23 @@ def add_customer_advance(
     db.commit()
     db.refresh(customer)
     db.refresh(note)
+
+    customer_phone = customer.phone
+    user_phone = settings.WHATSAPP_PHONE
+    if customer_phone or user_phone:
+        background_tasks.add_task(
+            asyncio.run,
+            send_customer_advance_notification_async(
+                customer_phone=customer_phone,
+                user_phone=user_phone,
+                customer_name=customer.name or "Customer",
+                amount=float(amount),
+                balance=float(customer.outstanding_balance or 0.0),
+                payment_method=payment_method,
+                description=description,
+                note_id=note.id,
+            ),
+        )
     
     return {
         "success": True,
@@ -1021,6 +1058,68 @@ def send_payment_notification(phone: str, amount: float, balance: float, payment
 
 async def send_payment_notification_async(phone: str, amount: float, balance: float, payment_id: int):
     await asyncio.to_thread(send_payment_notification, phone, amount, balance, payment_id)
+
+
+def send_customer_advance_notification(
+    *,
+    customer_phone: Optional[str],
+    user_phone: Optional[str],
+    customer_name: str,
+    amount: float,
+    balance: float,
+    payment_method: str,
+    description: str,
+    note_id: int,
+):
+    """Send buy-on-behalf WhatsApp messages to the customer and configured user phone."""
+    try:
+        store = _get_store_name()
+        normalized_customer_phone = _format_whatsapp_phone(customer_phone) if customer_phone else None
+        normalized_user_phone = _format_whatsapp_phone(user_phone) if user_phone else None
+
+        customer_message = (
+            f"🧾 *Buy on Behalf Recorded*\n\n"
+            f"Store: {store}\n"
+            f"Amount: RS {amount:,.2f}\n"
+            f"Method: {payment_method.replace('_', ' ').title()}\n"
+            f"Details: {description}\n"
+            f"Updated Balance: RS {balance:,.2f}\n"
+            f"Reference: #{note_id}\n\n"
+            f"Thank you!\n"
+            f"{store}"
+        )
+        user_message = (
+            f"🧾 *Buy on Behalf Alert*\n\n"
+            f"Customer: {customer_name}\n"
+            f"Amount: RS {amount:,.2f}\n"
+            f"Method: {payment_method.replace('_', ' ').title()}\n"
+            f"Details: {description}\n"
+            f"New Customer Balance: RS {balance:,.2f}\n"
+            f"Reference: #{note_id}\n\n"
+            f"{store}"
+        )
+
+        recipients = []
+        if normalized_customer_phone:
+            recipients.append((normalized_customer_phone, customer_message))
+        if normalized_user_phone and normalized_user_phone != normalized_customer_phone:
+            recipients.append((normalized_user_phone, user_message))
+
+        for phone_number, message in recipients:
+            requests.post(
+                "http://127.0.0.1:8000/api/v1/whatsapp/send",
+                json={
+                    "phone_number": phone_number,
+                    "message": message,
+                },
+                timeout=2,
+            )
+    except Exception as e:
+        print(f"Failed to send buy on behalf notification: {e}")
+
+
+async def send_customer_advance_notification_async(**kwargs):
+    await asyncio.to_thread(send_customer_advance_notification, **kwargs)
 
 
 def send_due_reminder_notification(phone: str, name: str, balance: float, customer_id: int):

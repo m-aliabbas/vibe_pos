@@ -10,6 +10,7 @@ import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Trash2, ArrowRight, Plus } from "lucide-react";
 
 function PurchasePageContent() {
@@ -38,6 +39,9 @@ function PurchasePageContent() {
     const [heldPurchases, setHeldPurchases] = useState<HoldPurchaseResponse[]>([]);
     const [heldOpen, setHeldOpen] = useState(false);
     const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+    const [priceChangedItems, setPriceChangedItems] = useState<any[]>([]);
+    const [priceChangeDialogOpen, setPriceChangeDialogOpen] = useState(false);
+    const [priceUpdateSelections, setPriceUpdateSelections] = useState<Record<number, string>>({});
     const [receiptData, setReceiptData] = useState<{
         title: string;
         vendorId?: string;
@@ -516,6 +520,17 @@ function PurchasePageContent() {
                                 status: response.data.status || "unpaid",
                         });
                             clearPurchaseForm();
+
+                        // Check for price changes
+                        const changed = response.data?.price_changed_items || [];
+                        if (changed.length > 0) {
+                            const selections: Record<number, string> = {};
+                            changed.forEach((c: any) => { selections[c.product_id] = 'keep'; });
+                            setPriceUpdateSelections(selections);
+                            setPriceChangedItems(changed);
+                            setPriceChangeDialogOpen(true);
+                        }
+
                         setReceiptDialogOpen(true);
         } catch (error) {
             console.error("Failed to submit purchase", error);
@@ -1022,6 +1037,64 @@ function PurchasePageContent() {
                         </Button>
                         <Button onClick={createNewProduct} disabled={savingProduct}>
                             {savingProduct ? 'Creating...' : 'Create Product'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Price Changed Dialog */}
+            <Dialog open={priceChangeDialogOpen} onOpenChange={setPriceChangeDialogOpen}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Cost Price Changed — Update Selling Price?</DialogTitle>
+                        <DialogDescription>
+                            The following products were purchased at a different cost. Choose how to update the selling price.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2 max-h-80 overflow-y-auto">
+                        {priceChangedItems.map((item: any) => (
+                            <div key={item.product_id} className="border rounded-lg p-3 bg-gray-50">
+                                <div className="font-semibold mb-1">{item.product_name}</div>
+                                <div className="text-xs text-gray-500 mb-2">
+                                    Cost: Rs {item.old_cost} → Rs {item.new_cost} &nbsp;|&nbsp; Current Selling: Rs {item.current_selling_price}
+                                </div>
+                                <Select
+                                    value={priceUpdateSelections[item.product_id] || 'keep'}
+                                    onValueChange={v => setPriceUpdateSelections(prev => ({ ...prev, [item.product_id]: v }))}
+                                >
+                                    <SelectTrigger className="text-sm">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="keep">Keep current (Rs {item.current_selling_price})</SelectItem>
+                                        <SelectItem value="suggested">Use suggested (Rs {item.suggested_selling_price})</SelectItem>
+                                        <SelectItem value={String(item.new_cost)}>Set to new cost (Rs {item.new_cost})</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        ))}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPriceChangeDialogOpen(false)}>Skip</Button>
+                        <Button
+                            onClick={async () => {
+                                try {
+                                    for (const item of priceChangedItems) {
+                                        const sel = priceUpdateSelections[item.product_id];
+                                        if (sel === 'keep') continue;
+                                        const newPrice = sel === 'suggested' ? item.suggested_selling_price : parseFloat(sel);
+                                        if (!isNaN(newPrice) && newPrice > 0) {
+                                            await api.patch(`/products/${item.product_id}`, { selling_price: newPrice });
+                                        }
+                                    }
+                                    setPriceChangeDialogOpen(false);
+                                } catch {
+                                    alert("Some selling prices could not be updated.");
+                                }
+                            }}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                        >
+                            Apply
                         </Button>
                     </DialogFooter>
                 </DialogContent>

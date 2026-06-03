@@ -497,3 +497,91 @@ export const vendorPaymentsApi = {
         await api.delete(`/vendors/${id}/payments/${entryId}`);
     },
 };
+
+// ============ STOCK AUDIT API ============
+
+export interface StockBatch {
+    id: number;
+    product_id: number;
+    variation_id?: number | null;
+    purchase_item_id?: number | null;
+    batch_number: string;
+    quantity_received: number;
+    quantity_remaining: number;
+    unit_cost: number;
+    selling_price: number;
+    purchase_date: string;
+    expiry_date?: string | null;
+    status: 'active' | 'depleted' | 'merged';
+    merged_into_id?: number | null;
+    notes?: string | null;
+    created_at: string;
+    product_name?: string | null;
+}
+
+export interface BatchSummaryByProduct {
+    product_id: number;
+    product_name: string;
+    total_qty: number;
+    active_batches: number;
+    avg_cost: number;
+    total_value: number;
+    batches: StockBatch[];
+}
+
+export interface InventorySummary {
+    total_inventory_value: number;
+    total_active_batches: number;
+    total_depleted_batches: number;
+    products_with_multiple_batches: number;
+}
+
+export interface CostingComparison {
+    product_id: number;
+    product_name: string;
+    fifo_cogs: number;
+    lifo_cogs: number;
+    wac_cogs: number;
+    units_sold: number;
+}
+
+export interface MergeRequest {
+    batch_ids: number[];
+    merge_method: 'weighted_avg' | 'use_latest' | 'use_lowest';
+    new_selling_price?: number;
+    notes?: string;
+}
+
+export interface MergeResult {
+    new_batch: StockBatch;
+    merged_count: number;
+    total_qty: number;
+    computed_cost: number;
+}
+
+export const stockAuditApi = {
+    listBatches: async (params?: { product_id?: number; status?: string; skip?: number; limit?: number }): Promise<StockBatch[]> => {
+        const response = await api.get('/stock-audit/batches', { params });
+        return response.data;
+    },
+    getProductBatches: async (productId: number): Promise<BatchSummaryByProduct> => {
+        const response = await api.get(`/stock-audit/batches/product/${productId}`);
+        return response.data;
+    },
+    updateBatch: async (batchId: number, data: { selling_price?: number; notes?: string }): Promise<StockBatch> => {
+        const response = await api.patch(`/stock-audit/batches/${batchId}`, data);
+        return response.data;
+    },
+    mergeBatches: async (payload: MergeRequest): Promise<MergeResult> => {
+        const response = await api.post('/stock-audit/merge', payload);
+        return response.data;
+    },
+    getSummary: async (): Promise<InventorySummary> => {
+        const response = await api.get('/stock-audit/summary');
+        return response.data;
+    },
+    getCostingComparison: async (params?: { date_from?: string; date_to?: string }): Promise<CostingComparison[]> => {
+        const response = await api.get('/stock-audit/costing-comparison', { params });
+        return response.data;
+    },
+};

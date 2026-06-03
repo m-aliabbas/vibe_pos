@@ -24,7 +24,9 @@ class PurchaseItem(PurchaseItemBase):
     purchase_id: int
     total_cost: float
     product_name: Optional[str] = None
-    
+    batch_id: Optional[int] = None
+    batch_number: Optional[str] = None
+
     class Config:
         from_attributes = True
 
@@ -48,6 +50,7 @@ class Purchase(PurchaseBase):
     total_amount: float
     status: PurchaseStatus
     items: List[PurchaseItem] = []
+    price_changed_items: List[dict] = []  # [{product_id, product_name, old_cost, new_cost, suggested_selling_price}]
 
     class Config:
         from_attributes = True

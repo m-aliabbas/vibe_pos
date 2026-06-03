@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import JsBarcode from 'jsbarcode';
 import { ToWords } from 'to-words';
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download, Barcode, Printer } from "lucide-react";
+import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download, Barcode, Printer, Layers } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -45,6 +45,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import BatchModal from "@/components/BatchModal";
 
 interface SellingUnit {
     unit: string;
@@ -135,6 +136,7 @@ export default function InventoryPage() {
     const [editOpen, setEditOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [batchModalProduct, setBatchModalProduct] = useState<Product | null>(null);
     const [bulkOpen, setBulkOpen] = useState(false);
     const [bulkFile, setBulkFile] = useState<File | null>(null);
     const [bulkUploading, setBulkUploading] = useState(false);
@@ -959,6 +961,15 @@ export default function InventoryPage() {
                                                     <Edit className="h-4 w-4" />
                                                 </Button>
                                             )}
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => setBatchModalProduct(product)}
+                                                className="hover:bg-indigo-50 hover:text-indigo-600"
+                                                title="View stock batches"
+                                            >
+                                                <Layers className="h-4 w-4" />
+                                            </Button>
                                             {isAdmin && (
                                                 <Button
                                                     variant="ghost"
@@ -1334,6 +1345,15 @@ export default function InventoryPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {batchModalProduct && (
+                <BatchModal
+                    productId={batchModalProduct.id}
+                    productName={batchModalProduct.name}
+                    open={!!batchModalProduct}
+                    onClose={() => setBatchModalProduct(null)}
+                />
+            )}
         </div>
     );
 }

@@ -23,10 +23,38 @@ from app.models.user import User, UserRole
 from app.models.customer import Customer
 from app.models.pos_return import PosReturn
 from app.models.accounting import JournalEntry
+from app.models.stock_batch import StockBatch, BatchStatus
 from app.schemas.sale import SaleCreate, SaleUpdate, Sale as SaleSchema, SaleStats
 from app.services import accounting as accounting_service
 
 router = APIRouter()
+
+
+def _deduct_from_batches_fifo(db: Session, product_id: int, variation_id, qty_needed: float) -> int | None:
+    """Deducts qty_needed from ACTIVE batches in FIFO order. Returns last batch_id used."""
+    batches = db.query(StockBatch).filter(
+        StockBatch.product_id == product_id,
+        StockBatch.variation_id == variation_id,
+        StockBatch.status == BatchStatus.ACTIVE,
+        StockBatch.quantity_remaining > 0,
+    ).order_by(StockBatch.purchase_date.asc()).all()
+
+    if not batches:
+        return None
+
+    batch_used_id = None
+    remaining = qty_needed
+    for batch in batches:
+        take = min(batch.quantity_remaining, remaining)
+        batch.quantity_remaining -= take
+        if batch.quantity_remaining <= 0:
+            batch.status = BatchStatus.DEPLETED
+        remaining -= take
+        batch_used_id = batch.id
+        db.add(batch)
+        if remaining <= 0:
+            break
+    return batch_used_id
 
 # Invoice folder
 INVOICE_DIR = Path.home() / "Downloads" / "pos_invoices"
@@ -739,13 +767,19 @@ def create_sale(
             total_price=(unit_price * item.quantity) - item_discount
         )
         db.add(db_sale_item)
-        
-        # Deduct from inventory (always in base units)
+
+        # Deduct from inventory (always in base units) — FIFO batch deduction
         if item.variation_id:
             variation = variations_dict[item.variation_id]
             variation.quantity -= quantity_in_base_units
+            batch_id = _deduct_from_batches_fifo(db, item.product_id, item.variation_id, quantity_in_base_units)
         else:
             product.quantity -= quantity_in_base_units
+            batch_id = _deduct_from_batches_fifo(db, item.product_id, None, quantity_in_base_units)
+
+        if batch_id:
+            db_sale_item.batch_id = batch_id
+            db.add(db_sale_item)
     
     # Update customer statistics if linked
     if customer and customer_ref_id:
@@ -971,9 +1005,15 @@ def update_sale(
             variation = variations_dict[item.variation_id]
             variation.quantity -= quantity_in_base_units
             db.add(variation)
+            batch_id = _deduct_from_batches_fifo(db, item.product_id, item.variation_id, quantity_in_base_units)
         else:
             product.quantity -= quantity_in_base_units
             db.add(product)
+            batch_id = _deduct_from_batches_fifo(db, item.product_id, None, quantity_in_base_units)
+
+        if batch_id:
+            db_sale_item.batch_id = batch_id
+            db.add(db_sale_item)
 
     if customer and customer_ref_id:
         customer.total_purchases += 1

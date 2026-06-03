@@ -56,6 +56,9 @@ export default function PurchaseDetailPage() {
     const [editableItems, setEditableItems] = useState<EditablePurchaseItem[]>([]);
     const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
     const [allowDecimals, setAllowDecimals] = useState(false);
+    const [priceChangedItems, setPriceChangedItems] = useState<any[]>([]);
+    const [priceChangeDialogOpen, setPriceChangeDialogOpen] = useState(false);
+    const [priceUpdateSelections, setPriceUpdateSelections] = useState<Record<number, string>>({});
 
     useEffect(() => {
         if (id) {
@@ -151,7 +154,7 @@ export default function PurchaseDetailPage() {
 
         try {
             setSavingEdit(true);
-            await api.put(`/purchases/${id}`, {
+            const response = await api.put(`/purchases/${id}`, {
                 vendor_id: purchase.vendor_id,
                 amount_paid: purchase.amount_paid,
                 items: editableItems.map((item) => ({
@@ -166,12 +169,40 @@ export default function PurchaseDetailPage() {
 
             setEditDialogOpen(false);
             await fetchData();
-            alert("Purchase updated successfully.");
+
+            // Check if any product cost changed — prompt user to update selling price
+            const changed = response.data?.price_changed_items || [];
+            if (changed.length > 0) {
+                const selections: Record<number, string> = {};
+                changed.forEach((c: any) => { selections[c.product_id] = 'keep'; });
+                setPriceUpdateSelections(selections);
+                setPriceChangedItems(changed);
+                setPriceChangeDialogOpen(true);
+            } else {
+                alert("Purchase updated successfully.");
+            }
         } catch (error: any) {
             console.error("Failed to update purchase", error);
             alert(error?.response?.data?.detail || "Failed to update purchase");
         } finally {
             setSavingEdit(false);
+        }
+    };
+
+    const handleApplyPriceChanges = async () => {
+        try {
+            for (const item of priceChangedItems) {
+                const sel = priceUpdateSelections[item.product_id];
+                if (sel === 'keep') continue;
+                const newPrice = sel === 'suggested' ? item.suggested_selling_price : parseFloat(sel);
+                if (!isNaN(newPrice) && newPrice > 0) {
+                    await api.patch(`/products/${item.product_id}`, { selling_price: newPrice });
+                }
+            }
+            setPriceChangeDialogOpen(false);
+            alert("Purchase updated. Selling prices applied.");
+        } catch {
+            alert("Purchase saved, but failed to update some selling prices.");
         }
     };
 
@@ -277,6 +308,7 @@ export default function PurchaseDetailPage() {
                                 <TableHead className="text-right">Quantity</TableHead>
                                 <TableHead className="text-right">Unit Cost</TableHead>
                                 <TableHead className="text-right">Total Cost</TableHead>
+                                <TableHead>Batch</TableHead>
                                 <TableHead>Expiry Date</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -289,6 +321,7 @@ export default function PurchaseDetailPage() {
                                     <TableCell className="text-right">{item.quantity}</TableCell>
                                     <TableCell className="text-right">${item.unit_cost.toFixed(2)}</TableCell>
                                     <TableCell className="text-right font-medium">${item.total_cost.toFixed(2)}</TableCell>
+                                    <TableCell className="font-mono text-xs text-gray-500">{item.batch_number || '—'}</TableCell>
                                     <TableCell className="text-sm text-gray-500">
                                         {item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}
                                     </TableCell>
@@ -461,6 +494,47 @@ export default function PurchaseDetailPage() {
                         </Button>
                         <Button onClick={handleSaveEditedPurchase} disabled={savingEdit}>
                             {savingEdit ? "Saving..." : "Save Purchase Changes"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Price Changed Dialog */}
+            <Dialog open={priceChangeDialogOpen} onOpenChange={setPriceChangeDialogOpen}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Cost Price Changed — Update Selling Price?</DialogTitle>
+                        <DialogDescription>
+                            The following products have a new purchase cost. Choose how to update each selling price.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2 max-h-80 overflow-y-auto">
+                        {priceChangedItems.map((item: any) => (
+                            <div key={item.product_id} className="border rounded-lg p-3 bg-gray-50">
+                                <div className="font-semibold mb-1">{item.product_name}</div>
+                                <div className="text-xs text-gray-500 mb-2">
+                                    Cost: Rs {item.old_cost} → Rs {item.new_cost} &nbsp;|&nbsp; Current Selling: Rs {item.current_selling_price}
+                                </div>
+                                <Select
+                                    value={priceUpdateSelections[item.product_id] || 'keep'}
+                                    onValueChange={v => setPriceUpdateSelections(prev => ({ ...prev, [item.product_id]: v }))}
+                                >
+                                    <SelectTrigger className="text-sm">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="keep">Keep current (Rs {item.current_selling_price})</SelectItem>
+                                        <SelectItem value="suggested">Use suggested (Rs {item.suggested_selling_price})</SelectItem>
+                                        <SelectItem value={String(item.new_cost)}>Set to new cost (Rs {item.new_cost})</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        ))}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPriceChangeDialogOpen(false)}>Skip</Button>
+                        <Button onClick={handleApplyPriceChanges} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                            Apply
                         </Button>
                     </DialogFooter>
                 </DialogContent>

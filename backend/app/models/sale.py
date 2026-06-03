@@ -58,7 +58,8 @@ class SaleItem(Base):
     unit_price = Column(Float)  # Price at time of sale (snapshot)
     item_discount = Column(Float, default=0.0) # Discount on this specific item
     total_price = Column(Float)  # (quantity * unit_price) - item_discount
-    
+    batch_id = Column(Integer, ForeignKey("stock_batches.id"), nullable=True)
+
     # Relationships
     sale = relationship("Sale", back_populates="items")
     product = relationship("Product")

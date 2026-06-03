@@ -36,7 +36,8 @@ class PurchaseItem(Base):
     unit_cost = Column(Float)
     total_cost = Column(Float) # quantity * unit_cost
     expiry_date = Column(DateTime, nullable=True)
-    
+    batch_id = Column(Integer, ForeignKey("stock_batches.id"), nullable=True)
+
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product")
     variation = relationship("ProductVariation")
