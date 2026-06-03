@@ -172,10 +172,6 @@ export default function VendorDetailsPage() {
         return purchases.reduce((acc, p) => acc + (p.total_amount - p.amount_paid), 0);
     };
 
-    const calculateTotalPaid = (purchases: any[]) => {
-        return purchases.reduce((acc, p) => acc + p.amount_paid, 0);
-    };
-
     const handleVendorPayment = async () => {
         try {
             const trimmedReferenceNote = paymentReferenceNote.trim();
@@ -584,6 +580,11 @@ export default function VendorDetailsPage() {
     const ledgerAdvance = ledgerBalance !== null ? Math.max(0, -ledgerBalance) : 0;
     const effectivePrepaidCredit = Math.max(vendor.prepaid_credit || 0, ledgerAdvance);
 
+    // Total invoiced = sum of all purchase totals (not amount_paid)
+    const totalInvoiced = purchases.reduce((acc: number, p: any) => acc + Number(p.total_amount || 0), 0);
+    // Total paid = what has actually been paid, derived from ledger
+    const totalPaidLedger = Math.max(0, totalInvoiced - totalBalance);
+
     // Merge purchases with return/adjustment ledger rows for a unified vendor history.
     const returnLikeSourceTypes = new Set(['vendor_settlement', 'vendor_return', 'purchase_return', 'return']);
 
@@ -597,27 +598,34 @@ export default function VendorDetailsPage() {
             total_amount: Number(purchase.total_amount || 0),
             amount_paid: Number(purchase.amount_paid || 0),
             balance: Number((purchase.total_amount || 0) - (purchase.amount_paid || 0)),
+            description: null as string | null,
+            adj_amount: null as number | null,
         })),
         ...vendorLedgerEntries
             .filter((entry: any) => returnLikeSourceTypes.has(entry.source_type))
-            .map((entry: any, idx: number) => ({
-                kind: 'return' as const,
-                id: `ledger-${entry.source_type || 'entry'}-${entry.source_id || idx}-${entry.date || idx}`,
-                date: entry.date,
-                reference: entry.source_id ? `#${entry.source_id}` : '-',
-                status: entry.source_type || 'adjustment',
-                total_amount: Number(entry.credit || 0),
-                amount_paid: Number(entry.debit || 0),
-                balance: Number((entry.credit || 0) - (entry.debit || 0)),
-                description: entry.description || 'Adjustment',
-            })),
+            .map((entry: any, idx: number) => {
+                // For AP account: debit = liability reduced (return/adjustment), credit = liability increased
+                const adjAmount = Number(entry.debit || 0) - Number(entry.credit || 0);
+                return {
+                    kind: 'return' as const,
+                    id: `ledger-${entry.source_type || 'entry'}-${entry.source_id || idx}-${entry.date || idx}`,
+                    date: entry.date,
+                    reference: entry.source_id ? `#${entry.source_id}` : '-',
+                    status: entry.source_type || 'adjustment',
+                    total_amount: 0,
+                    amount_paid: 0,
+                    balance: 0,
+                    description: entry.description || 'Adjustment',
+                    adj_amount: adjAmount,
+                };
+            }),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     // Filter history rows based on selected filter
     const filteredHistory = historyRows.filter((row) => {
         if (statusFilter === 'all') return true;
         if (statusFilter === 'returns') return row.kind === 'return';
-        return row.kind === 'purchase' && row.status === statusFilter;
+        return true;
     });
 
     return (
@@ -1028,7 +1036,7 @@ export default function VendorDetailsPage() {
                 </div>
             </div>
 
-            <div className="shrink-0 grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="shrink-0 grid grid-cols-1 md:grid-cols-4 gap-6">
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-gray-500">Total Purchases</CardTitle>
@@ -1039,10 +1047,18 @@ export default function VendorDetailsPage() {
                 </Card>
                 <Card>
                     <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-gray-500">Total Invoiced</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">Rs {totalInvoiced.toFixed(2)}</div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-gray-500">Total Paid</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-600">Rs {calculateTotalPaid(purchases).toFixed(2)}</div>
+                        <div className="text-2xl font-bold text-green-600">Rs {totalPaidLedger.toFixed(2)}</div>
                     </CardContent>
                 </Card>
                 <Card className={totalBalance > 0 ? "border-red-200 bg-red-50" : ""}>
@@ -1086,10 +1102,7 @@ export default function VendorDetailsPage() {
                                     <SelectValue placeholder="Filter by Status" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">All Status</SelectItem>
-                                    <SelectItem value="paid">Paid</SelectItem>
-                                    <SelectItem value="partial">Partial</SelectItem>
-                                    <SelectItem value="unpaid">Unpaid</SelectItem>
+                                    <SelectItem value="all">All</SelectItem>
                                     <SelectItem value="returns">Returns / Adjustments</SelectItem>
                                 </SelectContent>
                             </Select>
@@ -1103,7 +1116,7 @@ export default function VendorDetailsPage() {
                                         <TableHead>Type</TableHead>
                                         <TableHead className="text-right">Total Amount</TableHead>
                                         <TableHead className="text-right">Paid</TableHead>
-                                        <TableHead className="text-right">Balance</TableHead>
+                                        <TableHead className="text-right">Balance / Effect</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -1125,26 +1138,40 @@ export default function VendorDetailsPage() {
                                                 <Badge variant="outline" className={
                                                     row.kind === 'return'
                                                         ? 'bg-blue-100 text-blue-700 border-blue-200'
-                                                        : row.status === 'paid'
-                                                            ? 'bg-green-100 text-green-700 border-green-200'
-                                                            : row.status === 'partial'
-                                                                ? 'bg-yellow-100 text-yellow-700 border-yellow-200'
-                                                                : 'bg-red-100 text-red-700 border-red-200'
+                                                        : 'bg-gray-100 text-gray-600 border-gray-200'
                                                 }>
-                                                    {row.kind === 'return' ? 'RETURN / ADJ' : String(row.status || '').toUpperCase()}
+                                                    {row.kind === 'return' ? 'RETURN / ADJ' : 'PURCHASE'}
                                                 </Badge>
                                                 {row.kind === 'return' && row.description && (
                                                     <p className="text-xs text-gray-500 mt-1 max-w-[260px] truncate" title={row.description}>{row.description}</p>
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-right font-medium">
-                                                Rs {row.total_amount.toFixed(2)}
+                                                {row.kind === 'return' ? (
+                                                    <span className="text-gray-400">—</span>
+                                                ) : (
+                                                    `Rs ${row.total_amount.toFixed(2)}`
+                                                )}
                                             </TableCell>
                                             <TableCell className="text-right text-gray-500">
-                                                Rs {row.amount_paid.toFixed(2)}
+                                                {row.kind === 'return' ? (
+                                                    <span className="text-gray-400">—</span>
+                                                ) : (
+                                                    <span className="text-gray-400">—</span>
+                                                )}
                                             </TableCell>
                                             <TableCell className="text-right font-medium">
-                                                Rs {row.balance.toFixed(2)}
+                                                {row.kind === 'return' ? (
+                                                    row.adj_amount !== null && row.adj_amount !== 0 ? (
+                                                        <span className={row.adj_amount > 0 ? 'text-green-600' : 'text-red-600'}>
+                                                            {row.adj_amount > 0 ? '−' : '+'}Rs {Math.abs(row.adj_amount).toFixed(2)}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-gray-400">—</span>
+                                                    )
+                                                ) : (
+                                                    <span className="text-gray-400">—</span>
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     ))}
@@ -1241,7 +1268,7 @@ export default function VendorDetailsPage() {
                     <DialogHeader>
                         <DialogTitle>Delete Payment</DialogTitle>
                     </DialogHeader>
-                    <p className="text-sm text-muted-foreground">Are you sure you want to delete this payment? The vendor ledger balance will be recalculated.</p>
+                    <p className="text-sm text-muted-foreground">Are you sure you want to remove this payment from history? The outstanding balance will not be affected.</p>
                     <div className="flex justify-end gap-2 mt-4">
                         <Button variant="outline" onClick={() => setDeletePaymentDialogOpen(false)}>Cancel</Button>
                         <Button variant="destructive" onClick={handleVendorPaymentDelete} disabled={deletingPayment}>

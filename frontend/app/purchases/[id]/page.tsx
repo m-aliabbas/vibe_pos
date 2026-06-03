@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api from '@/lib/api';
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, DollarSign, Package, Calendar, FileText, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Package, Calendar, FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
     Table,
@@ -51,8 +51,6 @@ export default function PurchaseDetailPage() {
     const [vendor, setVendor] = useState<any>(null);
     const [products, setProducts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-    const [paymentAmount, setPaymentAmount] = useState('');
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [savingEdit, setSavingEdit] = useState(false);
     const [editableItems, setEditableItems] = useState<EditablePurchaseItem[]>([]);
@@ -91,19 +89,6 @@ export default function PurchaseDetailPage() {
     const getProductName = (productId: number) => {
         const product = products.find(p => p.id === productId);
         return product ? product.name : `Product #${productId}`;
-    };
-
-    const handleUpdatePayment = async () => {
-        try {
-            await api.put(`/purchases/${id}/payment`, {
-                amount_paid: parseFloat(paymentAmount)
-            });
-            setPaymentDialogOpen(false);
-            fetchData(); // Refresh data
-        } catch (error) {
-            console.error("Failed to update payment", error);
-            alert("Failed to update payment");
-        }
     };
 
     const openEditDialog = () => {
@@ -204,8 +189,6 @@ export default function PurchaseDetailPage() {
     if (loading) return <div className="h-full flex items-center justify-center">Loading...</div>;
     if (!purchase) return <div className="h-full flex items-center justify-center">Purchase not found</div>;
 
-    const balance = purchase.total_amount - purchase.amount_paid;
-
     return (
         <div className="p-8 max-w-7xl mx-auto h-full overflow-y-auto space-y-8">
             <Button variant="ghost" onClick={() => router.back()} className="mb-4">
@@ -235,44 +218,25 @@ export default function PurchaseDetailPage() {
                     <Button variant="outline" onClick={openEditDialog}>
                         <Pencil className="mr-2 h-4 w-4" /> Edit Purchase
                     </Button>
-                    <Badge
-                        variant="outline"
-                        className={`text-lg px-4 py-2 ${purchase.status === 'paid' ? 'bg-green-100 text-green-700 border-green-200' :
-                            purchase.status === 'partial' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
-                                'bg-red-100 text-red-700 border-red-200'
-                            }`}
-                    >
-                        {purchase.status.toUpperCase()}
-                    </Badge>
                 </div>
             </div>
 
             {/* Payment Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-sm font-medium text-gray-500">Total Amount</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">${purchase.total_amount.toFixed(2)}</div>
+                        <div className="text-2xl font-bold">Rs {purchase.total_amount.toFixed(2)}</div>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-500">Amount Paid</CardTitle>
+                        <CardTitle className="text-sm font-medium text-gray-500">Paid at Purchase</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold text-green-600">${purchase.amount_paid.toFixed(2)}</div>
-                    </CardContent>
-                </Card>
-                <Card className={balance > 0 ? "border-red-200 bg-red-50" : ""}>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-gray-500">Balance Due</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className={`text-2xl font-bold ${balance > 0 ? "text-red-600" : "text-gray-900"}`}>
-                            ${balance.toFixed(2)}
-                        </div>
+                        <div className="text-2xl font-bold text-green-600">Rs {purchase.amount_paid.toFixed(2)}</div>
                     </CardContent>
                 </Card>
                 <Card>
@@ -285,57 +249,16 @@ export default function PurchaseDetailPage() {
                 </Card>
             </div>
 
-            {/* Payment Update Button */}
-            {balance > 0 && (
-                <Card className="border-yellow-200 bg-yellow-50">
-                    <CardContent className="flex items-center justify-between p-6">
-                        <div>
-                            <h3 className="font-semibold text-yellow-900">Outstanding Balance</h3>
-                            <p className="text-sm text-yellow-700">
-                                This purchase has a remaining balance of ${balance.toFixed(2)}
-                            </p>
-                        </div>
-                        <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-                            <DialogTrigger asChild>
-                                <Button className="bg-yellow-600 hover:bg-yellow-700">
-                                    <DollarSign className="mr-2 h-4 w-4" /> Make Payment
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent className="w-[95vw] max-w-6xl lg:max-w-7xl max-h-[85vh] overflow-y-auto p-6">
-                                <DialogHeader>
-                                    <DialogTitle>Update Payment</DialogTitle>
-                                    <DialogDescription>
-                                        Enter the total amount paid for this purchase.
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <div className="grid gap-4 py-4">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="payment">Total Amount Paid ($)</Label>
-                                        <Input
-                                            id="payment"
-                                            type="number"
-                                            step="0.01"
-                                            value={paymentAmount}
-                                            onChange={e => setPaymentAmount(e.target.value)}
-                                            placeholder={purchase.amount_paid.toFixed(2)}
-                                        />
-                                        <p className="text-xs text-gray-500">
-                                            Current: ${purchase.amount_paid.toFixed(2)} |
-                                            Total: ${purchase.total_amount.toFixed(2)} |
-                                            Balance: ${balance.toFixed(2)}
-                                        </p>
-                                    </div>
-                                </div>
-                                <DialogFooter>
-                                    <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
-                                        Cancel
-                                    </Button>
-                                    <Button onClick={handleUpdatePayment}>
-                                        Update Payment
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
+            {/* Vendor balance note */}
+            {vendor && (
+                <Card className="border-blue-200 bg-blue-50">
+                    <CardContent className="flex items-center justify-between p-4">
+                        <p className="text-sm text-blue-700">
+                            Remaining balance for this vendor is tracked at the vendor level.
+                        </p>
+                        <Button variant="outline" size="sm" className="ml-4 border-blue-300 text-blue-700 hover:bg-blue-100" onClick={() => router.push(`/vendors/${purchase.vendor_id}`)}>
+                            View Vendor Balance
+                        </Button>
                     </CardContent>
                 </Card>
             )}
@@ -382,17 +305,11 @@ export default function PurchaseDetailPage() {
                     <div className="space-y-2">
                         <div className="flex justify-between text-lg">
                             <span className="text-gray-600">Subtotal:</span>
-                            <span className="font-medium">${purchase.total_amount.toFixed(2)}</span>
+                            <span className="font-medium">Rs {purchase.total_amount.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-lg border-t pt-2">
-                            <span className="text-gray-600">Paid:</span>
-                            <span className="font-medium text-green-600">${purchase.amount_paid.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between text-xl font-bold border-t-2 pt-2">
-                            <span>Balance Due:</span>
-                            <span className={balance > 0 ? "text-red-600" : "text-gray-900"}>
-                                ${balance.toFixed(2)}
-                            </span>
+                            <span className="text-gray-600">Paid at Purchase:</span>
+                            <span className="font-medium text-green-600">Rs {purchase.amount_paid.toFixed(2)}</span>
                         </div>
                     </div>
                 </CardContent>

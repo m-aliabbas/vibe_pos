@@ -105,6 +105,8 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
   const [ledgerStartDate, setLedgerStartDate] = useState('');
   const [ledgerEndDate, setLedgerEndDate] = useState(todayPKTDateString());
+  const [deleteNoteId, setDeleteNoteId] = useState<number | null>(null);
+  const [deleteNoteDialogOpen, setDeleteNoteDialogOpen] = useState(false);
   const [creditLimitAlert, setCreditLimitAlert] = useState<{
     limit: number; current: number; available: number; attempted?: number;
   } | null>(null);
@@ -649,12 +651,12 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     }
   };
 
-  const handleDeleteNote = async (noteId: number) => {
-    if (!confirm("Are you sure you want to delete this note?")) return;
-    if (!isValidId) return;
-
+  const handleDeleteNote = async () => {
+    if (!deleteNoteId) return;
     try {
-      await customerApi.deleteCustomerNote(customerId, noteId);
+      await customerApi.deleteCustomerNote(customerId, deleteNoteId);
+      setDeleteNoteDialogOpen(false);
+      setDeleteNoteId(null);
       fetchCustomerData();
     } catch (error) {
       console.error("Failed to delete note:", error);
@@ -1517,7 +1519,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteNote(note.id)}
+                              onClick={() => { setDeleteNoteId(note.id); setDeleteNoteDialogOpen(true); }}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -1880,18 +1882,32 @@ function AllPaymentsTab({ customerId, customerPayments, onRefresh }: { customerI
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirm Dialog */}
+      {/* Delete Payment Confirm Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Payment</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Are you sure you want to delete this payment? This will reverse the payment on the customer's balance.</p>
+          <p className="text-sm text-muted-foreground">Are you sure you want to remove this payment from history? The outstanding balance will not be affected.</p>
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting ? 'Deleting...' : 'Delete'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Note Confirm Dialog */}
+      <Dialog open={deleteNoteDialogOpen} onOpenChange={setDeleteNoteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Note</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Are you sure you want to delete this note? This cannot be undone.</p>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setDeleteNoteDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteNote}>Delete</Button>
           </div>
         </DialogContent>
       </Dialog>

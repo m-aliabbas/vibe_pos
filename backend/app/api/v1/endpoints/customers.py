@@ -15,6 +15,7 @@ from app.models.user import User
 from app.models.customer import Customer, CustomerNote, CustomerPayment
 from app.models.sale import Sale
 from app.models.pos_return import PosReturn
+from app.models.accounting import JournalLine
 from app.schemas import customer as customer_schema
 from app.services import accounting as accounting_service
 
@@ -751,12 +752,14 @@ def record_customer_payment(
     
     db.add(payment)
     db.add(customer)
+    db.flush()  # get payment.id before creating the journal entry
     accounting_service.post_customer_payment(
         db=db,
         customer_id=id,
         amount=payment_in.amount,
         payment_method=payment_in.payment_method,
         created_by=current_user.id,
+        payment_id=payment.id,
     )
     db.commit()
     db.refresh(payment)
@@ -839,16 +842,9 @@ def delete_customer_payment(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    amount = float(payment.amount)
+    # Remove the display record only. The journal entry is kept so the
+    # outstanding balance is not affected — this is an archive/display removal.
     db.delete(payment)
-
-    # Reverse effect: add the amount back to outstanding balance
-    customer.outstanding_balance = accounting_service.get_customer_balance(
-        db, customer.id, customer.opening_balance or 0.0
-    )
-    customer.outstanding_balance = (customer.outstanding_balance or 0.0) + amount
-    customer.updated_at = now_pkt()
-    db.add(customer)
     db.commit()
     return {"message": "Payment deleted successfully"}
 

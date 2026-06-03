@@ -445,6 +445,7 @@ def post_customer_payment(
     amount: float,
     payment_method: Optional[str],
     created_by: Optional[int],
+    payment_id: Optional[int] = None,
 ) -> JournalEntry:
     ensure_system_accounts(db)
     lines = [
@@ -467,7 +468,7 @@ def post_customer_payment(
         description=f"Customer payment #{customer_id}",
         lines=lines,
         source_type="customer_payment",
-        source_id=customer_id,
+        source_id=payment_id if payment_id is not None else customer_id,
         created_by=created_by,
         entry_date=now_pkt(),
     )

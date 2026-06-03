@@ -514,7 +514,7 @@ def delete_vendor_payment(
     entry_id: int,
     current_user = Depends(deps.get_current_user),
 ) -> Any:
-    """Delete a vendor payment journal entry and reverse its effect on prepaid_credit."""
+    """Hide a vendor payment from history without reversing its effect on the balance."""
     vendor = db.query(Vendor).filter(Vendor.id == id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -527,9 +527,10 @@ def delete_vendor_payment(
     if not entry:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    # Compute how much prepaid credit came from this entry (credit on vendor_advances account from cash)
-    # We just delete the journal entry; the accounting balance will self-correct via ledger queries
-    db.delete(entry)
+    # Soft-delete: rename source_type so this entry no longer appears in the
+    # payment history list, but its journal lines remain — outstanding balance unchanged.
+    entry.source_type = "vendor_payment_deleted"
+    db.add(entry)
     db.commit()
     return {"message": "Vendor payment deleted successfully"}
 
