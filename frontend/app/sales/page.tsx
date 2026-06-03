@@ -169,7 +169,7 @@ export default function SalesTerminal() {
   const skipNextCustomerLookupRef = useRef(false);
   const productSearchInputRef = useRef<HTMLInputElement | null>(null);
   const amountPaidInputRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteListRef = useRef<HTMLDivElement | null>(null);
+  const autocompleteListRef = useRef<HTMLTableSectionElement | null>(null);
   const customerNameListRef = useRef<HTMLDivElement | null>(null);
 
   const latestSaleSnapshotRef = useRef<{
@@ -1256,13 +1256,17 @@ export default function SalesTerminal() {
   const handleSearchKeyDown = useCallback(
     async (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "ArrowDown") {
-        if (!showAutocomplete || filteredProducts.length === 0) return;
+        if (filteredProducts.length === 0) return;
         e.preventDefault();
-        setSelectedProductIndex((prev) => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
+        setSelectedProductIndex((prev) =>
+          prev < filteredProducts.length - 1 ? prev + 1 : 0
+        );
       } else if (e.key === "ArrowUp") {
-        if (!showAutocomplete || filteredProducts.length === 0) return;
+        if (filteredProducts.length === 0) return;
         e.preventDefault();
-        setSelectedProductIndex((prev) => (prev > 0 ? prev - 1 : 0));
+        setSelectedProductIndex((prev) =>
+          prev > 0 ? prev - 1 : filteredProducts.length - 1
+        );
       } else if (e.key === "Enter") {
         e.preventDefault();
 
@@ -2124,13 +2128,14 @@ export default function SalesTerminal() {
                 </div>
               ) : (
                 <table className="w-full text-sm border-collapse">
-                  <tbody>
-                    {filteredProducts.map((product) => {
+                  <tbody ref={autocompleteListRef}>
+                    {filteredProducts.map((product, index) => {
                       const inCart = cart.find((c) => c.product.id === product.id && !c.variation);
+                      const isKeyboardSelected = showAutocomplete && index === selectedProductIndex;
                       return (
                         <tr
                           key={product.id}
-                          className={`border-b cursor-pointer transition-colors ${inCart ? "bg-blue-50 hover:bg-blue-100" : product.quantity <= 0 ? "opacity-60 hover:bg-red-50/40" : "hover:bg-green-50/50"}`}
+                          className={`autocomplete-item border-b cursor-pointer transition-colors ${isKeyboardSelected ? "bg-amber-100 hover:bg-amber-100" : inCart ? "bg-blue-50 hover:bg-blue-100" : product.quantity <= 0 ? "opacity-60 hover:bg-red-50/40" : "hover:bg-green-50/50"}`}
                           onClick={() => addToCart(product)}
                         >
                           <td className="px-3 py-1.5">

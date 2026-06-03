@@ -16,7 +16,7 @@ from app.models.user import User
 from app.models.customer import Customer, CustomerNote, CustomerPayment
 from app.models.sale import Sale
 from app.models.pos_return import PosReturn
-from app.models.accounting import JournalLine
+from app.models.accounting import JournalEntry, JournalLine
 from app.schemas import customer as customer_schema
 from app.services import accounting as accounting_service
 
@@ -849,7 +849,7 @@ def delete_customer_payment(
     payment_id: int,
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
-    """Delete a customer payment and reverse its effect on the outstanding balance."""
+    """Delete a customer payment and reverse its ledger and balance impact."""
     customer = db.query(Customer).filter(Customer.id == id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -861,9 +861,51 @@ def delete_customer_payment(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    # Remove the display record only. The journal entry is kept so the
-    # outstanding balance is not affected — this is an archive/display removal.
+    # Remove linked ledger entries so deleting history also reverses AR impact.
+    linked_entries = db.query(JournalEntry).filter(
+        JournalEntry.source_type == "customer_payment",
+        JournalEntry.source_id == payment.id,
+    ).all()
+
+    if linked_entries:
+        for entry in linked_entries:
+            db.delete(entry)
+    else:
+        # Legacy fallback: some historical rows were not linked by payment.id.
+        # Post a reversing entry so deleting payment history always reverses udhar.
+        accounting_service.create_journal_entry(
+            db=db,
+            description=f"Reversal: deleted customer payment #{payment.id}",
+            lines=[
+                {
+                    "account_code": accounting_service.SYSTEM_ACCOUNTS["ACCOUNTS_RECEIVABLE"]["code"],
+                    "debit": float(payment.amount or 0.0),
+                    "credit": 0.0,
+                    "customer_id": id,
+                },
+                {
+                    "account_code": accounting_service.get_payment_account_code(payment.payment_method),
+                    "debit": 0.0,
+                    "credit": float(payment.amount or 0.0),
+                    "customer_id": id,
+                },
+            ],
+            source_type="customer_payment_reversal",
+            source_id=payment.id,
+            created_by=current_user.id if current_user else None,
+            entry_date=now_pkt(),
+        )
+
     db.delete(payment)
+
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db,
+        customer.id,
+        customer.opening_balance or 0.0,
+    )
+    customer.updated_at = now_pkt()
+    db.add(customer)
+
     db.commit()
     return {"message": "Payment deleted successfully"}
 

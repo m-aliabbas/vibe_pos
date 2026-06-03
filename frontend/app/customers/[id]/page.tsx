@@ -1888,26 +1888,12 @@ function AllPaymentsTab({ customerId, customerPayments, onRefresh }: { customerI
           <DialogHeader>
             <DialogTitle>Delete Payment</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Are you sure you want to remove this payment from history? The outstanding balance will not be affected.</p>
+          <p className="text-sm text-muted-foreground">Are you sure you want to remove this payment from history? This will recalculate the customer balance and ledger.</p>
           <div className="flex justify-end gap-2 mt-4">
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
               {deleting ? 'Deleting...' : 'Delete'}
             </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Note Confirm Dialog */}
-      <Dialog open={deleteNoteDialogOpen} onOpenChange={setDeleteNoteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Note</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">Are you sure you want to delete this note? This cannot be undone.</p>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="outline" onClick={() => setDeleteNoteDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDeleteNote}>Delete</Button>
           </div>
         </DialogContent>
       </Dialog>

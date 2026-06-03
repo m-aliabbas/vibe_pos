@@ -93,6 +93,7 @@ export default function VendorDetailsPage() {
     const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentReferenceNote, setPaymentReferenceNote] = useState('');
+    const [vendorLevelPayment, setVendorLevelPayment] = useState(true);
     const [paymentResult, setPaymentResult] = useState<any>(null);
     const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
     const [receiptData, setReceiptData] = useState<{
@@ -115,6 +116,7 @@ export default function VendorDetailsPage() {
     const [deletePaymentId, setDeletePaymentId] = useState<number | null>(null);
     const [deletePaymentDialogOpen, setDeletePaymentDialogOpen] = useState(false);
     const [deletingPayment, setDeletingPayment] = useState(false);
+    const [deletingVendor, setDeletingVendor] = useState(false);
     const [activeTab, setActiveTab] = useState('purchases');
     const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
     const [ledgerStartDate, setLedgerStartDate] = useState('');
@@ -178,6 +180,7 @@ export default function VendorDetailsPage() {
             const response = await api.post(`/vendors/${id}/payment`, {
                 amount: parseFloat(paymentAmount),
                 reference_note: trimmedReferenceNote || undefined,
+                vendor_level: vendorLevelPayment,
             });
             setPaymentResult(response.data);
             setPaymentAmount('');
@@ -227,6 +230,7 @@ export default function VendorDetailsPage() {
         setPaymentResult(null);
         setPaymentAmount('');
         setPaymentReferenceNote('');
+        setVendorLevelPayment(true);
     };
 
     const handleVendorPaymentEditSave = async () => {
@@ -258,6 +262,20 @@ export default function VendorDetailsPage() {
             console.error("Failed to delete vendor payment", err);
         } finally {
             setDeletingPayment(false);
+        }
+    };
+
+    const handleDeleteVendor = async () => {
+        if (!id) return;
+        setDeletingVendor(true);
+        try {
+            await api.delete(`/vendors/${id}`);
+            router.push('/vendors');
+        } catch (error: any) {
+            console.error("Failed to delete vendor", error);
+            alert(error?.response?.data?.detail || "Failed to delete vendor");
+        } finally {
+            setDeletingVendor(false);
         }
     };
 
@@ -795,7 +813,7 @@ export default function VendorDetailsPage() {
                                 <DialogHeader>
                                     <DialogTitle>Make Payment to {vendor.name}</DialogTitle>
                                     <DialogDescription>
-                                        Enter payment amount. It will be recorded at vendor-ledger level without auto-distributing across purchases.
+                                        Enter payment amount and choose whether to post at vendor-ledger level or allocate across purchases.
                                     </DialogDescription>
                                 </DialogHeader>
                                 {!paymentResult ? (
@@ -815,8 +833,25 @@ export default function VendorDetailsPage() {
                                                     </div>
                                                 )}
                                                 <p className="text-xs text-blue-700">
-                                                    ℹ️ This payment is recorded at vendor level (ledger) to avoid ambiguous auto-distribution across purchases.
+                                                    {vendorLevelPayment
+                                                        ? 'ℹ️ Vendor-level mode posts directly to vendor ledger and keeps extra amount as advance credit.'
+                                                        : 'ℹ️ Purchase-level mode allocates payment against open purchases and does not create vendor advance credit.'}
                                                 </p>
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="payment-mode">Payment Mode</Label>
+                                                <Select
+                                                    value={vendorLevelPayment ? 'vendor' : 'purchase'}
+                                                    onValueChange={(value) => setVendorLevelPayment(value === 'vendor')}
+                                                >
+                                                    <SelectTrigger id="payment-mode">
+                                                        <SelectValue placeholder="Select payment mode" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="vendor">Vendor Level (keep extra as advance)</SelectItem>
+                                                        <SelectItem value="purchase">Purchase Level (auto-allocate purchases)</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
                                             </div>
                                             <div className="grid gap-2">
                                                 <Label htmlFor="amount">Payment Amount (Rs)</Label>
@@ -931,7 +966,9 @@ export default function VendorDetailsPage() {
                                                     </div>
                                                 ) : (
                                                     <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-md">
-                                                        No automatic purchase allocation performed for this payment.
+                                                        {paymentResult.mode === 'vendor_level'
+                                                            ? 'No automatic purchase allocation performed for vendor-level payment.'
+                                                            : 'No purchase rows needed allocation for this payment.'}
                                                     </p>
                                                 )}
                                             </div>
@@ -1030,9 +1067,27 @@ export default function VendorDetailsPage() {
                             </div>
                         </DialogContent>
                     </Dialog>
-                    <Button variant="destructive" disabled title="Delete disabled for safety">
-                        <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button variant="destructive">
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Vendor</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    This will permanently delete this vendor if it has no linked purchases or ledger entries.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel disabled={deletingVendor}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDeleteVendor} disabled={deletingVendor}>
+                                    {deletingVendor ? 'Deleting...' : 'Delete Vendor'}
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 </div>
             </div>
 
@@ -1268,7 +1323,7 @@ export default function VendorDetailsPage() {
                     <DialogHeader>
                         <DialogTitle>Delete Payment</DialogTitle>
                     </DialogHeader>
-                    <p className="text-sm text-muted-foreground">Are you sure you want to remove this payment from history? The outstanding balance will not be affected.</p>
+                    <p className="text-sm text-muted-foreground">Deleting this payment will reverse its ledger impact and update balances.</p>
                     <div className="flex justify-end gap-2 mt-4">
                         <Button variant="outline" onClick={() => setDeletePaymentDialogOpen(false)}>Cancel</Button>
                         <Button variant="destructive" onClick={handleVendorPaymentDelete} disabled={deletingPayment}>

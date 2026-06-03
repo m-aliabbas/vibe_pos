@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from app.api import deps
 from app.models.vendor import Vendor
-from app.models.purchase import Purchase
+from app.models.purchase import Purchase, PurchaseStatus
 from app.models.accounting import JournalEntry, JournalLine, Account
 from app.schemas import vendor as vendor_schema
 from app.services import accounting as accounting_service
@@ -278,6 +278,34 @@ def update_vendor(
     return vendor
 
 
+@router.delete("/{id}")
+def delete_vendor(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+) -> Any:
+    """Delete a vendor when it has no linked purchases or ledger entries."""
+    vendor = db.query(Vendor).filter(Vendor.id == id).first()
+    if not vendor:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    purchase_count = db.query(func.count(Purchase.id)).filter(Purchase.vendor_id == id).scalar() or 0
+    ledger_count = db.query(func.count(JournalLine.id)).filter(JournalLine.vendor_id == id).scalar() or 0
+
+    if purchase_count > 0 or ledger_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Cannot delete vendor with existing transactions. "
+                "Remove related purchases/ledger entries first."
+            ),
+        )
+
+    db.delete(vendor)
+    db.commit()
+    return {"message": "Vendor deleted successfully"}
+
+
 @router.get("/{id}/report")
 def export_vendor_report(
     *,
@@ -357,7 +385,7 @@ def make_vendor_payment(
     background_tasks: BackgroundTasks,
     current_user = Depends(deps.get_current_user),
 ) -> Any:
-    """Record vendor payment at ledger level without auto-distributing across purchases."""
+    """Record vendor payment at vendor-ledger level or auto-allocate across purchases."""
     vendor = db.query(Vendor).filter(Vendor.id == id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -366,9 +394,88 @@ def make_vendor_payment(
         raise HTTPException(status_code=400, detail="Payment amount must be positive")
 
     reference_note = (payment_in.reference_note or "").strip() or None
+    vendor_level = bool(payment_in.vendor_level)
+    previous_credit = max(0.0, accounting_service.get_vendor_advance_balance(db, id))
+
+    if not vendor_level:
+        remaining_payment = float(payment_in.amount)
+        current_payable = max(0.0, accounting_service.get_vendor_balance(db, id))
+        if remaining_payment > current_payable + 0.005:
+            raise HTTPException(
+                status_code=400,
+                detail="Payment exceeds vendor payable. Enable vendor-level payment to keep extra as advance.",
+            )
+
+        purchases = (
+            db.query(Purchase)
+            .filter(Purchase.vendor_id == id)
+            .order_by(Purchase.created_at.asc(), Purchase.id.asc())
+            .all()
+        )
+
+        updated_purchases = []
+        applied_amount = 0.0
+
+        for purchase in purchases:
+            if remaining_payment <= 0:
+                break
+
+            total_amount = float(purchase.total_amount or 0.0)
+            current_paid = float(purchase.amount_paid or 0.0)
+            due = max(0.0, total_amount - current_paid)
+            if due <= 0:
+                continue
+
+            apply_now = min(remaining_payment, due)
+            purchase.amount_paid = current_paid + apply_now
+            if purchase.amount_paid >= total_amount:
+                purchase.status = PurchaseStatus.PAID
+            elif purchase.amount_paid > 0:
+                purchase.status = PurchaseStatus.PARTIAL
+            else:
+                purchase.status = PurchaseStatus.UNPAID
+
+            db.add(purchase)
+            accounting_service.post_purchase_payment_delta(
+                db=db,
+                purchase=purchase,
+                delta_amount=apply_now,
+                created_by=current_user.id,
+            )
+
+            remaining_payment -= apply_now
+            applied_amount += apply_now
+            updated_purchases.append(
+                {
+                    "purchase_id": purchase.id,
+                    "payment_applied": apply_now,
+                    "new_balance": max(0.0, float(purchase.total_amount or 0.0) - float(purchase.amount_paid or 0.0)),
+                }
+            )
+
+        if remaining_payment > 0.005:
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to allocate full payment to purchases. Enable vendor-level payment for advance credit.",
+            )
+
+        vendor.prepaid_credit = max(0.0, accounting_service.get_vendor_advance_balance(db, id))
+        db.add(vendor)
+        db.commit()
+        db.refresh(vendor)
+
+        return {
+            "message": "Payment applied successfully",
+            "mode": "purchase_level",
+            "total_payment": payment_in.amount,
+            "previous_credit": previous_credit,
+            "prepaid_used": 0.0,
+            "applied_amount": applied_amount,
+            "new_prepaid_credit": vendor.prepaid_credit,
+            "updated_purchases": updated_purchases,
+        }
 
     # Ledger-level payable balance; keep behavior explicit (no auto clearing of existing advance).
-    previous_credit = max(0.0, accounting_service.get_vendor_advance_balance(db, id))
     current_payable = max(0.0, accounting_service.get_vendor_balance(db, id))
     applied_amount = min(float(payment_in.amount), current_payable)
     new_prepaid_from_cash = max(0.0, float(payment_in.amount) - applied_amount)
@@ -401,6 +508,7 @@ def make_vendor_payment(
     
     return {
         "message": "Payment applied successfully",
+        "mode": "vendor_level",
         "total_payment": payment_in.amount,
         "previous_credit": previous_credit,
         "prepaid_used": prepaid_used,
@@ -469,7 +577,7 @@ def get_vendor_payments(
     id: int,
     current_user = Depends(deps.get_current_user),
 ) -> Any:
-    """List all vendor payment journal entries."""
+    """List vendor payment/advance journal entries shown in payment history."""
     vendor = db.query(Vendor).filter(Vendor.id == id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
@@ -477,7 +585,7 @@ def get_vendor_payments(
     entries = (
         db.query(JournalEntry)
         .filter(
-            JournalEntry.source_type == "vendor_payment",
+            JournalEntry.source_type.in_(["vendor_payment", "vendor_advance"]),
             JournalEntry.source_id == id,
         )
         .order_by(JournalEntry.entry_date.desc())
@@ -486,12 +594,9 @@ def get_vendor_payments(
 
     result = []
     for entry in entries:
-        # Amount = sum of debit on accounts_payable line
-        amount = sum(
-            line.debit
-            for line in entry.lines
-            if line.debit > 0
-        )
+        total_debit = sum(float(line.debit or 0.0) for line in entry.lines)
+        total_credit = sum(float(line.credit or 0.0) for line in entry.lines)
+        amount = max(total_debit, total_credit)
         # Extract reference note from description
         note = ""
         if ": " in entry.description:
@@ -502,6 +607,7 @@ def get_vendor_payments(
             "date": entry.entry_date.isoformat() if entry.entry_date else None,
             "reference_note": note,
             "description": entry.description,
+            "source_type": entry.source_type,
         })
     return result
 
@@ -514,23 +620,22 @@ def delete_vendor_payment(
     entry_id: int,
     current_user = Depends(deps.get_current_user),
 ) -> Any:
-    """Hide a vendor payment from history without reversing its effect on the balance."""
+    """Delete a vendor payment/advance entry and reverse its ledger effect."""
     vendor = db.query(Vendor).filter(Vendor.id == id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
 
     entry = db.query(JournalEntry).filter(
         JournalEntry.id == entry_id,
-        JournalEntry.source_type == "vendor_payment",
+        JournalEntry.source_type.in_(["vendor_payment", "vendor_advance"]),
         JournalEntry.source_id == id,
     ).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    # Soft-delete: rename source_type so this entry no longer appears in the
-    # payment history list, but its journal lines remain — outstanding balance unchanged.
-    entry.source_type = "vendor_payment_deleted"
-    db.add(entry)
+    db.delete(entry)
+    vendor.prepaid_credit = max(0.0, accounting_service.get_vendor_advance_balance(db, id))
+    db.add(vendor)
     db.commit()
     return {"message": "Vendor payment deleted successfully"}
 
@@ -551,7 +656,7 @@ def update_vendor_payment(
 
     entry = db.query(JournalEntry).filter(
         JournalEntry.id == entry_id,
-        JournalEntry.source_type == "vendor_payment",
+        JournalEntry.source_type.in_(["vendor_payment", "vendor_advance"]),
         JournalEntry.source_id == id,
     ).first()
     if not entry:
@@ -559,18 +664,24 @@ def update_vendor_payment(
 
     note = (payment_in.reference_note or "").strip()
     note_suffix = f": {note}" if note else ""
-    entry.description = f"Vendor payment settlement #{id}{note_suffix}"
+    if entry.source_type == "vendor_advance":
+        entry.description = f"Vendor advance #{id}{note_suffix}"
+    else:
+        entry.description = f"Vendor payment settlement #{id}{note_suffix}"
     db.add(entry)
     db.commit()
     db.refresh(entry)
 
-    amount = sum(line.debit for line in entry.lines if line.debit > 0)
+    total_debit = sum(float(line.debit or 0.0) for line in entry.lines)
+    total_credit = sum(float(line.credit or 0.0) for line in entry.lines)
+    amount = max(total_debit, total_credit)
     return {
         "id": entry.id,
         "amount": amount,
         "date": entry.entry_date.isoformat() if entry.entry_date else None,
         "reference_note": note,
         "description": entry.description,
+        "source_type": entry.source_type,
     }
 
 
