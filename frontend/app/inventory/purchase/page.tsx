@@ -57,6 +57,7 @@ function PurchasePageContent() {
     const [showProductDropdown, setShowProductDropdown] = useState(false);
     const [selectedProductIndex, setSelectedProductIndex] = useState(0);
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
+    const [allowDecimals, setAllowDecimals] = useState(false);
     const [qty, setQty] = useState('');
     const [cost, setCost] = useState('');
     const [expiry, setExpiry] = useState('');
@@ -285,6 +286,7 @@ function PurchasePageContent() {
     const selectProduct = (product: any) => {
         setSelectedProduct(product);
         setProductSearch(product.name);
+        setAllowDecimals(!!product.allow_decimal_qty);
         setCost(product.cost_price?.toString() || '');
         setRetailPrice(
             product.selling_price !== null && product.selling_price !== undefined
@@ -390,13 +392,24 @@ function PurchasePageContent() {
             return;
         }
 
+        const parsedQty = parseFloat(qty);
+        if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
+            alert('Please enter a valid quantity greater than 0');
+            return;
+        }
+
+        if (!allowDecimals && !Number.isInteger(parsedQty)) {
+            alert('Decimal quantity is disabled. Enable Allow Decimals or enter a whole number.');
+            return;
+        }
+
         const newItem = {
             product_id: selectedProduct.id,
             product_name: selectedProduct.name,
             product_sku: selectedProduct.sku,
-            quantity: parseInt(qty),
+            quantity: parsedQty,
             unit_cost: parseFloat(cost),
-            total_cost: parseInt(qty) * parseFloat(cost),
+            total_cost: parsedQty * parseFloat(cost),
             expiry_date: expiry ? new Date(expiry).toISOString() : null,
             selling_price: updateRetailPrice ? parseFloat(retailPrice) : null,
             update_selling_price: updateRetailPrice
@@ -407,6 +420,7 @@ function PurchasePageContent() {
         // Reset Item Form
         setSelectedProduct(null);
         setProductSearch('');
+        setAllowDecimals(false);
         setQty('');
         setCost('');
         setExpiry('');
@@ -732,9 +746,22 @@ function PurchasePageContent() {
                         </div>
                         <div className="col-span-2">
                             <Label className="mb-2 block">Quantity</Label>
+                            <div className="mb-2 flex items-center gap-2">
+                                <Checkbox
+                                    id="allowPurchaseDecimals"
+                                    checked={allowDecimals}
+                                    onCheckedChange={(checked) => setAllowDecimals(checked as boolean)}
+                                    disabled={!selectedProduct}
+                                />
+                                <Label htmlFor="allowPurchaseDecimals" className="text-xs text-muted-foreground">
+                                    Allow Decimals
+                                </Label>
+                            </div>
                             <Input
                                 ref={quantityInputRef}
                                 type="number"
+                                min={allowDecimals ? "0.001" : "1"}
+                                step={allowDecimals ? "0.01" : "1"}
                                 placeholder="0"
                                 value={qty}
                                 onChange={(e) => setQty(e.target.value)}
