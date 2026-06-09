@@ -316,7 +316,7 @@ export default function PurchaseDetailPage() {
                             {purchase.items.map((item: any) => (
                                 <TableRow key={item.id}>
                                     <TableCell className="font-medium">
-                                        {getProductName(item.product_id)}
+                                        {item.product_name || getProductName(item.product_id)}
                                     </TableCell>
                                     <TableCell className="text-right">{item.quantity}</TableCell>
                                     <TableCell className="text-right">${item.unit_cost.toFixed(2)}</TableCell>

@@ -7,6 +7,12 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  
+   allowedDevOrigins: [
+    "pos.local",
+    "localhost",
+    "*"
+  ]
 };
 
 export default nextConfig;
