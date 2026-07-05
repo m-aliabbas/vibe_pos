@@ -125,35 +125,43 @@ def _convert_utc_to_pakistan(dt: datetime) -> datetime:
 
 
 def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) -> str:
-    """Build a WhatsApp caption that mirrors invoice subtotal/discount totals."""
-    gross_subtotal = 0.0
-    total_item_discount = 0.0
-    for item in sale.items:
-        unit_price = float(getattr(item, "unit_price", 0.0) or 0.0)
-        quantity = float(getattr(item, "quantity", 0.0) or 0.0)
-        gross_subtotal += unit_price * quantity
-        item_discount = getattr(item, "item_discount", 0.0) or 0.0
-        total_item_discount += item_discount
-
-    total_discount = (sale.discount or 0.0) + total_item_discount
-    tax_amount = sale.tax or 0.0
-    delivery_charges = sale.delivery_charges or 0.0
-    caption_total = max(0.0, gross_subtotal - total_discount + tax_amount + delivery_charges)
-
-    net_total = max(0.0, caption_total - refunded_amount)
+    """Build a WhatsApp caption using the same monetary values shown on the invoice image."""
+    total_item_discount = sum(float(getattr(item, "item_discount", 0.0) or 0.0) for item in sale.items)
+    subtotal = float(sale.subtotal or 0.0)
+    discount = float(sale.discount or 0.0)
+    tax_amount = float(sale.tax or 0.0)
+    delivery_charges = float(sale.delivery_charges or 0.0)
+    total_discount = discount + total_item_discount
+    total = float(sale.total or 0.0)
+    amount_paid = float(sale.amount_paid or 0.0)
+    amount_due = float(sale.amount_due or 0.0)
+    net_total = max(0.0, total - float(refunded_amount or 0.0))
 
     lines = [
         f"Invoice #{str(sale.id).zfill(6)}",
         f"Date/Time (GMT+5): {_convert_utc_to_pakistan(sale.created_at).strftime('%Y-%m-%d %H:%M')}",
-        f"Subtotal: RS {gross_subtotal:.2f}",
-        f"Total Discount: RS {total_discount:.2f}",
-        f"Delivery Charges: RS {delivery_charges:.2f}",
-        f"Total: RS {caption_total:.2f}",
+        f"Cashier: {sale.user.username if sale.user else 'N/A'}",
+        f"Customer: {sale.customer_name or 'Walk-in Customer'}",
+        "",
+        f"Subtotal: RS {subtotal:.2f}",
     ]
+
+    if total_discount > 0:
+        lines.append(f"Discount: -RS {total_discount:.2f}")
+    if tax_amount > 0:
+        lines.append(f"Tax: RS {tax_amount:.2f}")
+    if delivery_charges > 0:
+        lines.append(f"Delivery: RS {delivery_charges:.2f}")
+
+    lines.append(f"Total: RS {total:.2f}")
 
     if refunded_amount > 0:
         lines.append(f"Refunded: -RS {refunded_amount:.2f}")
         lines.append(f"Net Total: RS {net_total:.2f}")
+
+    lines.append(f"Amount Paid: RS {amount_paid:.2f}")
+    if amount_due > 0:
+        lines.append(f"Outstanding (Udhar): RS {amount_due:.2f}")
 
     lines.append("Thank you for your business!")
     return "\n".join(lines)
