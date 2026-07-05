@@ -124,16 +124,17 @@ export default function SalesHistory() {
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 100;
+  const SALES_FETCH_PAGE_SIZE = 500;
 
-  // Calculate revenue by payment method
-  const getRevenueByPaymentMethod = () => {
+  // Calculate revenue by payment method for the currently visible data set
+  const getRevenueByPaymentMethod = (salesData: Sale[]) => {
     const breakdown = {
       cash: 0,
       card: 0,
       mobile: 0,
       other: 0,
     };
-    sales.forEach((sale) => {
+    salesData.forEach((sale) => {
       const method = sale.payment_method.toLowerCase();
       if (method in breakdown) {
         breakdown[method as keyof typeof breakdown] += sale.total;
@@ -211,11 +212,34 @@ export default function SalesHistory() {
   const fetchSales = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/sales/", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSales(response.data);
-      setFilteredSales(response.data);
+      const allSales: Sale[] = [];
+      let skip = 0;
+
+      while (true) {
+        const response = await api.get("/sales/", {
+          headers: { Authorization: `Bearer ${token}` },
+          params: {
+            skip,
+            limit: SALES_FETCH_PAGE_SIZE,
+          },
+        });
+
+        const pageData: Sale[] = response.data || [];
+        if (pageData.length === 0) {
+          break;
+        }
+
+        allSales.push(...pageData);
+
+        if (pageData.length < SALES_FETCH_PAGE_SIZE) {
+          break;
+        }
+
+        skip += SALES_FETCH_PAGE_SIZE;
+      }
+
+      setSales(allSales);
+      setFilteredSales(allSales);
 
       const returnsRes = await api.get("/returns/", {
         headers: { Authorization: `Bearer ${token}` },
@@ -424,16 +448,16 @@ export default function SalesHistory() {
       <div className="shrink-0 grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card className="px-4 py-3">
           <p className="text-sm text-muted-foreground">Total Sales</p>
-          <p className="text-2xl font-bold">{sales.length}</p>
+          <p className="text-2xl font-bold">{filteredSales.length}</p>
         </Card>
         <Card className="px-4 py-3">
           <p className="text-sm text-muted-foreground">Total Revenue</p>
           <p className="text-2xl font-bold text-primary">
-            rs {sales.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}
+            rs {filteredSales.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}
           </p>
         </Card>
         {(() => {
-          const breakdown = getRevenueByPaymentMethod();
+          const breakdown = getRevenueByPaymentMethod(filteredSales);
           return (
             <>
               <Card className="px-4 py-3 bg-green-50">

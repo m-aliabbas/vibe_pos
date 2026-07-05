@@ -22,22 +22,45 @@ import { formatPakistanDateTime } from "@/lib/utils";
 
 interface SaleItem {
   id: number;
+  purchase_item_id?: number;
   product_id: number;
   product_name?: string | null;
   quantity: number;
   unit: string;
   unit_price: number;
+  item_discount?: number;
   total_price: number;
+  variation_id?: number | null;
   variation_attributes?: Record<string, string> | null;
 }
 
 interface Sale {
   id: number;
+  source_type?: "sale" | "purchase";
+  vendor_id?: number | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   created_at: string;
   total: number;
   items: SaleItem[];
+}
+
+interface PurchaseItemApi {
+  id: number;
+  product_id: number;
+  product_name?: string | null;
+  quantity: number;
+  unit_cost: number;
+  total_cost: number;
+  variation_id?: number | null;
+}
+
+interface PurchaseApi {
+  id: number;
+  vendor_id: number;
+  created_at: string;
+  total_amount: number;
+  items: PurchaseItemApi[];
 }
 
 interface ReturnLine {
@@ -49,15 +72,36 @@ interface ReturnLine {
   returned: number;
 }
 
+interface ReturnApiItem {
+  sale_item_id?: number;
+  purchase_item_id?: number;
+  quantity?: number;
+}
+
+interface ReturnApiRecord {
+  items?: ReturnApiItem[];
+}
+
+const getLineAmounts = (line: ReturnLine) => {
+  const qty = line.quantity || 0;
+  const gross = (line.sale_item.unit_price || 0) * qty;
+  const saleQty = line.sale_item.quantity || 0;
+  const perUnitDiscount = saleQty > 0 ? (line.sale_item.item_discount || 0) / saleQty : 0;
+  const discount = perUnitDiscount * qty;
+  const refund = Math.max(0, gross - discount);
+  return { gross, discount, refund };
+};
+
 export default function CreateReturnPage() {
   const router = useRouter();
   const { token, isLoading } = useAuth();
+  const [returnType, setReturnType] = useState<"sale" | "purchase">("sale");
   const [saleSearch, setSaleSearch] = useState("");
   const [saleResults, setSaleResults] = useState<Sale[]>([]);
   const [saleLoading, setSaleLoading] = useState(false);
+  const [purchaseLookupLoading, setPurchaseLookupLoading] = useState(false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
-  const [returnedBySaleItem, setReturnedBySaleItem] = useState<{ [key: number]: number }>({});
   const saleSearchRequestIdRef = useRef(0);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -67,6 +111,11 @@ export default function CreateReturnPage() {
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
+    if (returnType !== "sale") {
+      setSaleResults([]);
+      return;
+    }
+
     if (!saleSearch.trim()) {
       setSaleResults([]);
       return;
@@ -77,7 +126,7 @@ export default function CreateReturnPage() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [saleSearch, token]);
+  }, [saleSearch, token, returnType]);
 
   const fetchSales = async (searchTerm: string) => {
     const requestId = ++saleSearchRequestIdRef.current;
@@ -109,18 +158,16 @@ export default function CreateReturnPage() {
         headers: { Authorization: `Bearer ${token}` },
         params: { sale_id: saleId },
       });
-      const returnsData = returnsRes.data || [];
+      const returnsData: ReturnApiRecord[] = returnsRes.data || [];
       const returnedMap: { [key: number]: number } = {};
-      returnsData.forEach((ret: any) => {
-        (ret.items || []).forEach((item: any) => {
+      returnsData.forEach((ret) => {
+        (ret.items || []).forEach((item) => {
           if (item.sale_item_id) {
             returnedMap[item.sale_item_id] =
               (returnedMap[item.sale_item_id] || 0) + (item.quantity || 0);
           }
         });
       });
-      setReturnedBySaleItem(returnedMap);
-
       const sale: Sale = response.data;
       setSelectedSale(sale);
       setCustomerName(sale.customer_name || "");
@@ -137,6 +184,78 @@ export default function CreateReturnPage() {
       );
     } catch (error) {
       console.error("Failed to fetch sale:", error);
+    }
+  };
+
+  const selectPurchase = async (purchaseId: number) => {
+    try {
+      setPurchaseLookupLoading(true);
+      const purchaseRes = await api.get(`/purchases/${purchaseId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const purchase: PurchaseApi = purchaseRes.data;
+
+      const vendorRes = await api.get(`/vendors/${purchase.vendor_id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const vendor = vendorRes.data;
+
+      const returnsRes = await api.get("/returns/", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { purchase_id: purchaseId },
+      });
+      const returnsData: ReturnApiRecord[] = returnsRes.data || [];
+      const returnedMap: { [key: number]: number } = {};
+      returnsData.forEach((ret) => {
+        (ret.items || []).forEach((item) => {
+          const lineId = item.purchase_item_id || item.sale_item_id;
+          if (lineId) {
+            returnedMap[lineId] = (returnedMap[lineId] || 0) + (item.quantity || 0);
+          }
+        });
+      });
+      const purchaseAsSale: Sale = {
+        id: purchase.id,
+        source_type: "purchase",
+        vendor_id: purchase.vendor_id,
+        customer_name: vendor?.name || null,
+        customer_phone: vendor?.phone || null,
+        created_at: purchase.created_at,
+        total: purchase.total_amount || 0,
+        items: (purchase.items || []).map((item) => ({
+          id: item.id,
+          purchase_item_id: item.id,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit: "unit",
+          unit_price: item.unit_cost,
+          item_discount: 0,
+          total_price: item.total_cost,
+          variation_id: item.variation_id ?? null,
+          variation_attributes: null,
+        })),
+      };
+
+      setSelectedSale(purchaseAsSale);
+      setSaleSearch(String(purchase.id));
+      setCustomerName(vendor?.name || "");
+      setCustomerPhone(vendor?.phone || "");
+      setReturnLines(
+        (purchaseAsSale.items || []).map((item) => ({
+          returned: returnedMap[item.id] || 0,
+          remaining: Math.max(0, item.quantity - (returnedMap[item.id] || 0)),
+          sale_item: item,
+          quantity: Math.max(1, Math.min(item.quantity, Math.max(0, item.quantity - (returnedMap[item.id] || 0)))),
+          restocked: true,
+          selected: false,
+        }))
+      );
+    } catch (error) {
+      console.error("Failed to fetch purchase:", error);
+      alert("Failed to fetch purchase. Enter a valid purchase ID.");
+    } finally {
+      setPurchaseLookupLoading(false);
     }
   };
 
@@ -183,23 +302,43 @@ export default function CreateReturnPage() {
       return;
     }
 
+    const isPurchaseReturn = selectedSale.source_type === "purchase";
     setProcessing(true);
     try {
+      const payload = isPurchaseReturn
+        ? {
+            return_type: "purchase",
+            purchase_id: selectedSale.id,
+            customer_name: customerName || selectedSale.customer_name || null,
+            customer_phone: customerPhone || selectedSale.customer_phone || null,
+            reason: returnReason,
+            settlement_mode: settlementMode,
+            notes: returnNotes || null,
+            items: selectedLines.map((line) => ({
+              purchase_item_id: line.sale_item.purchase_item_id || line.sale_item.id,
+              product_id: line.sale_item.product_id,
+              quantity_returned: line.quantity,
+              unit_cost: line.sale_item.unit_price,
+              remove_from_inventory: line.restocked,
+            })),
+          }
+        : {
+            sale_id: selectedSale.id,
+            customer_name: customerName || selectedSale.customer_name || null,
+            customer_phone: customerPhone || selectedSale.customer_phone || null,
+            reason: returnReason,
+            settlement_mode: settlementMode,
+            notes: returnNotes || null,
+            items: selectedLines.map((line) => ({
+              sale_item_id: line.sale_item.id,
+              quantity_returned: line.quantity,
+              restocked: line.restocked,
+            })),
+          };
+
       await api.post(
         "/returns/",
-        {
-          sale_id: selectedSale.id,
-          customer_name: customerName || selectedSale.customer_name || null,
-          customer_phone: customerPhone || selectedSale.customer_phone || null,
-          reason: returnReason,
-          settlement_mode: settlementMode,
-          notes: returnNotes || null,
-          items: selectedLines.map((line) => ({
-            sale_item_id: line.sale_item.id,
-            quantity_returned: line.quantity,
-            restocked: line.restocked,
-          })),
-        },
+        payload,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -207,9 +346,10 @@ export default function CreateReturnPage() {
 
       alert("Return processed successfully!");
       router.push("/returns");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const apiError = error as { response?: { data?: { detail?: string } } };
       console.error("Failed to process return:", error);
-      alert(error.response?.data?.detail || "Failed to process return");
+      alert(apiError.response?.data?.detail || "Failed to process return");
     } finally {
       setProcessing(false);
     }
@@ -236,7 +376,7 @@ export default function CreateReturnPage() {
               <RotateCcw className="h-8 w-8" />
               Process Return
             </h1>
-            <p className="text-muted-foreground">Select a sale/invoice and return items</p>
+            <p className="text-muted-foreground">Process customer sale returns or vendor purchase returns</p>
           </div>
         </div>
 
@@ -244,23 +384,71 @@ export default function CreateReturnPage() {
           {/* Left Side - Sale Search & Selection */}
           <Card>
             <CardHeader>
-              <CardTitle>Search Sale / Invoice</CardTitle>
+              <CardTitle>Search Source Document</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Return Type *</Label>
+                <Select
+                  value={returnType}
+                  onValueChange={(value) => {
+                    const nextType = value as "sale" | "purchase";
+                    setReturnType(nextType);
+                    setSelectedSale(null);
+                    setReturnLines([]);
+                    setSaleResults([]);
+                    setSaleSearch("");
+                    setCustomerName("");
+                    setCustomerPhone("");
+                    setSettlementMode(nextType === "sale" ? "auto" : "added_to_vendor_credit");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sale">Customer Return (Sale Invoice)</SelectItem>
+                    <SelectItem value="purchase">Vendor Return (Purchase Invoice)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by invoice/sale id, customer name, or phone..."
+                  placeholder={
+                    returnType === "sale"
+                      ? "Search by invoice/sale id, customer name, or phone..."
+                      : "Enter purchase invoice ID..."
+                  }
                   value={saleSearch}
                   onChange={(e) => setSaleSearch(e.target.value)}
                   className="pl-9"
                   autoFocus
                 />
-                {saleLoading && (
+                {returnType === "sale" && saleLoading && (
                   <div className="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-b-2 border-primary" />
                 )}
+                {returnType === "purchase" && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="absolute right-1 top-1"
+                    disabled={!saleSearch.trim() || purchaseLookupLoading}
+                    onClick={() => {
+                      const purchaseId = parseInt(saleSearch.trim(), 10);
+                      if (!Number.isFinite(purchaseId) || purchaseId <= 0) {
+                        alert("Enter a valid purchase ID");
+                        return;
+                      }
+                      void selectPurchase(purchaseId);
+                    }}
+                  >
+                    {purchaseLookupLoading ? "Loading..." : "Load"}
+                  </Button>
+                )}
 
-                {saleResults.length > 0 && (
+                {returnType === "sale" && saleResults.length > 0 && (
                   <div className="absolute z-50 w-full mt-1 bg-background border rounded-lg shadow-lg max-h-80 overflow-y-auto">
                     {saleResults.map((sale) => (
                       <div
@@ -274,7 +462,7 @@ export default function CreateReturnPage() {
                       >
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <p className="font-medium">Invoice #{sale.id}</p>
+                            <p className="font-medium">Sale Invoice #{sale.id}</p>
                             <p className="text-sm text-muted-foreground">
                               {sale.customer_name || "Walk-in"}
                               {sale.customer_phone ? ` • ${sale.customer_phone}` : ""}
@@ -295,9 +483,11 @@ export default function CreateReturnPage() {
                 <div className="border rounded-lg p-4 text-sm">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">Selected Invoice #{selectedSale.id}</p>
+                      <p className="font-medium">
+                        Selected {selectedSale.source_type === "purchase" ? "Purchase" : "Sale"} #{selectedSale.id}
+                      </p>
                       <p className="text-muted-foreground">
-                        {selectedSale.customer_name || "Walk-in"}
+                        {selectedSale.customer_name || (selectedSale.source_type === "purchase" ? "Unknown vendor" : "Walk-in")}
                         {selectedSale.customer_phone ? ` • ${selectedSale.customer_phone}` : ""}
                       </p>
                     </div>
@@ -307,8 +497,12 @@ export default function CreateReturnPage() {
               ) : (
                 <div className="border rounded-lg p-8 text-center text-muted-foreground">
                   <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No sale selected</p>
-                  <p className="text-sm">Search and select an invoice to continue</p>
+                  <p>No document selected</p>
+                  <p className="text-sm">
+                    {returnType === "sale"
+                      ? "Search and select a sale invoice to continue"
+                      : "Enter and load a purchase invoice ID to continue"}
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -350,11 +544,21 @@ export default function CreateReturnPage() {
                                 </p>
                               )}
                               <p className="text-xs text-muted-foreground">
-                                Sold: {line.sale_item.quantity} {line.sale_item.unit} • rs {line.sale_item.unit_price.toFixed(2)}
+                                {selectedSale?.source_type === "purchase" ? "Purchased" : "Sold"}: {line.sale_item.quantity} {line.sale_item.unit} • rs {line.sale_item.unit_price.toFixed(2)}
                               </p>
+                              {selectedSale?.source_type !== "purchase" && (
+                                <p className="text-xs text-muted-foreground">
+                                  Item discount on sale: rs {(line.sale_item.item_discount || 0).toFixed(2)}
+                                </p>
+                              )}
                               <p className="text-xs text-muted-foreground">
                                 Returned: {line.returned} • Remaining: {line.remaining}
                               </p>
+                              {line.selected && (
+                                <p className="text-xs text-muted-foreground">
+                                  Return amount: rs {getLineAmounts(line).gross.toFixed(2)} • Discount: -rs {getLineAmounts(line).discount.toFixed(2)} • Refund: rs {getLineAmounts(line).refund.toFixed(2)}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -379,7 +583,7 @@ export default function CreateReturnPage() {
                                 onChange={() => toggleRestocked(line.sale_item.id)}
                                 disabled={line.remaining === 0 || !line.selected}
                               />
-                              Restock
+                              {selectedSale?.source_type === "purchase" ? "Remove Stock" : "Restock"}
                             </label>
                           </div>
                         </div>
@@ -391,16 +595,16 @@ export default function CreateReturnPage() {
 
               {/* Customer Info */}
               <div className="space-y-2">
-                <Label>Customer Name (Optional)</Label>
+                <Label>{selectedSale?.source_type === "purchase" ? "Vendor Name (Optional)" : "Customer Name (Optional)"}</Label>
                 <Input
-                  placeholder="Enter customer name"
+                  placeholder={selectedSale?.source_type === "purchase" ? "Enter vendor name" : "Enter customer name"}
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>Customer Phone (Optional)</Label>
+                <Label>{selectedSale?.source_type === "purchase" ? "Vendor Phone (Optional)" : "Customer Phone (Optional)"}</Label>
                 <Input
                   placeholder="Enter phone number"
                   value={customerPhone}
@@ -436,13 +640,25 @@ export default function CreateReturnPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Auto (Adjust due first, rest cash)</SelectItem>
-                    <SelectItem value="paid_to_customer">Paid to Customer (Cash)</SelectItem>
-                    <SelectItem value="added_to_account">Added to Account (Prepaid Credit)</SelectItem>
+                    {selectedSale?.source_type === "purchase" ? (
+                      <>
+                        <SelectItem value="auto">Auto (Reduce Payable, remainder Vendor Credit)</SelectItem>
+                        <SelectItem value="added_to_vendor_credit">Added to Vendor Credit</SelectItem>
+                        <SelectItem value="paid_to_business">Paid to Business (Cash In)</SelectItem>
+                      </>
+                    ) : (
+                      <>
+                        <SelectItem value="auto">Auto (Adjust due first, rest cash)</SelectItem>
+                        <SelectItem value="paid_to_customer">Paid to Customer (Cash)</SelectItem>
+                        <SelectItem value="added_to_account">Added to Account (Prepaid Credit)</SelectItem>
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  "Added to Account" credits the customer ledger (can become prepaid). "Paid to Customer" gives full cash refund.
+                  {selectedSale?.source_type === "purchase"
+                    ? '"Auto" clears vendor payable first, then keeps any remainder as vendor credit. "Paid to Business" records full cash received.'
+                    : '"Added to Account" credits the customer ledger (can become prepaid). "Paid to Customer" gives full cash refund.'}
                 </p>
               </div>
 
@@ -474,9 +690,22 @@ export default function CreateReturnPage() {
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Adding to Stock:</span>
+                  <span className="text-muted-foreground">
+                    {selectedSale?.source_type === "purchase" ? "Removing from Stock:" : "Adding to Stock:"}
+                  </span>
                   <span className="font-semibold">
                     {returnLines.filter((line) => line.selected && line.restocked).length} items
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {selectedSale?.source_type === "purchase" ? "Estimated Vendor Credit:" : "Estimated Refund:"}
+                  </span>
+                  <span className="font-semibold">
+                    rs {returnLines
+                      .filter((line) => line.selected)
+                      .reduce((sum, line) => sum + getLineAmounts(line).refund, 0)
+                      .toFixed(2)}
                   </span>
                 </div>
               </div>

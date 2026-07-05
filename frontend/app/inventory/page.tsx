@@ -136,6 +136,7 @@ export default function InventoryPage() {
     const [editOpen, setEditOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [adminDeletePassword, setAdminDeletePassword] = useState('');
     const [batchModalProduct, setBatchModalProduct] = useState<Product | null>(null);
     const [bulkOpen, setBulkOpen] = useState(false);
     const [bulkFile, setBulkFile] = useState<File | null>(null);
@@ -372,20 +373,35 @@ export default function InventoryPage() {
 
     const openDeleteDialog = (product: Product) => {
         setSelectedProduct(product);
+        setAdminDeletePassword('');
         setDeleteDialogOpen(true);
     };
 
     const handleDeleteProduct = async () => {
         if (!selectedProduct) return;
+        if (!adminDeletePassword.trim()) {
+            alert("Admin password is required to delete a product.");
+            return;
+        }
 
         try {
-            await api.delete(`/products/${selectedProduct.id}`);
+            await api.delete(`/products/${selectedProduct.id}`, {
+                data: {
+                    admin_password: adminDeletePassword,
+                    force_delete_used: true,
+                },
+            });
             setDeleteDialogOpen(false);
             setSelectedProduct(null);
+            setAdminDeletePassword('');
             fetchProducts();
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to delete product", error);
-            alert("Failed to delete product.");
+            const detail =
+                typeof error === 'object' && error !== null && 'response' in error
+                    ? (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
+                    : undefined;
+            alert(detail || "Failed to delete product.");
         }
     };
 
@@ -1063,6 +1079,17 @@ export default function InventoryPage() {
                             <Label htmlFor="edit-allow-decimal-qty">Allow decimal quantity (points, e.g. 0.5)</Label>
                         </div>
 
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-base-unit">Base Unit</Label>
+                            <Input
+                                id="edit-base-unit"
+                                value={baseUnit}
+                                onChange={e => setBaseUnit(e.target.value)}
+                                placeholder="piece, kg, liter"
+                            />
+                            <p className="text-xs text-gray-500">Unit for inventory tracking</p>
+                        </div>
+
                         {/* Selling Units */}
                         <div className="border-t pt-4">
                             <div className="flex items-center gap-2 mb-2">
@@ -1337,9 +1364,20 @@ export default function InventoryPage() {
                             This action cannot be undone.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-2">
+                        <Label htmlFor="delete-admin-password">Confirm admin password</Label>
+                        <Input
+                            id="delete-admin-password"
+                            type="password"
+                            value={adminDeletePassword}
+                            onChange={(e) => setAdminDeletePassword(e.target.value)}
+                            placeholder="Enter admin password"
+                            autoComplete="current-password"
+                        />
+                    </div>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteProduct} className="bg-red-600 hover:bg-red-700">
+                        <AlertDialogCancel onClick={() => setAdminDeletePassword('')}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDeleteProduct} className="bg-red-600 hover:bg-red-700" disabled={!adminDeletePassword.trim()}>
                             Delete Product
                         </AlertDialogAction>
                     </AlertDialogFooter>

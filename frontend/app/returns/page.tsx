@@ -24,6 +24,9 @@ interface ReturnItem {
 
 interface Return {
   id: number;
+  sale_id?: number | null;
+  purchase_id?: number | null;
+  return_type?: "sale" | "direct" | "purchase";
   customer_name?: string;
   customer_phone?: string;
   processed_by_username?: string;
@@ -122,8 +125,14 @@ export default function ReturnsPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <span className="font-semibold">Return #{ret.id}</span>
+                          <Badge variant={ret.return_type === "purchase" ? "default" : "secondary"}>
+                            {ret.return_type === "purchase" ? "Vendor Return" : "Customer Return"}
+                          </Badge>
                           <Badge variant="outline">{ret.reason}</Badge>
                         </div>
+                        <p className="text-sm text-muted-foreground">
+                          {ret.purchase_id ? `Purchase #${ret.purchase_id}` : ret.sale_id ? `Sale #${ret.sale_id}` : "Direct return"}
+                        </p>
                         <p className="text-sm text-muted-foreground">
                           {ret.customer_name || "No customer"} 
                           {ret.customer_phone && ` • ${ret.customer_phone}`}
@@ -165,9 +174,25 @@ export default function ReturnsPage() {
                     </p>
                   </div>
                   <div>
+                    <p className="text-muted-foreground">Return Type</p>
+                    <p className="font-semibold">
+                      {selectedReturn.return_type === "purchase" ? "Vendor Return" : "Customer Return"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Reference</p>
+                    <p className="font-semibold">
+                      {selectedReturn.purchase_id
+                        ? `Purchase #${selectedReturn.purchase_id}`
+                        : selectedReturn.sale_id
+                          ? `Sale #${selectedReturn.sale_id}`
+                          : "Direct"}
+                    </p>
+                  </div>
+                  <div>
                     <p className="text-muted-foreground">Customer</p>
                     <p className="font-semibold">
-                      {selectedReturn.customer_name || "No customer"}
+                      {selectedReturn.customer_name || "N/A"}
                     </p>
                   </div>
                   <div>

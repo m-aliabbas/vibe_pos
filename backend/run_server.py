@@ -105,6 +105,18 @@ import uvicorn
 from dotenv import load_dotenv
 
 
+def log(message: str) -> None:
+    """Print status messages without letting Windows console encoding kill threads."""
+    try:
+        print(message, flush=True)
+    except UnicodeEncodeError:
+        safe = message.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(
+            sys.stdout.encoding or "utf-8",
+            errors="replace",
+        )
+        print(safe, flush=True)
+
+
 def exe_dir() -> Path:
     """Folder where the running executable lives (or this file in dev)."""
     if getattr(sys, "frozen", False):
@@ -139,9 +151,9 @@ def load_env_from_exe_dir() -> None:
     env_path = resolve_resource_path(".env")
     if env_path.exists():
         load_dotenv(env_path, override=True)
-        print(f"✅ Loaded .env from: {env_path}")
+        log(f"Loaded .env from: {env_path}")
     else:
-        print(f"⚠️ .env not found at: {env_path} (continuing with OS env vars)")
+        log(f".env not found at: {env_path} (continuing with OS env vars)")
 
 
 def resolve_data_dir() -> Path:
@@ -190,10 +202,15 @@ def start_mdns(domain: str, ip: str, port: int) -> None:
     Runs in a daemon thread; stops automatically when the process exits.
     """
     try:
-        from zeroconf import Zeroconf, ServiceInfo
+        from zeroconf import ServiceInfo, Zeroconf
     except ImportError:
-        print("⚠️  zeroconf not installed — run: pip install zeroconf")
+        log("zeroconf not installed - run: pip install zeroconf")
         return
+
+    try:
+        from zeroconf import InterfaceChoice
+    except ImportError:
+        InterfaceChoice = None
 
     # Normalise: mDNS names must end with '.'
     fqdn = domain.rstrip(".") + "."
@@ -209,9 +226,29 @@ def start_mdns(domain: str, ip: str, port: int) -> None:
         server=fqdn,
     )
 
-    zc = Zeroconf(interfaces=[ip])
-    zc.register_service(info)
-    print(f"🌐 mDNS: {domain} -> {ip}:{port}  (visible to all LAN devices)")
+    # Windows often has several active adapters (Wi-Fi/Ethernet/VPN/Hyper-V).
+    # Binding Zeroconf to one guessed IP can make the advertisement disappear,
+    # so use all interfaces there and keep the explicit IP on other platforms.
+    interfaces = (
+        InterfaceChoice.All
+        if os.name == "nt" and InterfaceChoice is not None
+        else [ip]
+    )
+
+    try:
+        zc = Zeroconf(interfaces=interfaces)
+    except Exception as e:
+        log(f"mDNS could not bind to {interfaces!r}: {e}")
+        zc = Zeroconf()
+
+    try:
+        zc.register_service(info)
+    except Exception as e:
+        log(f"mDNS registration failed for {domain} on {ip}:{port}: {e}")
+        zc.close()
+        return
+
+    log(f"mDNS: {domain} -> {ip}:{port} (visible to all LAN devices)")
 
     # Block this thread until the process dies (daemon=True handles cleanup)
     try:
@@ -273,7 +310,7 @@ def ensure_legacy_product_columns(db_path: Path) -> None:
         for column in missing:
             col_sql = LEGACY_PRODUCT_COLUMNS[column]
             cur.execute(f"ALTER TABLE products ADD COLUMN {column} {col_sql}")
-            print(f"✅ Added missing products.{column}")
+            log(f"Added missing products.{column}")
 
         if missing:
             conn.commit()
@@ -300,19 +337,19 @@ def ensure_schema_ready() -> Path:
             tables = _get_sqlite_tables(db_path)
             missing = REQUIRED_TABLES - tables
             if missing:
-                print(f"⚠️ DB exists but missing tables: {sorted(missing)}")
+                log(f"DB exists but missing tables: {sorted(missing)}")
                 must_create = True
         except Exception as e:
-            print(f"⚠️ Could not read sqlite db ({db_path}): {e}")
+            log(f"Could not read sqlite db ({db_path}): {e}")
             must_create = True
 
     if must_create:
-        print(f"🛠️ Ensuring schema (create_all) for DB: {db_path}")
+        log(f"Ensuring schema (create_all) for DB: {db_path}")
         # IMPORTANT: Import AFTER DATA_DIR is set so session/engine uses correct path
         from app.db.session import engine
         from app.db.base import Base  # should import all models
         Base.metadata.create_all(bind=engine)
-        print("✅ Schema ready")
+        log("Schema ready")
 
     return db_path
 
@@ -323,6 +360,7 @@ if __name__ == "__main__":
 
     # 1) Load env first
     load_env_from_exe_dir()
+    port = int(os.environ.get("AP_PORT", "8000"))
 
     # 1b) Advertise pos.local on the LAN via mDNS (no client config needed)
     local_ip = get_local_ip()
@@ -345,18 +383,16 @@ if __name__ == "__main__":
     from seed import ensure_seeded
     ensure_seeded()
 
-    port = int(os.environ.get("AP_PORT", "8000"))
-
-    print(f"✅ Starting FastAPI server")
-    print(f"   exe_dir:  {exe_dir()}")
-    print(f"   cwd:      {Path.cwd()}")
-    print(f"   port:     {port}")
-    print(f"   DATA_DIR: {data_dir}")
-    print(f"   DB:       {db_path}")
+    log("Starting FastAPI server")
+    log(f"   exe_dir:  {exe_dir()}")
+    log(f"   cwd:      {Path.cwd()}")
+    log(f"   port:     {port}")
+    log(f"   DATA_DIR: {data_dir}")
+    log(f"   DB:       {db_path}")
 
     try:
         from app.main import app
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
     except Exception as e:
-        print(f"❌ Failed to start server: {e}")
+        log(f"Failed to start server: {e}")
         sys.exit(1)

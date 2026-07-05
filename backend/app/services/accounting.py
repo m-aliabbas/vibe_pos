@@ -439,6 +439,74 @@ def post_return_entry(
     )
 
 
+def post_purchase_return_entry(
+    db: Session,
+    return_record,
+    purchase_id: int,
+    refund_amount: float,
+    payable_reduction: float,
+    vendor_credit: float,
+    cash_refund: float,
+    vendor_id: int,
+    created_by: Optional[int],
+) -> Optional[JournalEntry]:
+    if refund_amount <= 0:
+        return None
+
+    ensure_system_accounts(db)
+
+    lines = [
+        {
+            "account_code": SYSTEM_ACCOUNTS["INVENTORY"]["code"],
+            "debit": 0.0,
+            "credit": refund_amount,
+            "return_id": return_record.id,
+            "purchase_id": purchase_id,
+            "vendor_id": vendor_id,
+        }
+    ]
+
+    if payable_reduction > 0:
+        lines.append({
+            "account_code": SYSTEM_ACCOUNTS["ACCOUNTS_PAYABLE"]["code"],
+            "debit": payable_reduction,
+            "credit": 0.0,
+            "return_id": return_record.id,
+            "purchase_id": purchase_id,
+            "vendor_id": vendor_id,
+        })
+
+    if vendor_credit > 0:
+        lines.append({
+            "account_code": SYSTEM_ACCOUNTS["VENDOR_ADVANCES"]["code"],
+            "debit": vendor_credit,
+            "credit": 0.0,
+            "return_id": return_record.id,
+            "purchase_id": purchase_id,
+            "vendor_id": vendor_id,
+        })
+
+    if cash_refund > 0:
+        lines.append({
+            "account_code": SYSTEM_ACCOUNTS["CASH"]["code"],
+            "debit": cash_refund,
+            "credit": 0.0,
+            "return_id": return_record.id,
+            "purchase_id": purchase_id,
+            "vendor_id": vendor_id,
+        })
+
+    return create_journal_entry(
+        db=db,
+        description=f"Purchase Return #{return_record.id}",
+        lines=lines,
+        source_type="purchase_return",
+        source_id=return_record.id,
+        created_by=created_by,
+        entry_date=return_record.created_at,
+    )
+
+
 def post_customer_payment(
     db: Session,
     customer_id: int,

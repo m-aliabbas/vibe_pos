@@ -4,14 +4,19 @@ from datetime import datetime
 
 class ReturnItemCreate(BaseModel):
     sale_item_id: Optional[int] = None  # Optional now
+    purchase_item_id: Optional[int] = None  # For purchase/vendor returns
     product_id: Optional[int] = None  # Direct product return
     quantity_returned: int = None  # Renamed from quantity_returned for direct returns
     quantity: Optional[int] = None  # Alternative field name
+    unit_cost: Optional[float] = None  # For purchase/vendor returns
     restocked: Optional[bool] = True  # Default: add back to inventory
     add_to_inventory: Optional[bool] = True  # Alternative field name
+    remove_from_inventory: Optional[bool] = None  # For purchase/vendor returns
 
 class ReturnCreate(BaseModel):
     sale_id: Optional[int] = None  # Optional now
+    purchase_id: Optional[int] = None  # For purchase/vendor returns
+    return_type: Optional[str] = "sale"  # sale | direct | purchase
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     reason: str  # "defective", "wrong_item", "customer_changed_mind", "damaged", "expired", "other"
@@ -42,6 +47,8 @@ class ReturnItemResponse(BaseModel):
 class ReturnResponse(BaseModel):
     id: int
     sale_id: Optional[int] = None
+    purchase_id: Optional[int] = None
+    return_type: Optional[str] = "sale"
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     processed_by: int

@@ -124,7 +124,7 @@ def _convert_utc_to_pakistan(dt: datetime) -> datetime:
     return dt
 
 
-def _build_whatsapp_invoice_caption(sale: Sale) -> str:
+def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) -> str:
     """Build a WhatsApp caption that mirrors invoice subtotal/discount totals."""
     gross_subtotal = 0.0
     total_item_discount = 0.0
@@ -136,21 +136,30 @@ def _build_whatsapp_invoice_caption(sale: Sale) -> str:
         total_item_discount += item_discount
 
     total_discount = (sale.discount or 0.0) + total_item_discount
-    caption_total = max(0.0, gross_subtotal - total_discount)
+    tax_amount = sale.tax or 0.0
+    delivery_charges = sale.delivery_charges or 0.0
+    caption_total = max(0.0, gross_subtotal - total_discount + tax_amount + delivery_charges)
+
+    net_total = max(0.0, caption_total - refunded_amount)
 
     lines = [
         f"Invoice #{str(sale.id).zfill(6)}",
         f"Date/Time (GMT+5): {_convert_utc_to_pakistan(sale.created_at).strftime('%Y-%m-%d %H:%M')}",
         f"Subtotal: RS {gross_subtotal:.2f}",
         f"Total Discount: RS {total_discount:.2f}",
+        f"Delivery Charges: RS {delivery_charges:.2f}",
         f"Total: RS {caption_total:.2f}",
     ]
+
+    if refunded_amount > 0:
+        lines.append(f"Refunded: -RS {refunded_amount:.2f}")
+        lines.append(f"Net Total: RS {net_total:.2f}")
 
     lines.append("Thank you for your business!")
     return "\n".join(lines)
 
 
-def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
+def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_amount: float = 0.0) -> None:
     """Render an invoice image with consistent design across OSes."""
     from PIL import ImageDraw
 
@@ -161,7 +170,8 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
 
     # 80mm thermal receipt width
     width = int(80 * mm_to_px)
-    base_height = int(135 * mm_to_px)
+    base_height_mm = 135 + (14 if refunded_amount > 0 else 0)
+    base_height = int(base_height_mm * mm_to_px)
     item_height = len(sale.items) * int(22 * mm_to_px)
     total_height = base_height + item_height
 
@@ -318,6 +328,21 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300) -> None:
     text_width = bbox[2] - bbox[0]
     draw.text((width - text_width - mm(3), y), total_text, fill="black", font=font_lg)
     y += mm(7)
+
+    if refunded_amount > 0:
+        draw.text((mm(3), y), "Refunded", fill="#cc0000", font=font_md)
+        refunded_text = f"-RS {refunded_amount:.2f}"
+        bbox = draw.textbbox((0, 0), refunded_text, font=font_md)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), refunded_text, fill="#cc0000", font=font_md)
+        y += mm(5)
+
+        draw.text((mm(3), y), "Net Total", fill="black", font=font_lg)
+        net_total_text = f"RS {max(0.0, sale.total - refunded_amount):.2f}"
+        bbox = draw.textbbox((0, 0), net_total_text, font=font_lg)
+        text_width = bbox[2] - bbox[0]
+        draw.text((width - text_width - mm(3), y), net_total_text, fill="black", font=font_lg)
+        y += mm(7)
 
     draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
     y += mm(4)
@@ -524,18 +549,25 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
         if not sale:
             print(f"Sale {sale_id} not found")
             return
+        refunded_amount = float(
+            db.query(func.coalesce(func.sum(PosReturn.refund_amount), 0.0))
+            .filter(PosReturn.sale_id == sale_id)
+            .scalar()
+            or 0.0
+        )
+
         # Generate invoice image
         timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         filename = f"invoice_{timestamp}.png"
         file_path = INVOICE_DIR / filename
-        _render_invoice_image(sale, file_path, dpi=300)
+        _render_invoice_image(sale, file_path, dpi=300, refunded_amount=refunded_amount)
         
         # Send to WhatsApp
         whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"
         payload = {
             "phone_number": phone_number,
             "image_url": str(file_path.absolute()),
-            "caption": _build_whatsapp_invoice_caption(sale)
+            "caption": _build_whatsapp_invoice_caption(sale, refunded_amount=refunded_amount)
         }
         
         response = requests.post(
@@ -1180,18 +1212,25 @@ def send_invoice(
         raise HTTPException(status_code=400, detail="Invalid phone number")
     
     try:
+        refunded_amount = float(
+            db.query(func.coalesce(func.sum(PosReturn.refund_amount), 0.0))
+            .filter(PosReturn.sale_id == id)
+            .scalar()
+            or 0.0
+        )
+
         # Generate invoice image
         timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
         filename = f"invoice_{timestamp}.png"
         file_path = INVOICE_DIR / filename
-        _render_invoice_image(sale, file_path, dpi=300)
+        _render_invoice_image(sale, file_path, dpi=300, refunded_amount=refunded_amount)
         
         # Send to WhatsApp API
         whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"
         payload = {
             "phone_number": normalized_phone,
             "image_url": str(file_path.absolute()),
-            "caption": _build_whatsapp_invoice_caption(sale)
+            "caption": _build_whatsapp_invoice_caption(sale, refunded_amount=refunded_amount)
         }
         
         response = requests.post(

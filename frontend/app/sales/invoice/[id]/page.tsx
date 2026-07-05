@@ -164,11 +164,11 @@ export default function InvoicePage() {
         console.error("Failed to fetch users:", err);
       }
 
-      // Fetch customer data if customer_id is present
+      // Fetch customer data if customer_ref_id is present
       let customerData = null;
-      if (saleData.customer_id) {
+      if (saleData.customer_ref_id) {
         try {
-          const customerResponse = await api.get(`/customers/${saleData.customer_id}`);
+          const customerResponse = await api.get(`/customers/${saleData.customer_ref_id}`);
           customerData = customerResponse.data;
         } catch (err) {
           console.error("Failed to fetch customer:", err);
@@ -311,7 +311,7 @@ export default function InvoicePage() {
                   Cashier: {sale.user?.full_name || sale.user?.username || "N/A"}
                 </span>
                 <span className="font-medium">
-                  {sale.customer_name || "Walk-in"}
+                  {sale.customer_name || sale.customer?.name || "Walk-in"}
                 </span>
               </div>
             </div>

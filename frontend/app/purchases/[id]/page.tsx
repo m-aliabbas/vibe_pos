@@ -59,6 +59,7 @@ export default function PurchaseDetailPage() {
     const [priceChangedItems, setPriceChangedItems] = useState<any[]>([]);
     const [priceChangeDialogOpen, setPriceChangeDialogOpen] = useState(false);
     const [priceUpdateSelections, setPriceUpdateSelections] = useState<Record<number, string>>({});
+    const [purchaseProductNamesById, setPurchaseProductNamesById] = useState<Record<number, string>>({});
 
     useEffect(() => {
         if (id) {
@@ -71,6 +72,14 @@ export default function PurchaseDetailPage() {
             // Fetch purchase details
             const purchaseRes = await api.get(`/purchases/${id}`);
             setPurchase(purchaseRes.data);
+            const namesMap = (purchaseRes.data?.items || []).reduce((acc: Record<number, string>, item: any) => {
+                const rawName = item?.product_name || item?.product?.name;
+                if (rawName && item?.product_id) {
+                    acc[item.product_id] = rawName;
+                }
+                return acc;
+            }, {});
+            setPurchaseProductNamesById(namesMap);
 
             // Fetch vendor details
             const vendorsRes = await api.get('/vendors/');
@@ -90,6 +99,10 @@ export default function PurchaseDetailPage() {
     };
 
     const getProductName = (productId: number) => {
+        const purchaseItemName = purchaseProductNamesById[productId];
+        if (purchaseItemName) {
+            return purchaseItemName;
+        }
         const product = products.find(p => p.id === productId);
         return product ? product.name : `Product #${productId}`;
     };
@@ -99,7 +112,7 @@ export default function PurchaseDetailPage() {
         setEditableItems(
             (purchase.items || []).map((item: any) => ({
                 product_id: item.product_id,
-                product_search: getProductName(item.product_id),
+                product_search: item.product_name || item.product?.name || getProductName(item.product_id),
                 variation_id: item.variation_id || null,
                 quantity: item.quantity,
                 unit_cost: item.unit_cost,

@@ -8,9 +8,13 @@ import string
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.api import deps
 from app.models.product import Product, ProductVariation
+from app.models.sale import SaleItem
+from app.models.purchase import PurchaseItem
 from app.models.stock_adjustment import ProductStockAdjustment
+from app.core import security
 from app.schemas import product as product_schema
 
 router = APIRouter()
@@ -352,15 +356,35 @@ def delete_product(
     *,
     db: Session = Depends(deps.get_db),
     id: int,
+    delete_in: product_schema.ProductDeleteConfirm,
     current_user = Depends(deps.get_current_active_admin),
 ) -> Any:
     product = db.query(Product).filter(Product.id == id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
-    db.delete(product)
-    db.commit()
-    return {"message": "Product deleted successfully"}
+
+    if not security.verify_password(delete_in.admin_password, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid admin password")
+
+    used_in_sales = db.query(SaleItem.id).filter(SaleItem.product_id == id).first()
+    used_in_purchases = db.query(PurchaseItem.id).filter(PurchaseItem.product_id == id).first()
+
+    if (used_in_sales or used_in_purchases) and not delete_in.force_delete_used:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete product because it is used in sales/purchases. Provide admin override to force delete.",
+        )
+
+    try:
+        db.delete(product)
+        db.commit()
+        return {"message": "Product deleted successfully"}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete product due to linked records in database.",
+        )
 
 
 @router.post("/bulk-import")

@@ -164,6 +164,19 @@ class ProductStockAdjustmentLog(BaseModel):
     adjusted_by_username: Optional[str] = None
     created_at: str
 
+
+class ProductDeleteConfirm(BaseModel):
+    admin_password: str
+    force_delete_used: bool = False
+
+    @field_validator('admin_password')
+    @classmethod
+    def validate_admin_password(cls, v):
+        value = (v or '').strip()
+        if not value:
+            raise ValueError('admin_password is required')
+        return value
+
 class Product(ProductBase):
     id: int
     quantity: float
