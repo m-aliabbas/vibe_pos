@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
-import { formatPakistanDateTime } from "@/lib/utils";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -108,7 +107,6 @@ export default function InvoicePage() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [sending, setSending] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
-  const [saleReturns, setSaleReturns] = useState<ReturnRecord[]>([]);
   const [returnedBySaleItem, setReturnedBySaleItem] = useState<{ [key: number]: number }>({});
   const [returnRefundTotal, setReturnRefundTotal] = useState(0);
   const [storeInfo, setStoreInfo] = useState<StoreInfo>(storeConfig);
@@ -150,7 +148,6 @@ export default function InvoicePage() {
         });
       });
 
-      setSaleReturns(returnsData);
       setReturnedBySaleItem(returnedMap);
       setReturnRefundTotal(refundTotal);
 
@@ -189,10 +186,6 @@ export default function InvoicePage() {
 
   const formatInvoiceNumber = (saleId: number): string => {
     return `INV-${String(saleId).padStart(6, "0")}`;
-  };
-
-  const formatDate = (dateString: string): string => {
-    return formatPakistanDateTime(dateString);
   };
 
   const handlePrint = () => {
@@ -250,6 +243,26 @@ export default function InvoicePage() {
     );
   }
 
+  const grossSubtotal = sale.items.reduce((sum, item) => sum + (item.unit_price * item.quantity), 0);
+  const itemDiscountTotal = sale.items.reduce((sum, item) => sum + (item.item_discount || 0), 0);
+  const totalDiscount = sale.discount + itemDiscountTotal;
+  const hasDiscount = sale.items.some((i) => (i.item_discount ?? 0) > 0);
+  const totalQty = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+  const saleDate = new Date(sale.created_at);
+  const dateOnly = saleDate.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const timeOnly = saleDate.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const paymentStatus = sale.amount_due > 0 ? "Cash Unpaid" : "Cash Paid";
+  const customerDisplayName = sale.customer_name || sale.customer?.name || "Walk-in";
+  const customerDisplayPhone = sale.customer?.phone || sale.customer?.id || "";
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Action Buttons - Hidden when printing */}
@@ -278,214 +291,149 @@ export default function InvoicePage() {
           ref={invoiceRef}
           className="thermal-receipt bg-white shadow-lg w-full max-w-[80mm] mx-auto"
         >
-          <div className="p-2 text-xs">
-            {/* Store Header */}
-            <div className="text-center border-b-2 border-dashed border-gray-400 pb-2 mb-2">
-              <h1 className="text-base font-bold text-gray-900 leading-tight">
-                {storeInfo.name}
-              </h1>
+          <div className="p-2 text-[11px] leading-tight">
+            <div className="text-center pb-1">
+              <div className="inline-block bg-black text-white px-5 py-1 text-lg font-bold tracking-wide">
+                INVOICE
+              </div>
+              <h1 className="mt-1 text-xl font-black uppercase tracking-tight">{storeInfo.name}</h1>
               {(storeInfo.address || storeInfo.city) && (
-                <p className="text-xs text-gray-600 leading-tight">
-                  {[storeInfo.address, storeInfo.city].filter(Boolean).join(", ")}
-                </p>
+                <p className="text-[12px] mt-0.5">{[storeInfo.address, storeInfo.city].filter(Boolean).join(" ")}</p>
               )}
-              {storeInfo.phone && (
-                <p className="text-xs text-gray-600 leading-tight">{storeInfo.phone}</p>
-              )}
-              {storeInfo.email && (
-                <p className="text-xs text-gray-600 leading-tight">{storeInfo.email}</p>
-              )}
-              {storeInfo.taxId && (
-                <p className="text-xs text-gray-600 leading-tight">NTN: {storeInfo.taxId}</p>
-              )}
+              <p className="text-[12px] mt-0.5">
+                {storeInfo.phone ? `Cell:${storeInfo.phone}` : "Cell: —"}
+                {storeInfo.phone ? ` / Wapp:${storeInfo.phone.replace(/^0/, "")}` : ""}
+              </p>
+              {storeInfo.email && <p className="text-[12px]">{storeInfo.email}</p>}
             </div>
 
-            {/* Invoice Meta — compact two-row layout */}
-            <div className="mb-2 pb-2 border-b border-dashed border-gray-300">
+            <div className="border-y-2 border-black py-1 mt-1">
               <div className="flex justify-between">
-                <span className="font-bold">INV #{formatInvoiceNumber(sale.id)}</span>
-                <span className="text-gray-600">{formatDate(sale.created_at)}</span>
+                <span className="font-semibold">BillNo.</span>
+                <span className="font-bold">{sale.id}</span>
+                <span className="font-semibold">Order #</span>
+                <span className="font-bold">{formatInvoiceNumber(sale.id)}</span>
               </div>
               <div className="flex justify-between mt-0.5">
-                <span className="text-gray-600">
-                  Cashier: {sale.user?.full_name || sale.user?.username || "N/A"}
-                </span>
-                <span className="font-medium">
-                  {sale.customer_name || sale.customer?.name || "Walk-in"}
-                </span>
+                <span className="font-semibold">Contact#</span>
+                <span className="truncate max-w-[42%]">{customerDisplayPhone || "Walk-in"}</span>
+                <span>{timeOnly}</span>
+                <span>{dateOnly}</span>
+              </div>
+              <div className="flex justify-between mt-0.5">
+                <span className="font-semibold">Name :</span>
+                <span className="font-semibold text-right max-w-[70%] truncate">{customerDisplayName}</span>
               </div>
             </div>
 
-            {/* Vehicle Info (Oil Change Details) */}
-            {sale.customer && (sale.customer.current_mileage || sale.customer.oil_change_interval) && (
-              <div className="mb-2 pb-2 border-b border-dashed border-gray-300">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Current KM:</span>
-                  <span className="font-medium">{sale.customer.current_mileage?.toLocaleString() ?? "—"}</span>
-                </div>
-                {sale.customer.oil_change_interval && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Oil Interval:</span>
-                    <span className="font-medium">{sale.customer.oil_change_interval.toLocaleString()} KM</span>
-                  </div>
-                )}
-                {sale.customer.next_oil_change_mileage && (
-                  <div className="flex justify-between font-semibold text-green-700">
-                    <span>Next Change:</span>
-                    <span>{sale.customer.next_oil_change_mileage.toLocaleString()} KM</span>
-                  </div>
-                )}
+            <div className="flex justify-between py-1 border-b border-black">
+              <div>
+                <span className="font-semibold">Items:</span> {sale.items.length.toFixed(2)}
               </div>
-            )}
+              <div>
+                <span className="font-semibold">Qty :</span> {totalQty}
+              </div>
+            </div>
 
-            {/* Items Table */}
-            {(() => {
-              const hasDiscount = sale.items.some(i => (i.item_discount ?? 0) > 0);
-              return (
-                <div className="mb-2 pb-2 border-b-2 border-dashed border-gray-400">
-                  <table className="w-full" style={{ borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr className="border-b border-gray-400">
-                        <th className="text-left py-0.5 font-semibold">Item</th>
-                        <th className="text-center py-0.5 font-semibold w-10">Qty</th>
-                        <th className="text-right py-0.5 font-semibold w-14">Rate</th>
+            <table className="w-full mt-1" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr className="bg-gray-200 border-y border-gray-400">
+                  <th className="text-left px-0.5 py-0.5 w-4">#</th>
+                  <th className="text-left px-0.5 py-0.5">Description</th>
+                  <th className="text-center px-0.5 py-0.5 w-10">Qty</th>
+                  {hasDiscount && <th className="text-right px-0.5 py-0.5 w-10">Disc</th>}
+                  <th className="text-right px-0.5 py-0.5 w-10">Rate</th>
+                  <th className="text-right px-0.5 py-0.5 w-12">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sale.items.map((item, index) => {
+                  const varAttrs = item.variation_attributes || item.variation?.attributes;
+                  const varLabel = varAttrs
+                    ? Object.entries(varAttrs).map(([, v]) => `${v}`).join("/")
+                    : "";
+                  const returned = returnedBySaleItem[item.id] || 0;
+                  const disc = item.item_discount ?? 0;
+                  return (
+                    <>
+                      <tr key={item.id} className="border-b border-gray-300 align-top">
+                        <td className="px-0.5 py-0.5">{index + 1}</td>
+                        <td className="px-0.5 py-0.5 font-semibold">
+                          {item.product_name || item.product?.name || `#${item.product_id}`}
+                          {varLabel && <span className="block font-normal text-[10px]">{varLabel}</span>}
+                          <span className="block font-normal text-[10px] uppercase">{item.unit}</span>
+                        </td>
+                        <td className="px-0.5 py-0.5 text-center">{item.quantity}</td>
                         {hasDiscount && (
-                          <th className="text-right py-0.5 font-semibold w-12">Disc</th>
+                          <td className="px-0.5 py-0.5 text-right">{disc > 0 ? `-${disc.toFixed(0)}` : "0"}</td>
                         )}
-                        <th className="text-right py-0.5 font-semibold w-16">Amt</th>
+                        <td className="px-0.5 py-0.5 text-right">{item.unit_price.toFixed(0)}</td>
+                        <td className="px-0.5 py-0.5 text-right font-bold">{item.total_price.toFixed(0)}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {sale.items.map((item) => {
-                        const varAttrs = item.variation_attributes || item.variation?.attributes;
-                        const varLabel = varAttrs
-                          ? Object.entries(varAttrs).map(([, v]) => `${v}`).join("/")
-                          : null;
-                        const returned = returnedBySaleItem[item.id] || 0;
-                        const disc = item.item_discount ?? 0;
-                        return (
-                          <>
-                            <tr key={item.id}>
-                              <td className="py-0.5 pr-1 leading-tight">
-                                <span className="font-medium">
-                                  {item.product_name || item.product?.name || `#${item.product_id}`}
-                                </span>
-                                {varLabel && (
-                                  <span className="text-purple-600 block text-xs">{varLabel}</span>
-                                )}
-                              </td>
-                              <td className="text-center py-0.5 whitespace-nowrap">
-                                {item.quantity} {item.unit}
-                              </td>
-                              <td className="text-right py-0.5">{item.unit_price.toFixed(0)}</td>
-                              {hasDiscount && (
-                                <td className="text-right py-0.5 text-gray-500">
-                                  {disc > 0 ? `-${disc.toFixed(0)}` : "—"}
-                                </td>
-                              )}
-                              <td className="text-right py-0.5 font-medium">{item.total_price.toFixed(0)}</td>
-                            </tr>
-                            {returned > 0 && (
-                              <tr key={`ret-${item.id}`} className="text-orange-600">
-                                <td colSpan={hasDiscount ? 5 : 4} className="pb-0.5 pl-2">
-                                  ↩ Returned: {returned} {item.unit}
-                                </td>
-                              </tr>
-                            )}
-                          </>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()}
+                      {returned > 0 && (
+                        <tr key={`ret-${item.id}`} className="text-orange-700 border-b border-gray-200">
+                          <td></td>
+                          <td className="px-0.5 pb-0.5" colSpan={hasDiscount ? 5 : 4}>
+                            Returned: {returned} {item.unit}
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
 
-            {/* Totals */}
-            <div className="mb-2 space-y-0.5">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Subtotal</span>
-                <span>rs {sale.items.reduce((s, i) => s + i.unit_price * i.quantity, 0).toFixed(0)}</span>
+            <div className="mt-1 border-y border-black py-1">
+              <div className="flex justify-between font-semibold">
+                <span>Total Amount</span>
+                <span>{grossSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
-              {(sale.discount > 0 || sale.items.some(i => (i.item_discount || 0) > 0)) && (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Discount</span>
-                    <span>-rs {(sale.discount + sale.items.reduce((s, i) => s + (i.item_discount || 0), 0)).toFixed(0)}</span>
-                  </div>
-                  <div className="flex justify-between font-semibold">
-                    <span>After Disc.</span>
-                    <span>rs {sale.subtotal.toFixed(0)}</span>
-                  </div>
-                </>
-              )}
-              {sale.tax > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Tax</span>
-                  <span>rs {sale.tax.toFixed(0)}</span>
-                </div>
-              )}
-              {sale.delivery_charges > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Delivery</span>
-                  <span>rs {sale.delivery_charges.toFixed(0)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-bold text-sm border-t-2 border-gray-900 pt-1 mt-1">
-                <span>TOTAL</span>
-                <span>rs {sale.total.toFixed(0)}</span>
+            </div>
+
+            <div className="py-1 space-y-0.5">
+              <div className="flex justify-between">
+                <span>Other Charges</span>
+                <span>{sale.tax > 0 ? sale.tax.toFixed(0) : 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Discount</span>
+                <span>{totalDiscount > 0 ? `- ${totalDiscount.toFixed(0)}` : 0}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Delivery</span>
+                <span>{sale.delivery_charges > 0 ? sale.delivery_charges.toFixed(0) : 0}</span>
+              </div>
+              <div className="flex justify-between font-bold text-[15px] border-t border-black pt-0.5 mt-0.5">
+                <span>Payable</span>
+                <span>{sale.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Received</span>
+                <span>{sale.amount_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span>Due Cash</span>
+                <span>{sale.amount_due.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               {returnRefundTotal > 0 && (
-                <div className="flex justify-between text-red-600">
+                <div className="flex justify-between text-red-700 font-semibold">
                   <span>Refunded</span>
-                  <span>-rs {returnRefundTotal.toFixed(0)}</span>
-                </div>
-              )}
-              {returnRefundTotal > 0 && (
-                <div className="flex justify-between font-semibold">
-                  <span>Net Total</span>
-                  <span>rs {(sale.total - returnRefundTotal).toFixed(0)}</span>
+                  <span>-{returnRefundTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
             </div>
 
-            {/* Payment */}
-            <div className="mb-2 pb-2 border-b border-dashed border-gray-300 space-y-0.5">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Method</span>
-                <span className="capitalize font-medium">{sale.payment_method}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Paid</span>
-                <span className="font-medium">rs {sale.amount_paid.toFixed(0)}</span>
-              </div>
-              {sale.change_amount > 0 && (
-                <div className="flex justify-between text-green-700 font-semibold">
-                  <span>Change</span>
-                  <span>rs {sale.change_amount.toFixed(0)}</span>
-                </div>
-              )}
-              {sale.amount_due > 0 && (
-                <div className="flex justify-between text-red-600 font-semibold">
-                  <span>Due (Udhar)</span>
-                  <span>rs {sale.amount_due.toFixed(0)}</span>
-                </div>
-              )}
-              {returnRefundTotal > 0 && (
-                <div className="flex justify-between text-red-600 font-semibold">
-                  <span>Net Due</span>
-                  <span>rs {Math.max(0, sale.amount_due - returnRefundTotal).toFixed(0)}</span>
-                </div>
-              )}
+            <div className="border-y-2 border-black py-1 text-right font-bold text-[20px]">
+              {paymentStatus}
             </div>
 
-            {/* Footer */}
-            <div className="text-center pt-1">
-              <p className="text-xs text-gray-600">Thank you for your business!</p>
-              {storeInfo.website && (
-                <p className="text-xs text-gray-500">{storeInfo.website}</p>
-              )}
-              <p className="text-xs text-gray-400 mt-1">VibePOS (by vibeexe.com)</p>
+            <div className="pt-2 text-[10px] leading-snug">
+              <p>1. Return and Exchange acceptable with invoice.</p>
+              <p>2. Frozen and cosmetic items cannot be returned.</p>
+              <p>3. Home delivery available.</p>
+              <p>4. For complaint and suggestion call: {storeInfo.phone || "—"}</p>
+              <p className="text-center mt-1">VibePOS (by vibeexe.com)</p>
             </div>
           </div>
         </Card>

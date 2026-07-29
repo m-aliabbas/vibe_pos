@@ -124,15 +124,38 @@ def _convert_utc_to_pakistan(dt: datetime) -> datetime:
     return dt
 
 
-def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) -> str:
-    """Build a WhatsApp caption using the same monetary values shown on the invoice image."""
+def _get_invoice_amounts(sale: Sale) -> Dict[str, float]:
+    """Return invoice amounts in a consistent way for image and WhatsApp caption."""
     total_item_discount = sum(float(getattr(item, "item_discount", 0.0) or 0.0) for item in sale.items)
-    subtotal = float(sale.subtotal or 0.0)
+    net_subtotal = float(sale.subtotal or 0.0)
     discount = float(sale.discount or 0.0)
     tax_amount = float(sale.tax or 0.0)
     delivery_charges = float(sale.delivery_charges or 0.0)
-    total_discount = discount + total_item_discount
     total = float(sale.total or 0.0)
+
+    # `sale.subtotal` is stored after item-level discounts.
+    # For receipt display, show subtotal before item discounts so the breakdown matches print.
+    display_subtotal = net_subtotal + total_item_discount
+    total_discount = discount + total_item_discount
+
+    return {
+        "display_subtotal": display_subtotal,
+        "total_item_discount": total_item_discount,
+        "total_discount": total_discount,
+        "tax_amount": tax_amount,
+        "delivery_charges": delivery_charges,
+        "total": total,
+    }
+
+
+def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) -> str:
+    """Build a WhatsApp caption using the same monetary values shown on the invoice image."""
+    amounts = _get_invoice_amounts(sale)
+    subtotal = amounts["display_subtotal"]
+    total_discount = amounts["total_discount"]
+    tax_amount = amounts["tax_amount"]
+    delivery_charges = amounts["delivery_charges"]
+    total = amounts["total"]
     amount_paid = float(sale.amount_paid or 0.0)
     amount_due = float(sale.amount_due or 0.0)
     net_total = max(0.0, total - float(refunded_amount or 0.0))
@@ -255,10 +278,9 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
     draw.text((mm(3), y), "ITEMS", fill="black", font=font_sm_bold)
     y += mm(5)
 
-    total_item_discount = 0
-    for item in sale.items:
-        if hasattr(item, "item_discount") and item.item_discount:
-            total_item_discount += item.item_discount
+    amounts = _get_invoice_amounts(sale)
+    display_subtotal = amounts["display_subtotal"]
+    total_discount = amounts["total_discount"]
 
     for item in sale.items:
         product_name = item.product.name if item.product else f"Product #{item.product_id}"
@@ -299,13 +321,12 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
     y += mm(4)
 
     draw.text((mm(3), y), "Subtotal", fill="black", font=font_md)
-    subtotal_text = f"RS {sale.subtotal:.2f}"
+    subtotal_text = f"RS {display_subtotal:.2f}"
     bbox = draw.textbbox((0, 0), subtotal_text, font=font_md)
     text_width = bbox[2] - bbox[0]
     draw.text((width - text_width - mm(3), y), subtotal_text, fill="black", font=font_md)
     y += mm(5)
 
-    total_discount = sale.discount + total_item_discount
     if total_discount > 0:
         draw.text((mm(3), y), "Discount", fill="black", font=font_md)
         discount_text = f"-RS {total_discount:.2f}"
