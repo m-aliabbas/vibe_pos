@@ -58,13 +58,8 @@ fn main() {
             // Only spawn sidecar in production (when not in debug mode)
             #[cfg(not(debug_assertions))]
             {
-                // Find a free port
-                // For simplicity, we'll try a fixed range or let OS pick (but we need to know it)
-                // Let's use port 0 trick to find a free port
-                let port = {
-                    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-                    listener.local_addr().unwrap().port()
-                };
+                // The LAN clients need a stable, documented port.
+                let port: u16 = 4321;
 
                 println!("Selected port for Next.js server: {}", port);
 
@@ -80,7 +75,7 @@ fn main() {
                 let sidecar_command = app.shell().sidecar("next-server").unwrap()
                     .args([script_path])
                     .env("PORT", port.to_string())
-                    .env("HOSTNAME", "127.0.0.1");
+                    .env("HOSTNAME", "0.0.0.0");
 
                 let (mut rx, _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");
 

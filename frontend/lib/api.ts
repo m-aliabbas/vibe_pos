@@ -103,6 +103,8 @@ export interface CustomerNote {
     note_text: string;
     created_at: string;
     updated_at: string;
+    amount?: number | null;
+    payment_method?: string | null;
 }
 
 export interface CustomerNoteCreate {
@@ -318,6 +320,19 @@ export const customerApi = {
     }): Promise<any> => {
         const response = await api.post(`/customers/${id}/add-advance`, advance);
         return response.data;
+    },
+
+    updateCustomerAdvance: async (id: number, advanceId: number, advance: {
+        amount: number;
+        description: string;
+        payment_method?: string;
+    }): Promise<CustomerNote> => {
+        const response = await api.put(`/customers/${id}/advances/${advanceId}`, advance);
+        return response.data;
+    },
+
+    deleteCustomerAdvance: async (id: number, advanceId: number): Promise<void> => {
+        await api.delete(`/customers/${id}/advances/${advanceId}`);
     },
 
     // Customer ledger

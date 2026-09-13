@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api, { reportsApi } from '@/lib/api';
 import { formatPakistanDate, formatPakistanDateTime, todayPKTDateString } from '@/lib/utils';
@@ -91,6 +91,9 @@ export default function VendorDetailsPage() {
     const [loading, setLoading] = useState(true);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+    const [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false);
+    const [paymentProcessing, setPaymentProcessing] = useState(false);
+    const paymentSubmissionRef = useRef(false);
     const [paymentAmount, setPaymentAmount] = useState('');
     const [paymentReferenceNote, setPaymentReferenceNote] = useState('');
     const [vendorLevelPayment, setVendorLevelPayment] = useState(true);
@@ -175,6 +178,10 @@ export default function VendorDetailsPage() {
     };
 
     const handleVendorPayment = async () => {
+        if (paymentSubmissionRef.current) return;
+
+        paymentSubmissionRef.current = true;
+        setPaymentProcessing(true);
         try {
             const trimmedReferenceNote = paymentReferenceNote.trim();
             const response = await api.post(`/vendors/${id}/payment`, {
@@ -199,6 +206,9 @@ export default function VendorDetailsPage() {
         } catch (error: any) {
             console.error("Failed to process payment", error);
             alert(error?.response?.data?.detail || "Failed to process payment");
+        } finally {
+            paymentSubmissionRef.current = false;
+            setPaymentProcessing(false);
         }
     };
 
@@ -886,8 +896,11 @@ export default function VendorDetailsPage() {
                                             <Button variant="outline" onClick={closePaymentDialog}>
                                                 Cancel
                                             </Button>
-                                            <Button onClick={handleVendorPayment} disabled={!paymentAmount || parseFloat(paymentAmount) <= 0}>
-                                                Process Payment
+                                            <Button
+                                                onClick={() => setPaymentConfirmOpen(true)}
+                                                disabled={!paymentAmount || parseFloat(paymentAmount) <= 0 || paymentProcessing}
+                                            >
+                                                {paymentProcessing ? 'Processing...' : 'Process Payment'}
                                             </Button>
                                         </DialogFooter>
                                     </>
@@ -1067,6 +1080,23 @@ export default function VendorDetailsPage() {
                             </div>
                         </DialogContent>
                     </Dialog>
+
+                    <AlertDialog open={paymentConfirmOpen} onOpenChange={setPaymentConfirmOpen}>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm vendor payment?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    Process payment of Rs {Number(paymentAmount || 0).toFixed(2)} for {vendor?.name || 'this vendor'}? This will update the vendor account.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel disabled={paymentProcessing}>No</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleVendorPayment} disabled={paymentProcessing}>
+                                    {paymentProcessing ? 'Processing...' : 'Yes, process payment'}
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
                     <AlertDialog>
                         <AlertDialogTrigger asChild>
                             <Button variant="destructive">

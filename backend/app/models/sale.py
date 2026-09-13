@@ -32,6 +32,9 @@ class Sale(Base):
     tax = Column(Float, default=0.0)  # Future: tax amount
     delivery_charges = Column(Float, default=0.0)  # Delivery charges
     total = Column(Float, default=0.0)  # Final total (subtotal - discount + tax + delivery)
+    # Customer balance immediately before this invoice was posted. This is a
+    # snapshot so reprinting an old invoice never shows today's balance.
+    previous_balance = Column(Float, default=0.0)
     
     # Payment tracking for udhar (credit) management
     amount_paid = Column(Float, default=0.0)  # Actual amount received

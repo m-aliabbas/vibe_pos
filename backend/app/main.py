@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 from app.core.config import settings
 from app.api.v1.api import api_router
 from app.db.session import engine, Base
@@ -18,25 +18,25 @@ Base.metadata.create_all(bind=engine)
 
 def ensure_schema_columns() -> None:
     inspector = inspect(engine)
-    if "products" not in inspector.get_table_names():
-        return
-
-    product_columns = {col["name"] for col in inspector.get_columns("products")}
-    if "allow_decimal_qty" in product_columns:
-        return
-
+    table_names = set(inspector.get_table_names())
     with engine.begin() as conn:
-        if conn.dialect.name == "sqlite":
-            conn.exec_driver_sql(
-                "ALTER TABLE products ADD COLUMN allow_decimal_qty BOOLEAN DEFAULT 0"
-            )
-        else:
-            conn.execute(
-                text(
-                    "ALTER TABLE products "
-                    "ADD COLUMN IF NOT EXISTS allow_decimal_qty BOOLEAN DEFAULT FALSE"
-                )
-            )
+        additions = {
+            "products": [("allow_decimal_qty", "BOOLEAN DEFAULT 0")],
+            "sales": [("previous_balance", "REAL DEFAULT 0")],
+            "customer_notes": [
+                ("amount", "REAL"),
+                ("payment_method", "VARCHAR"),
+            ],
+        }
+        for table, columns in additions.items():
+            if table not in table_names:
+                continue
+            existing = {col["name"] for col in inspector.get_columns(table)}
+            for column, definition in columns:
+                if column not in existing:
+                    conn.exec_driver_sql(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                    )
 
 
 ensure_schema_columns()

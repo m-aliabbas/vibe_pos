@@ -45,6 +45,7 @@ pyinstaller --name "$NAME" \
   --collect-all cryptography \
   --collect-all neonize \
   --collect-all apscheduler \
+  --collect-all zeroconf \
   \
   --hidden-import=uvicorn.logging \
   --hidden-import=uvicorn.loops \

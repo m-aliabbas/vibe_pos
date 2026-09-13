@@ -121,7 +121,7 @@ export default function SalesHistory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('today');
   const [currentPage, setCurrentPage] = useState(1);
   const PAGE_SIZE = 100;
   const SALES_FETCH_PAGE_SIZE = 500;
@@ -533,7 +533,7 @@ export default function SalesHistory() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5" />
-            All Sales
+            {dateFilter === "today" ? "Today Sales" : "Sales History"}
           </CardTitle>
         </CardHeader>
         <CardContent>

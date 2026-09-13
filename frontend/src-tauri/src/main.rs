@@ -210,7 +210,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::net::TcpStream;
+use std::net::{TcpStream, UdpSocket};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -281,6 +281,13 @@ fn append_log(log_path: &PathBuf, msg: &str) {
         .append(true)
         .open(log_path)
         .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
+}
+
+fn local_lan_ip() -> Option<std::net::IpAddr> {
+    // UDP connect selects the interface used for the LAN without sending data.
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip())
 }
 
 fn find_next_standalone_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -440,6 +447,52 @@ fn start_backend_visible(app: &tauri::AppHandle, log_path: &PathBuf) {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+fn start_backend_sidecar(app: &tauri::AppHandle, log_path: &PathBuf) {
+    let command = match app.shell().sidecar("backend-server") {
+        Ok(command) => command
+            .env("AP_HOST", "0.0.0.0")
+            .env("AP_PORT", "8000"),
+        Err(error) => {
+            append_log(log_path, &format!("backend: sidecar resolve failed: {error}"));
+            return;
+        }
+    };
+
+    let (mut receiver, _child) = match command.spawn() {
+        Ok(process) => process,
+        Err(error) => {
+            append_log(log_path, &format!("backend: spawn failed: {error}"));
+            return;
+        }
+    };
+
+    let backend_log = log_path.clone();
+    tauri::async_runtime::spawn(async move {
+        append_log(&backend_log, "backend: sidecar spawned");
+        while let Some(event) = receiver.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => append_log(
+                    &backend_log,
+                    &format!("BACKEND_STDOUT: {}", String::from_utf8_lossy(&bytes)),
+                ),
+                CommandEvent::Stderr(bytes) => append_log(
+                    &backend_log,
+                    &format!("BACKEND_STDERR: {}", String::from_utf8_lossy(&bytes)),
+                ),
+                CommandEvent::Terminated(payload) => append_log(
+                    &backend_log,
+                    &format!("BACKEND_EXIT: code={:?}", payload.code),
+                ),
+                CommandEvent::Error(error) => {
+                    append_log(&backend_log, &format!("BACKEND_EVENT_ERROR: {error}"))
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -467,6 +520,9 @@ fn main() {
                 // 1) Start backend FIRST (so it starts even if Next fails)
                 #[cfg(target_os = "windows")]
                 start_backend_visible(&app.handle(), &log_path);
+
+                #[cfg(not(target_os = "windows"))]
+                start_backend_sidecar(&app.handle(), &log_path);
 
                 // 2) Next server
                 let port: u16 = 4321;
@@ -507,7 +563,8 @@ fn main() {
                     .current_dir(&standalone_dir) // CRITICAL
                     .args(["server.js"])
                     .env("PORT", port.to_string())
-                    .env("HOSTNAME", "127.0.0.1")
+                    // Make the web app reachable by every device on the local network.
+                    .env("HOSTNAME", "0.0.0.0")
                     .env("NODE_ENV", "production")
                     .env("NEXT_TELEMETRY_DISABLED", "1")
                     .spawn()
@@ -550,9 +607,22 @@ fn main() {
                 
                 tauri::async_runtime::spawn(async move {
                     // Pass log_path_clone to the updated function
-                    let ok = wait_for_port_127(port, Duration::from_secs(45), log_path_clone).await;
+                    let ok = wait_for_port_127(
+                        port,
+                        Duration::from_secs(45),
+                        log_path_clone.clone(),
+                    )
+                    .await;
                     if ok {
                         let url = format!("http://127.0.0.1:{port}");
+                        if let Some(ip) = local_lan_ip() {
+                            let lan_url = format!("http://{ip}:{port}");
+                            append_log(
+                                &log_path_clone,
+                                &format!("LAN access: {lan_url} (API: http://{ip}:8000)"),
+                            );
+                            let _ = window_clone.set_title(&format!("VibePOS — LAN: {lan_url}"));
+                        }
                         let _ = window_clone.eval(&format!("window.location.replace('{url}')"));
                     } else {
                         let _ = window_clone.eval(

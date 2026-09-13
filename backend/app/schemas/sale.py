@@ -66,6 +66,7 @@ class Sale(SaleBase):
     tax: float = 0.0
     delivery_charges: float = 0.0
     total: float
+    previous_balance: float = 0.0
     amount_paid: float = 0.0
     amount_due: float = 0.0
     change_amount: float = 0.0

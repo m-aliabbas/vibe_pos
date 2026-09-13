@@ -132,6 +132,7 @@ def _get_invoice_amounts(sale: Sale) -> Dict[str, float]:
     tax_amount = float(sale.tax or 0.0)
     delivery_charges = float(sale.delivery_charges or 0.0)
     total = float(sale.total or 0.0)
+    previous_balance = float(getattr(sale, "previous_balance", 0.0) or 0.0)
 
     # `sale.subtotal` is stored after item-level discounts.
     # For receipt display, show subtotal before item discounts so the breakdown matches print.
@@ -145,6 +146,8 @@ def _get_invoice_amounts(sale: Sale) -> Dict[str, float]:
         "tax_amount": tax_amount,
         "delivery_charges": delivery_charges,
         "total": total,
+        "previous_balance": previous_balance,
+        "grand_total": total + previous_balance,
     }
 
 
@@ -156,8 +159,11 @@ def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) ->
     tax_amount = amounts["tax_amount"]
     delivery_charges = amounts["delivery_charges"]
     total = amounts["total"]
+    previous_balance = amounts["previous_balance"]
+    grand_total = amounts["grand_total"]
     amount_paid = float(sale.amount_paid or 0.0)
     amount_due = float(sale.amount_due or 0.0)
+    account_balance = previous_balance + amount_due
     net_total = max(0.0, total - float(refunded_amount or 0.0))
 
     lines = [
@@ -176,15 +182,18 @@ def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) ->
     if delivery_charges > 0:
         lines.append(f"Delivery: RS {delivery_charges:.2f}")
 
-    lines.append(f"Total: RS {total:.2f}")
+    lines.append(f"Current Bill: RS {total:.2f}")
+    if abs(previous_balance) > 0.005:
+        lines.append(f"Previous Balance: RS {previous_balance:.2f}")
+        lines.append(f"Grand Total: RS {grand_total:.2f}")
 
     if refunded_amount > 0:
         lines.append(f"Refunded: -RS {refunded_amount:.2f}")
         lines.append(f"Net Total: RS {net_total:.2f}")
 
     lines.append(f"Amount Paid: RS {amount_paid:.2f}")
-    if amount_due > 0:
-        lines.append(f"Outstanding (Udhar): RS {amount_due:.2f}")
+    if account_balance > 0:
+        lines.append(f"Total Outstanding (Udhar): RS {account_balance:.2f}")
 
     lines.append("Thank you for your business!")
     return "\n".join(lines)
@@ -201,7 +210,8 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
 
     # 80mm thermal receipt width
     width = int(80 * mm_to_px)
-    base_height_mm = 135 + (14 if refunded_amount > 0 else 0)
+    has_previous_balance = abs(float(getattr(sale, "previous_balance", 0.0) or 0.0)) > 0.005
+    base_height_mm = 135 + (14 if refunded_amount > 0 else 0) + (12 if has_previous_balance else 0)
     base_height = int(base_height_mm * mm_to_px)
     item_height = len(sale.items) * int(22 * mm_to_px)
     total_height = base_height + item_height
@@ -281,6 +291,8 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
     amounts = _get_invoice_amounts(sale)
     display_subtotal = amounts["display_subtotal"]
     total_discount = amounts["total_discount"]
+    previous_balance = amounts["previous_balance"]
+    grand_total = amounts["grand_total"]
 
     for item in sale.items:
         product_name = item.product.name if item.product else f"Product #{item.product_id}"
@@ -351,12 +363,25 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
         draw.text((width - text_width - mm(3), y), delivery_text, fill="black", font=font_md)
         y += mm(5)
 
-    draw.text((mm(3), y), "TOTAL", fill="black", font=font_lg)
+    draw.text((mm(3), y), "CURRENT BILL", fill="black", font=font_lg)
     total_text = f"RS {sale.total:.2f}"
     bbox = draw.textbbox((0, 0), total_text, font=font_lg)
     text_width = bbox[2] - bbox[0]
     draw.text((width - text_width - mm(3), y), total_text, fill="black", font=font_lg)
     y += mm(7)
+
+    if abs(previous_balance) > 0.005:
+        draw.text((mm(3), y), "Previous Balance", fill="black", font=font_md)
+        previous_text = f"RS {previous_balance:.2f}"
+        bbox = draw.textbbox((0, 0), previous_text, font=font_md)
+        draw.text((width - (bbox[2] - bbox[0]) - mm(3), y), previous_text, fill="black", font=font_md)
+        y += mm(5)
+
+        draw.text((mm(3), y), "GRAND TOTAL", fill="black", font=font_lg)
+        grand_total_text = f"RS {grand_total:.2f}"
+        bbox = draw.textbbox((0, 0), grand_total_text, font=font_lg)
+        draw.text((width - (bbox[2] - bbox[0]) - mm(3), y), grand_total_text, fill="black", font=font_lg)
+        y += mm(7)
 
     if refunded_amount > 0:
         draw.text((mm(3), y), "Refunded", fill="#cc0000", font=font_md)
@@ -383,9 +408,10 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
     draw.text((width - text_width - mm(3), y), paid_text, fill="black", font=font_md)
     y += mm(5)
 
-    if sale.amount_due > 0:
-        draw.text((mm(3), y), "Outstanding (Udhar)", fill="black", font=font_sm_bold)
-        due_text = f"RS {sale.amount_due:.2f}"
+    account_balance = previous_balance + float(sale.amount_due or 0.0)
+    if account_balance > 0:
+        draw.text((mm(3), y), "Total Balance (Udhar)", fill="black", font=font_sm_bold)
+        due_text = f"RS {account_balance:.2f}"
         bbox = draw.textbbox((0, 0), due_text, font=font_sm_bold)
         text_width = bbox[2] - bbox[0]
         draw.text((width - text_width - mm(3), y), due_text, fill="#cc0000", font=font_sm_bold)
@@ -761,6 +787,8 @@ def create_sale(
             customer.opening_balance or 0.0,
         )
 
+    previous_balance = float(customer.outstanding_balance or 0.0) if customer else 0.0
+
     # Enforce credit limit
     if customer and amount_due > 0:
         credit_limit = customer.credit_limit
@@ -784,6 +812,7 @@ def create_sale(
         tax=tax,
         delivery_charges=delivery_charges,
         total=total,
+        previous_balance=previous_balance,
         amount_paid=amount_paid,
         amount_due=amount_due,
         change_amount=change_amount
@@ -936,6 +965,7 @@ def update_sale(
     ).all()
     for entry in old_entries:
         db.delete(entry)
+    db.flush()
 
     products_dict: Dict[int, Product] = {}
     variations_dict: Dict[int, ProductVariation] = {}
@@ -1002,15 +1032,18 @@ def update_sale(
             customer.id,
             customer.opening_balance or 0.0,
         )
+        sale.previous_balance = float(customer.outstanding_balance or 0.0)
+    else:
+        sale.previous_balance = 0.0
 
     # Enforce credit limit (account for balance reduction from old due on this sale)
     if customer and amount_due > 0:
         credit_limit = customer.credit_limit
         if credit_limit is not None:
             old_due = sale.amount_due or 0.0
-            projected_balance = customer.outstanding_balance - old_due + amount_due
+            projected_balance = customer.outstanding_balance + amount_due
             if projected_balance > credit_limit:
-                available = max(0, credit_limit - (customer.outstanding_balance - old_due))
+                available = max(0, credit_limit - customer.outstanding_balance)
                 raise HTTPException(
                     status_code=400,
                     detail=f"Credit limit exceeded. Limit: {credit_limit:.2f}, Available credit: {available:.2f}"

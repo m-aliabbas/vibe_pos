@@ -139,6 +139,7 @@ export default function SalesTerminal() {
   } | null>(null);
   const [saleId, setSaleId] = useState<number | null>(null);
   const [completedSaleTotal, setCompletedSaleTotal] = useState<number>(0);
+  const [completedPreviousBalance, setCompletedPreviousBalance] = useState<number>(0);
   const [completedAmountPaid, setCompletedAmountPaid] = useState<number>(0);
   const [completedChange, setCompletedChange] = useState<number>(0);
 
@@ -1763,6 +1764,7 @@ export default function SalesTerminal() {
 
       setSaleId(response.data.id);
       setCompletedSaleTotal(response.data.total);
+      setCompletedPreviousBalance(response.data.previous_balance || 0);
       setCompletedAmountPaid(response.data.amount_paid);
       setCompletedChange(response.data.change_amount);
 
@@ -1808,6 +1810,7 @@ export default function SalesTerminal() {
   const handleNewSale = useCallback(() => {
     setSuccessOpen(false);
     setSaleId(null);
+    setCompletedPreviousBalance(0);
     clearCart();
     
     // Auto-focus search bar for next sale
@@ -2061,9 +2064,15 @@ export default function SalesTerminal() {
                     <span className="tabular-nums">+rs {deliveryCharges.toFixed(2)}</span>
                   </div>
                 )}
+                {selectedCustomer && Math.abs(selectedCustomer.outstanding_balance) > 0.005 && (
+                  <div className="flex justify-between text-orange-700">
+                    <span>Previous Balance:</span>
+                    <span className="tabular-nums">{selectedCustomer.outstanding_balance >= 0 ? "+" : "-"}rs {Math.abs(selectedCustomer.outstanding_balance).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-1 mt-0.5 font-bold text-base">
                   <span>Grand Total</span>
-                  <span className="text-primary text-lg tabular-nums">rs {calculateTotal().toFixed(2)}</span>
+                  <span className="text-primary text-lg tabular-nums">rs {(calculateTotal() + (selectedCustomer?.outstanding_balance || 0)).toFixed(2)}</span>
                 </div>
               </div>
 
@@ -2497,15 +2506,29 @@ export default function SalesTerminal() {
                 </div>
               )}
 
+              {selectedCustomer && Math.abs(selectedCustomer.outstanding_balance) > 0.005 && (
+                <div className="flex justify-between text-orange-700 font-semibold">
+                  <span>Previous Balance:</span>
+                  <span>{selectedCustomer.outstanding_balance >= 0 ? "+" : "-"}rs {Math.abs(selectedCustomer.outstanding_balance).toFixed(2)}</span>
+                </div>
+              )}
+
               <div className="flex justify-between font-bold border-t-2 pt-1 mt-1">
-                <span>TOTAL TO CHARGE:</span>
-                <span className="text-lg">rs {calculateTotal().toFixed(2)}</span>
+                <span>GRAND TOTAL:</span>
+                <span className="text-lg">rs {(calculateTotal() + (selectedCustomer?.outstanding_balance || 0)).toFixed(2)}</span>
               </div>
 
               {amountPaidValue < calculateTotal() && (
                 <div className="flex justify-between text-red-600 font-semibold">
-                  <span>Due (Udhar):</span>
+                  <span>New Bill Due (Udhar):</span>
                   <span>rs {(calculateTotal() - amountPaidValue).toFixed(2)}</span>
+                </div>
+              )}
+
+              {selectedCustomer && selectedCustomer.outstanding_balance > 0 && (
+                <div className="flex justify-between text-red-700 font-bold">
+                  <span>Total Balance After Payment:</span>
+                  <span>rs {(selectedCustomer.outstanding_balance + Math.max(0, calculateTotal() - amountPaidValue)).toFixed(2)}</span>
                 </div>
               )}
 
@@ -2555,9 +2578,23 @@ export default function SalesTerminal() {
 
             <div className="space-y-3 bg-muted/50 p-4 rounded-lg">
               <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Total Sale:</span>
+                <span className="text-sm font-medium">Current Bill:</span>
                 <span className="text-xl font-bold text-primary">rs {completedSaleTotal.toFixed(2)}</span>
               </div>
+              {Math.abs(completedPreviousBalance) > 0.005 && (
+                <>
+                  <div className="flex justify-between items-center text-orange-700">
+                    <span className="text-sm font-medium">Previous Balance:</span>
+                    <span className="text-lg font-semibold">rs {completedPreviousBalance.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center border-t pt-2">
+                    <span className="text-base font-bold">Grand Total:</span>
+                    <span className="text-2xl font-bold text-primary">
+                      rs {(completedSaleTotal + completedPreviousBalance).toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between items-center">
                 <span className="text-sm font-medium">Amount Paid:</span>
                 <span className="text-xl font-semibold text-green-600">
@@ -2577,6 +2614,14 @@ export default function SalesTerminal() {
                   <span className="text-base font-bold text-red-700">Amount Due (Udhar):</span>
                   <span className="text-3xl font-bold text-red-700">
                     rs {(completedSaleTotal - completedAmountPaid).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {Math.abs(completedPreviousBalance) > 0.005 && completedPreviousBalance + Math.max(0, completedSaleTotal - completedAmountPaid) > 0 && (
+                <div className="flex justify-between items-center pt-3 border-t-2 border-red-600">
+                  <span className="text-base font-bold text-red-700">Total Customer Balance:</span>
+                  <span className="text-3xl font-bold text-red-700">
+                    rs {(completedPreviousBalance + Math.max(0, completedSaleTotal - completedAmountPaid)).toFixed(2)}
                   </span>
                 </div>
               )}

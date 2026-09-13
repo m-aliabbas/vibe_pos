@@ -23,6 +23,60 @@ from app.services import accounting as accounting_service
 router = APIRouter()
 
 
+def _parse_legacy_advance(note: CustomerNote) -> tuple[float, str, str]:
+    """Read structured fields, falling back to legacy note text."""
+    amount_match = re.search(r"(?:rs|\$)\s*([0-9.,]+)", note.note_text or "", re.I)
+    method_match = re.search(r"via\s+([a-z_]+):", note.note_text or "", re.I)
+    description_match = re.search(r":\s*(.+)$", note.note_text or "")
+    amount = float(note.amount) if note.amount is not None else (
+        float(amount_match.group(1).replace(",", "")) if amount_match else 0.0
+    )
+    method = note.payment_method or (method_match.group(1) if method_match else "cash")
+    description = description_match.group(1) if description_match else (note.note_text or "")
+    return amount, method, description
+
+
+def _get_advance_journal_entries(db: Session, customer_id: int, note: CustomerNote):
+    """Find both new note-linked entries and legacy customer-linked entries."""
+    candidates = (
+        db.query(JournalEntry)
+        .join(JournalLine, JournalLine.entry_id == JournalEntry.id)
+        .filter(
+            JournalEntry.source_type == "customer_advance",
+            JournalLine.customer_id == customer_id,
+            or_(
+                JournalEntry.source_id == note.id,
+                JournalEntry.source_id == customer_id,
+                JournalEntry.description.like(f"Customer advance #{note.id}%"),
+            ),
+        )
+        .distinct()
+        .all()
+    )
+    amount, _, description = _parse_legacy_advance(note)
+    matched = []
+    for entry in candidates:
+        exact_new_reference = (
+            entry.source_id == note.id
+            and entry.description.startswith(f"Customer advance #{note.id}")
+        )
+        legacy_description_match = bool(description) and entry.description.endswith(f": {description}")
+        ar_amount_match = any(
+            line.customer_id == customer_id
+            and abs(float(line.debit or 0.0) - amount) < 0.005
+            for line in entry.lines
+        )
+        if exact_new_reference or (legacy_description_match and ar_amount_match):
+            matched.append(entry)
+    if len(matched) <= 1:
+        return matched
+
+    # Legacy rows used customer_id as source_id, so identical purchases can
+    # otherwise look alike. The journal posted with the note is the nearest in time.
+    note_time = note.created_at or now_pkt()
+    return [min(matched, key=lambda entry: abs((entry.entry_date - note_time).total_seconds()))]
+
+
 def _set_reconciled_balance(customer: Customer, reconciled_balance: float) -> Customer:
     customer.outstanding_balance = reconciled_balance
     return customer
@@ -932,8 +986,8 @@ def add_customer_advance(
         customer.opening_balance or 0.0,
     )
     
-    amount = advance_in.get('amount', 0)
-    description = advance_in.get('description', '')
+    amount = float(advance_in.get('amount', 0) or 0)
+    description = str(advance_in.get('description', '') or '').strip()
     payment_method = advance_in.get('payment_method', 'cash')
     
     if amount <= 0:
@@ -958,11 +1012,14 @@ def add_customer_advance(
     note = CustomerNote(
         customer_id=id,
         note_type="advance_payment",
-        note_text=f"Paid RS {amount:.2f} on behalf via {payment_method}: {description}"
+        note_text=f"Paid RS {amount:.2f} on behalf via {payment_method}: {description}",
+        amount=amount,
+        payment_method=payment_method,
     )
     
     db.add(note)
     db.add(customer)
+    db.flush()
     accounting_service.post_customer_advance(
         db=db,
         customer_id=id,
@@ -999,8 +1056,119 @@ def add_customer_advance(
         "amount": amount,
         "new_balance": customer.outstanding_balance,
         "description": description,
+        "payment_method": payment_method,
         "note_id": note.id
     }
+
+
+@router.put("/{id}/advances/{advance_id}")
+def update_customer_advance(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    advance_id: int,
+    advance_in: customer_schema.CustomerAdvanceUpdate,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Edit a buy-on-behalf entry and atomically rebuild its ledger posting."""
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    note = db.query(CustomerNote).filter(
+        CustomerNote.id == advance_id,
+        CustomerNote.customer_id == id,
+        CustomerNote.note_type == "advance_payment",
+    ).first()
+    if not customer or not note:
+        raise HTTPException(status_code=404, detail="Buy on behalf entry not found")
+
+    old_amount, _, _ = _parse_legacy_advance(note)
+    current_balance = accounting_service.get_customer_balance(
+        db, customer.id, customer.opening_balance or 0.0
+    )
+    projected_balance = current_balance - old_amount + advance_in.amount
+    if customer.credit_limit is not None and projected_balance > customer.credit_limit:
+        available = max(0.0, customer.credit_limit - (current_balance - old_amount))
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Credit limit exceeded. Limit: {customer.credit_limit:.2f}, "
+                f"Current: {current_balance:.2f}, Available: {available:.2f}"
+            ),
+        )
+
+    entries = _get_advance_journal_entries(db, id, note)
+    if not entries:
+        raise HTTPException(
+            status_code=409,
+            detail="Linked ledger entry was not found; nothing was updated.",
+        )
+    for entry in entries:
+        db.delete(entry)
+    db.flush()
+
+    description = advance_in.description.strip()
+    note.amount = advance_in.amount
+    note.payment_method = advance_in.payment_method
+    note.note_text = (
+        f"Paid RS {advance_in.amount:.2f} on behalf via "
+        f"{advance_in.payment_method}: {description}"
+    )
+    note.updated_at = now_pkt()
+    db.add(note)
+    accounting_service.post_customer_advance(
+        db=db,
+        customer_id=id,
+        amount=advance_in.amount,
+        payment_method=advance_in.payment_method,
+        created_by=current_user.id,
+        note_text=description,
+        reference_id=note.id,
+    )
+    db.flush()
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db, customer.id, customer.opening_balance or 0.0
+    )
+    customer.updated_at = now_pkt()
+    db.add(customer)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.delete("/{id}/advances/{advance_id}")
+def delete_customer_advance(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    advance_id: int,
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """Remove a buy-on-behalf entry and its receivable ledger impact."""
+    customer = db.query(Customer).filter(Customer.id == id).first()
+    note = db.query(CustomerNote).filter(
+        CustomerNote.id == advance_id,
+        CustomerNote.customer_id == id,
+        CustomerNote.note_type == "advance_payment",
+    ).first()
+    if not customer or not note:
+        raise HTTPException(status_code=404, detail="Buy on behalf entry not found")
+
+    entries = _get_advance_journal_entries(db, id, note)
+    if not entries:
+        raise HTTPException(
+            status_code=409,
+            detail="Linked ledger entry was not found; nothing was removed.",
+        )
+    for entry in entries:
+        db.delete(entry)
+    db.delete(note)
+    db.flush()
+    customer.outstanding_balance = accounting_service.get_customer_balance(
+        db, customer.id, customer.opening_balance or 0.0
+    )
+    customer.updated_at = now_pkt()
+    db.add(customer)
+    db.commit()
+    return {"message": "Buy on behalf entry deleted successfully"}
 
 
 @router.post("/{id}/send-reminder")

@@ -10,7 +10,7 @@ class Customer(Base):
 
     # Primary key - auto-increment internal ID
     id = Column(Integer, primary_key=True, index=True)
-    
+
     # Unique readable identifier (e.g., CUST001, CUST002)
     customer_id = Column(String, unique=True, index=True, nullable=True)
     
@@ -59,6 +59,10 @@ class CustomerNote(Base):
     
     note_type = Column(String, default="general")  # general, credit_history, special_instruction, reminder, preference
     note_text = Column(String, nullable=False)
+    # Structured values for buy-on-behalf entries. Kept on the note table so
+    # existing advance_payment rows and their journal references remain valid.
+    amount = Column(Float, nullable=True)
+    payment_method = Column(String, nullable=True)
     
     created_at = Column(DateTime, default=now_pkt, index=True)
     updated_at = Column(DateTime, default=now_pkt, onupdate=now_pkt)
@@ -80,7 +84,6 @@ class CustomerPayment(Base):
     reference_note = Column(String, nullable=True)  # Optional reference or notes
     
     created_at = Column(DateTime, default=now_pkt, index=True)
-    
+
     # Relationships
     customer = relationship("Customer", back_populates="payments")
-    

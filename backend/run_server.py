@@ -360,6 +360,7 @@ if __name__ == "__main__":
 
     # 1) Load env first
     load_env_from_exe_dir()
+    host = os.environ.get("AP_HOST", "0.0.0.0")
     port = int(os.environ.get("AP_PORT", "8000"))
 
     # 1b) Advertise pos.local on the LAN via mDNS (no client config needed)
@@ -386,13 +387,16 @@ if __name__ == "__main__":
     log("Starting FastAPI server")
     log(f"   exe_dir:  {exe_dir()}")
     log(f"   cwd:      {Path.cwd()}")
+    log(f"   host:     {host}")
     log(f"   port:     {port}")
+    log(f"   LAN API:  http://{local_ip}:{port}")
+    log(f"   LAN POS:  http://{local_ip}:{LOCAL_PORT}")
     log(f"   DATA_DIR: {data_dir}")
     log(f"   DB:       {db_path}")
 
     try:
         from app.main import app
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+        uvicorn.run(app, host=host, port=port, log_level="info")
     except Exception as e:
         log(f"Failed to start server: {e}")
         sys.exit(1)

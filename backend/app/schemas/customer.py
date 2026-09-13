@@ -22,6 +22,8 @@ class CustomerNote(CustomerNoteBase):
     customer_id: int
     created_at: datetime
     updated_at: datetime
+    amount: Optional[float] = None
+    payment_method: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -45,6 +47,12 @@ class CustomerPayment(CustomerPaymentBase):
 
     class Config:
         from_attributes = True
+
+
+class CustomerAdvanceUpdate(BaseModel):
+    amount: float = Field(gt=0)
+    description: str = Field(min_length=1)
+    payment_method: str = "cash"
 
 
 class CustomerBase(BaseModel):

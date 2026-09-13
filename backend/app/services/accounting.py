@@ -576,7 +576,7 @@ def post_customer_advance(
         ),
         lines=lines,
         source_type="customer_advance",
-        source_id=customer_id,
+        source_id=reference_id if reference_id is not None else customer_id,
         created_by=created_by,
         entry_date=now_pkt(),
     )

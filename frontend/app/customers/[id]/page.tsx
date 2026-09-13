@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use, useMemo, useCallback } from "react";
+import { useState, useEffect, use, useMemo, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { ToWords } from "to-words";
@@ -25,6 +25,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import api, { customerApi, CustomerResponse, CustomerNote, CustomerPayment } from "@/lib/api";
@@ -99,7 +109,14 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   // Dialog states
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentConfirmOpen, setPaymentConfirmOpen] = useState(false);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const paymentSubmissionRef = useRef(false);
   const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
+  const [editAdvanceDialogOpen, setEditAdvanceDialogOpen] = useState(false);
+  const [editingAdvanceId, setEditingAdvanceId] = useState<number | null>(null);
+  const [deleteAdvanceId, setDeleteAdvanceId] = useState<number | null>(null);
+  const [advanceSaving, setAdvanceSaving] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
   const [ledgerDialogOpen, setLedgerDialogOpen] = useState(false);
@@ -115,6 +132,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   const [newNote, setNewNote] = useState({ note_type: "general", note_text: "" });
   const [newPayment, setNewPayment] = useState({ amount: 0, payment_method: "cash", reference_note: "" });
   const [newAdvance, setNewAdvance] = useState({ amount: 0, description: "", payment_method: "cash" });
+  const [editAdvance, setEditAdvance] = useState({ amount: 0, description: "", payment_method: "cash" });
   const [editCustomer, setEditCustomer] = useState({
     name: "",
     phone: "",
@@ -225,6 +243,10 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
 
     if (!isValidId) return;
 
+    if (paymentSubmissionRef.current) return;
+    paymentSubmissionRef.current = true;
+    setPaymentProcessing(true);
+
     try {
       const payment = await customerApi.recordCustomerPayment(customerId, newPayment);
       const updatedCustomer = await customerApi.getCustomer(customerId);
@@ -246,6 +268,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
     } catch (error) {
       console.error("Failed to record payment:", error);
       alert("Failed to record payment");
+    } finally {
+      paymentSubmissionRef.current = false;
+      setPaymentProcessing(false);
     }
   };
 
@@ -307,6 +332,52 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       } else {
         alert(detail || "Failed to add advance payment");
       }
+    }
+  };
+
+  const openEditAdvance = (note: CustomerNote) => {
+    const amountMatch = note.note_text.match(/(?:rs|\$)\s*([0-9.,]+)/i);
+    const methodMatch = note.note_text.match(/via ([a-z_]+):/i);
+    const descriptionMatch = note.note_text.match(/: (.+)$/);
+    setEditingAdvanceId(note.id);
+    setEditAdvance({
+      amount: note.amount ?? (amountMatch ? parseFloat(amountMatch[1].replace(/,/g, "")) : 0),
+      payment_method: note.payment_method || (methodMatch ? methodMatch[1] : "cash"),
+      description: descriptionMatch ? descriptionMatch[1] : note.note_text,
+    });
+    setEditAdvanceDialogOpen(true);
+  };
+
+  const handleUpdateAdvance = async () => {
+    if (!editingAdvanceId || editAdvance.amount <= 0 || !editAdvance.description.trim()) return;
+    try {
+      setAdvanceSaving(true);
+      await customerApi.updateCustomerAdvance(customerId, editingAdvanceId, editAdvance);
+      setEditAdvanceDialogOpen(false);
+      await fetchCustomerData();
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail
+        || "Failed to update buy on behalf entry";
+      const creditInfo = parseCreditLimitError(detail);
+      if (creditInfo) setCreditLimitAlert({ ...creditInfo, attempted: editAdvance.amount });
+      else alert(detail);
+    } finally {
+      setAdvanceSaving(false);
+    }
+  };
+
+  const handleDeleteAdvance = async () => {
+    if (!deleteAdvanceId) return;
+    try {
+      setAdvanceSaving(true);
+      await customerApi.deleteCustomerAdvance(customerId, deleteAdvanceId);
+      setDeleteAdvanceId(null);
+      await fetchCustomerData();
+    } catch (error: unknown) {
+      const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      alert(detail || "Failed to delete buy on behalf entry");
+    } finally {
+      setAdvanceSaving(false);
     }
   };
 
@@ -991,12 +1062,32 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                 <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleRecordPayment}>
-                  Record Payment
+                <Button
+                  onClick={() => setPaymentConfirmOpen(true)}
+                  disabled={newPayment.amount <= 0 || paymentProcessing}
+                >
+                  {paymentProcessing ? "Recording..." : "Record Payment"}
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          <AlertDialog open={paymentConfirmOpen} onOpenChange={setPaymentConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm customer payment?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Record {formatCurrency(newPayment.amount)} payment for {customer.name}? This will update the customer account.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={paymentProcessing}>No</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRecordPayment} disabled={paymentProcessing}>
+                  {paymentProcessing ? "Recording..." : "Yes, record payment"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           <Dialog open={advanceDialogOpen} onOpenChange={setAdvanceDialogOpen}>
             <DialogTrigger asChild>
@@ -1328,9 +1419,9 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                     return advances.map((note: CustomerNote) => {
                       // Extract amount from note_text (format: "Paid $XX.XX on behalf via cash: description")
                       const amountMatch = note.note_text.match(/(?:rs|\$)\s*([0-9.,]+)/i);
-                      const amount = amountMatch ? parseFloat(amountMatch[1].replace(',', '')) : 0;
+                      const amount = note.amount ?? (amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 0);
                       const methodMatch = note.note_text.match(/via ([a-z_]+):/i);
-                      const method = methodMatch ? methodMatch[1] : 'cash';
+                      const method = note.payment_method || (methodMatch ? methodMatch[1] : 'cash');
                       const descriptionMatch = note.note_text.match(/: (.+)$/);
                       const description = descriptionMatch ? descriptionMatch[1] : note.note_text;
                       
@@ -1374,6 +1465,14 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                               </p>
                             </div>
                             <div className="flex items-center gap-2 ml-4">
+                              <Button variant="outline" size="sm" onClick={() => openEditAdvance(note)}>
+                                <Edit className="h-4 w-4 mr-1" />
+                                Edit
+                              </Button>
+                              <Button variant="destructive" size="sm" onClick={() => setDeleteAdvanceId(note.id)}>
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
                               <Dialog>
                                 <DialogTrigger asChild>
                                   <Button 
@@ -1463,8 +1562,11 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                                     }}>
                                       Cancel
                                     </Button>
-                                    <Button onClick={handleRecordPayment}>
-                                      Record Payment
+                                    <Button
+                                      onClick={() => setPaymentConfirmOpen(true)}
+                                      disabled={newPayment.amount <= 0 || paymentProcessing}
+                                    >
+                                      {paymentProcessing ? "Recording..." : "Record Payment"}
                                     </Button>
                                   </DialogFooter>
                                 </DialogContent>
@@ -1534,6 +1636,75 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={editAdvanceDialogOpen} onOpenChange={setEditAdvanceDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Buy on Behalf Entry</DialogTitle>
+            <DialogDescription>
+              Saving will update the customer balance and linked ledger entry.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-advance-amount">Amount</Label>
+              <Input
+                id="edit-advance-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={editAdvance.amount || ""}
+                onChange={(e) => setEditAdvance({ ...editAdvance, amount: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-advance-description">Description</Label>
+              <Textarea
+                id="edit-advance-description"
+                value={editAdvance.description}
+                onChange={(e) => setEditAdvance({ ...editAdvance, description: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-advance-method">Payment Method</Label>
+              <select
+                id="edit-advance-method"
+                className="w-full p-2 border rounded-md"
+                value={editAdvance.payment_method}
+                onChange={(e) => setEditAdvance({ ...editAdvance, payment_method: e.target.value })}
+              >
+                <option value="cash">Cash</option>
+                <option value="card">Card</option>
+                <option value="mobile">Mobile Payment</option>
+                <option value="bank_transfer">Bank Transfer</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditAdvanceDialogOpen(false)} disabled={advanceSaving}>Cancel</Button>
+            <Button onClick={handleUpdateAdvance} disabled={advanceSaving || editAdvance.amount <= 0 || !editAdvance.description.trim()}>
+              {advanceSaving ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteAdvanceId !== null} onOpenChange={(open) => !open && setDeleteAdvanceId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete buy on behalf entry?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the history item and its linked ledger amount, then recalculate the customer balance.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={advanceSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteAdvance} disabled={advanceSaving}>
+              {advanceSaving ? "Deleting..." : "Delete Entry"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen}>
         <DialogContent className="sm:max-w-[340px] p-0">

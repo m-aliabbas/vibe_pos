@@ -88,6 +88,7 @@ interface Sale {
   tax: number;
   delivery_charges: number;
   total: number;
+  previous_balance: number;
   amount_paid: number;
   amount_due: number;
   change_amount: number;
@@ -259,7 +260,8 @@ export default function InvoicePage() {
     minute: "2-digit",
     hour12: true,
   });
-  const paymentStatus = sale.amount_due > 0 ? "Cash Unpaid" : "Cash Paid";
+  const accountBalance = sale.previous_balance + sale.amount_due;
+  const paymentStatus = accountBalance > 0 ? "Cash Unpaid" : "Cash Paid";
   const customerDisplayName = sale.customer_name || sale.customer?.name || "Walk-in";
   const customerDisplayPhone = sale.customer?.phone || sale.customer?.id || "";
 
@@ -405,16 +407,28 @@ export default function InvoicePage() {
                 <span>{sale.delivery_charges > 0 ? sale.delivery_charges.toFixed(0) : 0}</span>
               </div>
               <div className="flex justify-between font-bold text-[15px] border-t border-black pt-0.5 mt-0.5">
-                <span>Payable</span>
+                <span>Current Bill</span>
                 <span>{sale.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
+              {Math.abs(sale.previous_balance) > 0.005 && (
+                <>
+                  <div className="flex justify-between font-semibold text-orange-800">
+                    <span>Previous Balance</span>
+                    <span>{sale.previous_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between font-black text-[16px] border-t border-black pt-0.5">
+                    <span>Grand Total</span>
+                    <span>{(sale.total + sale.previous_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between">
                 <span>Received</span>
                 <span>{sale.amount_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               <div className="flex justify-between font-semibold">
-                <span>Due Cash</span>
-                <span>{sale.amount_due.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>Total Balance</span>
+                <span>{(sale.previous_balance + sale.amount_due).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
               {returnRefundTotal > 0 && (
                 <div className="flex justify-between text-red-700 font-semibold">

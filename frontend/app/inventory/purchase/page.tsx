@@ -6,6 +6,16 @@ import { useAuthStore } from '@/store/authStore';
 import api, { holdPurchasesApi, HoldPurchaseResponse } from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,6 +49,9 @@ function PurchasePageContent() {
     const [heldPurchases, setHeldPurchases] = useState<HoldPurchaseResponse[]>([]);
     const [heldOpen, setHeldOpen] = useState(false);
     const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+    const [purchaseConfirmOpen, setPurchaseConfirmOpen] = useState(false);
+    const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
+    const purchaseSubmissionRef = useRef(false);
     const [priceChangedItems, setPriceChangedItems] = useState<any[]>([]);
     const [priceChangeDialogOpen, setPriceChangeDialogOpen] = useState(false);
     const [priceUpdateSelections, setPriceUpdateSelections] = useState<Record<number, string>>({});
@@ -510,6 +523,10 @@ function PurchasePageContent() {
             return;
         }
 
+        if (purchaseSubmissionRef.current) return;
+        purchaseSubmissionRef.current = true;
+        setPurchaseSubmitting(true);
+
         try {
                         const response = await api.post('/purchases/', {
                 vendor_id: parseInt(vendorId),
@@ -549,6 +566,9 @@ function PurchasePageContent() {
         } catch (error) {
             console.error("Failed to submit purchase", error);
             alert("Failed to submit purchase");
+        } finally {
+            purchaseSubmissionRef.current = false;
+            setPurchaseSubmitting(false);
         }
     };
 
@@ -930,12 +950,29 @@ function PurchasePageContent() {
                         <Button
                             className="w-full"
                             size="lg"
-                            onClick={handleSubmit}
-                            disabled={!vendorId || items.length === 0}
+                            onClick={() => setPurchaseConfirmOpen(true)}
+                            disabled={!vendorId || items.length === 0 || purchaseSubmitting}
                         >
-                            Confirm Purchase Order
+                            {purchaseSubmitting ? 'Saving Purchase...' : 'Confirm Purchase Order'}
                             <ArrowRight className="ml-2 h-5 w-5" />
                         </Button>
+
+                        <AlertDialog open={purchaseConfirmOpen} onOpenChange={setPurchaseConfirmOpen}>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Confirm purchase order?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        Save this purchase for {vendorSearch || 'the selected vendor'} with a total of Rs {totalAmount.toFixed(2)}? Stock and the vendor account will be updated.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel disabled={purchaseSubmitting}>No</AlertDialogCancel>
+                                    <AlertDialogAction onClick={handleSubmit} disabled={purchaseSubmitting}>
+                                        {purchaseSubmitting ? 'Saving...' : 'Yes, confirm purchase'}
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
 
                         {heldOpen && (
                             <div className="border rounded-lg p-4 bg-slate-50 space-y-3">

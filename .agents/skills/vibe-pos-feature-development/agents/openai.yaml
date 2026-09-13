@@ -1,0 +1,4 @@
+interface:
+  display_name: "VibePOS Feature Development"
+  short_description: "Safely build and verify VibePOS features"
+  default_prompt: "Use $vibe-pos-feature-development to implement this VibePOS change end to end."
