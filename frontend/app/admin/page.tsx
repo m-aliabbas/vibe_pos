@@ -12,7 +12,6 @@ import {
   ShoppingCart,
   Package,
   Users,
-  TrendingUp,
   BarChart3,
   RefreshCw
 } from 'lucide-react';
@@ -94,7 +93,7 @@ const AdminDashboard: React.FC = () => {
               icon={DollarSign}
               trend={{ value: 12.5, label: "vs last month", isPositive: true }}
               className="border-l-4 border-l-blue-500"
-              onClick={() => router.push('/admin/reports/sales')}
+              onClick={() => router.push('/reports')}
               prefix="$"
             />
             <MetricCard
@@ -104,7 +103,7 @@ const AdminDashboard: React.FC = () => {
               icon={ShoppingCart}
               trend={{ value: 8.2, label: "vs last month", isPositive: true }}
               className="border-l-4 border-l-green-500"
-              onClick={() => router.push('/admin/reports/sales')}
+              onClick={() => router.push('/reports')}
             />
             <MetricCard
               title="Low Stock Alerts"
@@ -112,7 +111,7 @@ const AdminDashboard: React.FC = () => {
               subtitle="Items below threshold"
               icon={Package}
               className="border-l-4 border-l-orange-500"
-              onClick={() => router.push('/admin/reports/inventory')}
+              onClick={() => router.push('/reports')}
             />
             <MetricCard
               title="Total Staff"
@@ -120,7 +119,7 @@ const AdminDashboard: React.FC = () => {
               subtitle="Active users"
               icon={Users}
               className="border-l-4 border-l-purple-500"
-              onClick={() => router.push('/admin/reports/users')}
+              onClick={() => router.push('/users')}
             />
           </div>
 
@@ -131,15 +130,15 @@ const AdminDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Button variant="outline" className="h-20 flex flex-col items-center justify-center">
+                <Button variant="outline" className="h-20 flex flex-col items-center justify-center" onClick={() => router.push('/reports')}>
                   <BarChart3 className="h-6 w-6 mb-2" />
-                  <span>View Sales Report</span>
+                  <span>Open Analytics</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex flex-col items-center justify-center">
+                <Button variant="outline" className="h-20 flex flex-col items-center justify-center" onClick={() => router.push('/reports')}>
                   <Package className="h-6 w-6 mb-2" />
                   <span>Check Inventory</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex flex-col items-center justify-center">
+                <Button variant="outline" className="h-20 flex flex-col items-center justify-center" onClick={() => router.push('/users')}>
                   <Users className="h-6 w-6 mb-2" />
                   <span>Manage Users</span>
                 </Button>

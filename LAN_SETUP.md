@@ -20,12 +20,14 @@ DHCP settings so the address does not change.
 
 ## Firewall
 
-Allow the VibePOS/Node backend through the host firewall on **Private networks**.
-The required inbound TCP ports are:
+Allow the VibePOS/Node frontend through the host firewall on **Private networks**.
+The required inbound TCP port is:
 
 - `4321`: VibePOS web interface
-- `8000`: VibePOS API
 
-Do not expose these ports to the public internet. Use them only on a trusted
+Browser API requests are proxied through port `4321`, so LAN clients do not
+need direct access to backend port `8000`.
+
+Do not expose this port to the public internet. Use it only on a trusted
 local network. Guest Wi-Fi commonly blocks devices from talking to one another;
 disable client/AP isolation or use the main LAN.

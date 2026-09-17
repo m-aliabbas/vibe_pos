@@ -563,7 +563,7 @@ export default function SalesTerminal() {
     const { label, payload, signature } = buildHoldRequest(snapshot);
     if (signature === lastAutoHoldSignatureRef.current) return;
 
-    const endpoint = "http://127.0.0.1:8000/api/v1/hold-sales/";
+    const endpoint = "/api/v1/hold-sales/";
     fetch(endpoint, {
       method: "POST",
       headers: {

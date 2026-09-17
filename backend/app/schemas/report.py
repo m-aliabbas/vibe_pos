@@ -24,6 +24,118 @@ class TopProductsReport(BaseModel):
     by_revenue: List[ProductData]
     by_quantity: List[ProductData]
 
+class ProductSalesHistoryItem(BaseModel):
+    product_id: int
+    product_name: str
+    sku: Optional[str]
+    base_unit: str
+    purchased_quantity: float
+    sold_quantity: float
+    purchase_cost: float
+    sales_revenue: float
+    cost_of_goods_sold: float
+    profit_loss: float
+    purchase_orders: int
+    sales_transactions: int
+
+class ProductSalesHistorySummary(BaseModel):
+    matched_products: int
+    purchased_quantity: float
+    sold_quantity: float
+    purchase_cost: float
+    sales_revenue: float
+    cost_of_goods_sold: float
+    profit_loss: float
+
+class ProductSalesHistoryReport(BaseModel):
+    products: List[ProductSalesHistoryItem]
+    summary: ProductSalesHistorySummary
+    search: str
+    period_start: str
+    period_end: str
+
+
+# Consolidated Reports & Analytics dashboard
+class AnalyticsStockItem(BaseModel):
+    product_id: int
+    product_name: str
+    sku: Optional[str]
+    category: Optional[str]
+    current_stock: float
+    threshold: int
+    base_unit: str
+
+
+class AnalyticsProductSale(BaseModel):
+    product_id: int
+    product_name: str
+    sku: Optional[str]
+    quantity_sold: float
+    revenue: float
+
+
+class AnalyticsMonthlySale(BaseModel):
+    month: str
+    quantity_sold: float
+    revenue: float
+
+
+class AnalyticsVendorPurchase(BaseModel):
+    vendor_id: int
+    vendor_name: str
+    purchase_count: int
+    total_bought: float
+
+
+class AnalyticsVendorPrice(BaseModel):
+    vendor_id: int
+    vendor_name: str
+    quantity_bought: float
+    average_unit_cost: float
+
+
+class AnalyticsProductPriceComparison(BaseModel):
+    product_id: int
+    product_name: str
+    sku: Optional[str]
+    lowest_price: float
+    highest_price: float
+    price_difference: float
+    vendors: List[AnalyticsVendorPrice]
+
+
+class AnalyticsOutstandingVendor(BaseModel):
+    vendor_id: int
+    vendor_name: str
+    phone: Optional[str]
+    outstanding_amount: float
+
+
+class AnalyticsCustomer(BaseModel):
+    customer_id: int
+    customer_name: str
+    phone: Optional[str]
+    transaction_count: int
+    total_bought: float
+    outstanding_amount: float
+
+
+class AnalyticsOverviewReport(BaseModel):
+    period_start: str
+    period_end: str
+    top_n: int
+    months: int
+    low_stock: List[AnalyticsStockItem]
+    out_of_stock: List[AnalyticsStockItem]
+    most_selling: List[AnalyticsProductSale]
+    least_selling: List[AnalyticsProductSale]
+    monthly_sales: List[AnalyticsMonthlySale]
+    top_vendors: List[AnalyticsVendorPurchase]
+    vendor_price_comparisons: List[AnalyticsProductPriceComparison]
+    outstanding_vendors: List[AnalyticsOutstandingVendor]
+    outstanding_customers: List[AnalyticsCustomer]
+    top_customers: List[AnalyticsCustomer]
+
 class PaymentMethodData(BaseModel):
     method: str
     transaction_count: int

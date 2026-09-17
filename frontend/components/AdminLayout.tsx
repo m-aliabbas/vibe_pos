@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
-import { AutoBreadcrumb } from '@/components/AutoBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -19,16 +18,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   BarChart3,
-  Package,
-  DollarSign,
-  ShoppingCart,
   Users,
   Settings,
   LogOut,
   Home,
-  TrendingUp,
   PieChart,
-  FileText,
   Store,
   Truck,
   Tags,
@@ -96,34 +90,10 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     },
     // Reports Section
     {
-      href: '/admin/reports/sales',
-      label: 'Sales Reports',
+      href: '/reports',
+      label: 'Reports & Analytics',
       icon: BarChart3,
-      description: 'Revenue and transaction analytics'
-    },
-    {
-      href: '/admin/reports/inventory',
-      label: 'Inventory Reports',
-      icon: Package,
-      description: 'Stock levels and turnover'
-    },
-    {
-      href: '/admin/reports/financial',
-      label: 'Financial Reports',
-      icon: DollarSign,
-      description: 'Profit & loss, margins'
-    },
-    {
-      href: '/admin/reports/purchases',
-      label: 'Purchase Reports',
-      icon: ShoppingCart,
-      description: 'Vendor and cost analysis'
-    },
-    {
-      href: '/admin/reports/users',
-      label: 'User Reports',
-      icon: FileText,
-      description: 'Performance and activity'
+      description: 'Inventory, products, buying & customers'
     },
     // Settings Section
     {

@@ -215,7 +215,7 @@ function PurchasePageContent() {
             const { label, payload, signature } = buildHoldRequest(snapshot);
             if (signature === lastAutoHoldSignatureRef.current) return;
 
-            const endpoint = 'http://127.0.0.1:8000/api/v1/hold-purchases/';
+            const endpoint = '/api/v1/hold-purchases/';
             fetch(endpoint, {
                 method: 'POST',
                 headers: {

@@ -2,7 +2,10 @@ import axios from 'axios';
 
 const getBaseURL = () => {
     if (typeof window !== 'undefined') {
-        return `http://${window.location.hostname}:8000/api/v1`;
+        // Keep browser requests on the frontend origin. Next.js proxies these
+        // requests to the backend running on the host machine, so LAN clients
+        // do not need direct access to the backend port.
+        return '/api/v1';
     }
     return 'http://127.0.0.1:8000/api/v1';
 };
@@ -468,7 +471,133 @@ export const purchasesApi = {
     },
 };
 
+export interface ProductSalesHistoryItem {
+    product_id: number;
+    product_name: string;
+    sku?: string | null;
+    base_unit: string;
+    purchased_quantity: number;
+    sold_quantity: number;
+    purchase_cost: number;
+    sales_revenue: number;
+    cost_of_goods_sold: number;
+    profit_loss: number;
+    purchase_orders: number;
+    sales_transactions: number;
+}
+
+export interface ProductSalesHistoryReport {
+    products: ProductSalesHistoryItem[];
+    summary: {
+        matched_products: number;
+        purchased_quantity: number;
+        sold_quantity: number;
+        purchase_cost: number;
+        sales_revenue: number;
+        cost_of_goods_sold: number;
+        profit_loss: number;
+    };
+    search: string;
+    period_start: string;
+    period_end: string;
+}
+
+export interface AnalyticsStockItem {
+    product_id: number;
+    product_name: string;
+    sku?: string | null;
+    category?: string | null;
+    current_stock: number;
+    threshold: number;
+    base_unit: string;
+}
+
+export interface AnalyticsProductSale {
+    product_id: number;
+    product_name: string;
+    sku?: string | null;
+    quantity_sold: number;
+    revenue: number;
+}
+
+export interface AnalyticsCustomer {
+    customer_id: number;
+    customer_name: string;
+    phone?: string | null;
+    transaction_count: number;
+    total_bought: number;
+    outstanding_amount: number;
+}
+
+export interface AnalyticsOverviewReport {
+    period_start: string;
+    period_end: string;
+    top_n: number;
+    months: number;
+    low_stock: AnalyticsStockItem[];
+    out_of_stock: AnalyticsStockItem[];
+    most_selling: AnalyticsProductSale[];
+    least_selling: AnalyticsProductSale[];
+    monthly_sales: Array<{ month: string; quantity_sold: number; revenue: number }>;
+    top_vendors: Array<{
+        vendor_id: number;
+        vendor_name: string;
+        purchase_count: number;
+        total_bought: number;
+    }>;
+    vendor_price_comparisons: Array<{
+        product_id: number;
+        product_name: string;
+        sku?: string | null;
+        lowest_price: number;
+        highest_price: number;
+        price_difference: number;
+        vendors: Array<{
+            vendor_id: number;
+            vendor_name: string;
+            quantity_bought: number;
+            average_unit_cost: number;
+        }>;
+    }>;
+    outstanding_vendors: Array<{
+        vendor_id: number;
+        vendor_name: string;
+        phone?: string | null;
+        outstanding_amount: number;
+    }>;
+    outstanding_customers: AnalyticsCustomer[];
+    top_customers: AnalyticsCustomer[];
+}
+
 export const reportsApi = {
+    getAnalyticsOverview: async (params: {
+        start_date?: string;
+        end_date?: string;
+        top_n?: number;
+        months?: number;
+    }): Promise<AnalyticsOverviewReport> => {
+        const response = await api.get('/reports/analytics/overview', { params });
+        return response.data;
+    },
+    getProductSalesHistory: async (params: {
+        start_date?: string;
+        end_date?: string;
+        search?: string;
+    }): Promise<ProductSalesHistoryReport> => {
+        const response = await api.get('/reports/sales/product-history', { params });
+        return response.data;
+    },
+    exportProductSalesHistory: async (params: {
+        start_date?: string;
+        end_date?: string;
+        search?: string;
+    }): Promise<Blob> => {
+        const response = await api.get('/reports/sales/product-history', {
+            params: { ...params, export: true },
+            responseType: 'blob',
+        });
+        return response.data;
+    },
     getVendorLedger: async (id: number, params?: { start_date?: string; end_date?: string }): Promise<LedgerReport> => {
         const response = await api.get(`/reports/vendors/${id}/ledger`, { params });
         return response.data;

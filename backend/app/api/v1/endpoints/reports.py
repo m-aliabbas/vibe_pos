@@ -7,6 +7,7 @@ from app.core.timezone import now_pkt
 from typing import List, Optional, Any, Dict
 import csv
 import io
+import json
 import requests
 from app.api import deps
 from app.models.sale import Sale, SaleItem
@@ -14,12 +15,13 @@ from app.models.product import Product, ProductVariation
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.vendor import Vendor
 from app.models.customer import Customer, CustomerNote
-from app.models.pos_return import PosReturn
+from app.models.pos_return import PosReturn, ReturnItem
 from app.models.accounting import JournalEntry, JournalLine, Account
+from app.models.stock_batch import StockBatch
 from app.models.user import User, UserRole
 from app.services import accounting as accounting_service
 from app.schemas.report import (
-    SalesSummaryReport, TopProductsReport, PaymentMethodReport,
+    SalesSummaryReport, TopProductsReport, ProductSalesHistoryReport, AnalyticsOverviewReport, PaymentMethodReport,
     CashierPerformanceReport, CustomerSalesReport, SalesTrendReport,
     StockLevelReport, LowStockAlert, InventoryTurnoverReport,
     StockMovementReport, ProductPerformanceReport, VariationStockReport,
@@ -83,6 +85,233 @@ def export_to_csv(data: List[Dict[str, Any]], filename: str):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/analytics/overview", response_model=AnalyticsOverviewReport)
+def get_analytics_overview(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    top_n: int = Query(5, ge=3, le=25),
+    months: int = Query(6, ge=3, le=24),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Return the focused inventory, product, buying, and customer analytics dashboard."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    start, end = validate_date_range(start_date, end_date)
+    if end_date and len(end_date.strip()) == 10:
+        end = end + timedelta(days=1) - timedelta(microseconds=1)
+
+    products = db.query(Product).order_by(Product.name.asc()).all()
+    stock_rows = []
+    for product in products:
+        current_stock = float(product.quantity or 0)
+        if product.has_variations:
+            current_stock += sum(float(variation.quantity or 0) for variation in product.variations)
+        row = {
+            "product_id": product.id,
+            "product_name": product.name,
+            "sku": product.sku,
+            "category": product.category,
+            "current_stock": current_stock,
+            "threshold": int(product.low_stock_threshold if product.low_stock_threshold is not None else 10),
+            "base_unit": product.base_unit or "piece",
+        }
+        stock_rows.append(row)
+
+    out_of_stock = sorted(
+        (row for row in stock_rows if row["current_stock"] <= 0),
+        key=lambda row: (row["current_stock"], row["product_name"].lower()),
+    )
+    low_stock = sorted(
+        (
+            row for row in stock_rows
+            if 0 < row["current_stock"] <= row["threshold"]
+        ),
+        key=lambda row: (row["current_stock"] / max(row["threshold"], 1), row["product_name"].lower()),
+    )
+
+    sales_rows = db.query(
+        SaleItem.product_id,
+        func.coalesce(func.sum(SaleItem.quantity), 0).label("quantity_sold"),
+        func.coalesce(func.sum(SaleItem.total_price), 0).label("revenue"),
+    ).join(Sale, Sale.id == SaleItem.sale_id).filter(
+        Sale.created_at >= start,
+        Sale.created_at <= end,
+    ).group_by(SaleItem.product_id).all()
+    sales_by_product = {
+        row.product_id: (float(row.quantity_sold or 0), float(row.revenue or 0))
+        for row in sales_rows
+    }
+    product_sales = [{
+        "product_id": product.id,
+        "product_name": product.name,
+        "sku": product.sku,
+        "quantity_sold": sales_by_product.get(product.id, (0.0, 0.0))[0],
+        "revenue": sales_by_product.get(product.id, (0.0, 0.0))[1],
+    } for product in products]
+    most_selling = sorted(
+        product_sales,
+        key=lambda row: (-row["quantity_sold"], -row["revenue"], row["product_name"].lower()),
+    )[:top_n]
+    least_selling = sorted(
+        product_sales,
+        key=lambda row: (row["quantity_sold"], row["revenue"], row["product_name"].lower()),
+    )[:top_n]
+
+    month_start = now_pkt().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    year = month_start.year
+    month = month_start.month - (months - 1)
+    while month <= 0:
+        month += 12
+        year -= 1
+    month_start = month_start.replace(year=year, month=month)
+    monthly_rows = db.query(
+        func.strftime('%Y-%m', Sale.created_at).label("month"),
+        func.coalesce(func.sum(SaleItem.quantity), 0).label("quantity_sold"),
+        func.coalesce(func.sum(SaleItem.total_price), 0).label("revenue"),
+    ).join(SaleItem, SaleItem.sale_id == Sale.id).filter(
+        Sale.created_at >= month_start,
+    ).group_by(func.strftime('%Y-%m', Sale.created_at)).all()
+    monthly_map = {
+        row.month: {"quantity_sold": float(row.quantity_sold or 0), "revenue": float(row.revenue or 0)}
+        for row in monthly_rows
+    }
+    monthly_sales = []
+    cursor_year, cursor_month = month_start.year, month_start.month
+    for _ in range(months):
+        key = f"{cursor_year:04d}-{cursor_month:02d}"
+        totals = monthly_map.get(key, {"quantity_sold": 0.0, "revenue": 0.0})
+        monthly_sales.append({"month": key, **totals})
+        cursor_month += 1
+        if cursor_month == 13:
+            cursor_month = 1
+            cursor_year += 1
+
+    vendor_rows = db.query(
+        Vendor.id,
+        Vendor.name,
+        func.count(Purchase.id).label("purchase_count"),
+        func.coalesce(func.sum(Purchase.total_amount), 0).label("total_bought"),
+    ).join(Purchase, Purchase.vendor_id == Vendor.id).filter(
+        Purchase.created_at >= start,
+        Purchase.created_at <= end,
+    ).group_by(Vendor.id, Vendor.name).order_by(func.sum(Purchase.total_amount).desc()).limit(top_n).all()
+    top_vendors = [{
+        "vendor_id": row.id,
+        "vendor_name": row.name,
+        "purchase_count": int(row.purchase_count or 0),
+        "total_bought": float(row.total_bought or 0),
+    } for row in vendor_rows]
+
+    price_rows = db.query(
+        PurchaseItem.product_id,
+        Purchase.vendor_id,
+        func.coalesce(func.sum(PurchaseItem.quantity), 0).label("quantity_bought"),
+        func.coalesce(
+            func.sum(func.coalesce(PurchaseItem.total_cost, PurchaseItem.quantity * PurchaseItem.unit_cost)),
+            0,
+        ).label("total_cost"),
+        func.avg(PurchaseItem.unit_cost).label("fallback_average"),
+    ).join(Purchase, Purchase.id == PurchaseItem.purchase_id).filter(
+        Purchase.created_at >= start,
+        Purchase.created_at <= end,
+    ).group_by(PurchaseItem.product_id, Purchase.vendor_id).all()
+    product_lookup = {product.id: product for product in products}
+    vendor_lookup = {vendor.id: vendor for vendor in db.query(Vendor).all()}
+    comparisons_by_product: Dict[int, List[Dict[str, Any]]] = {}
+    for row in price_rows:
+        if row.product_id not in product_lookup or row.vendor_id not in vendor_lookup:
+            continue
+        quantity = float(row.quantity_bought or 0)
+        total_cost = float(row.total_cost or 0)
+        average_cost = total_cost / quantity if quantity > 0 and total_cost else float(row.fallback_average or 0)
+        comparisons_by_product.setdefault(row.product_id, []).append({
+            "vendor_id": row.vendor_id,
+            "vendor_name": vendor_lookup[row.vendor_id].name,
+            "quantity_bought": quantity,
+            "average_unit_cost": average_cost,
+        })
+    price_comparisons = []
+    for product_id, vendor_prices in comparisons_by_product.items():
+        if len(vendor_prices) < 2:
+            continue
+        prices = [item["average_unit_cost"] for item in vendor_prices]
+        product = product_lookup[product_id]
+        price_comparisons.append({
+            "product_id": product_id,
+            "product_name": product.name,
+            "sku": product.sku,
+            "lowest_price": min(prices),
+            "highest_price": max(prices),
+            "price_difference": max(prices) - min(prices),
+            "vendors": sorted(vendor_prices, key=lambda item: item["average_unit_cost"]),
+        })
+    price_comparisons.sort(key=lambda item: (-item["price_difference"], item["product_name"].lower()))
+
+    outstanding_vendors = []
+    for vendor in vendor_lookup.values():
+        balance = max(0.0, accounting_service.get_vendor_balance(db, vendor.id))
+        if balance > 0:
+            outstanding_vendors.append({
+                "vendor_id": vendor.id,
+                "vendor_name": vendor.name,
+                "phone": vendor.phone,
+                "outstanding_amount": balance,
+            })
+    outstanding_vendors.sort(key=lambda row: (-row["outstanding_amount"], row["vendor_name"].lower()))
+
+    customers = db.query(Customer).all()
+    customer_opening_balances = {customer.id: float(customer.opening_balance or 0) for customer in customers}
+    customer_balances = accounting_service.get_customer_balances(db, customer_opening_balances)
+    customer_sales_rows = db.query(
+        Sale.customer_ref_id,
+        func.count(Sale.id).label("transaction_count"),
+        func.coalesce(func.sum(Sale.total), 0).label("total_bought"),
+    ).filter(
+        Sale.customer_ref_id.isnot(None),
+        Sale.created_at >= start,
+        Sale.created_at <= end,
+    ).group_by(Sale.customer_ref_id).all()
+    customer_sales_map = {
+        row.customer_ref_id: (int(row.transaction_count or 0), float(row.total_bought or 0))
+        for row in customer_sales_rows
+    }
+    customer_rows = [{
+        "customer_id": customer.id,
+        "customer_name": customer.name or customer.customer_id or customer.phone or f"Customer #{customer.id}",
+        "phone": customer.phone,
+        "transaction_count": customer_sales_map.get(customer.id, (0, 0.0))[0],
+        "total_bought": customer_sales_map.get(customer.id, (0, 0.0))[1],
+        "outstanding_amount": max(0.0, customer_balances.get(customer.id, 0.0)),
+    } for customer in customers]
+    outstanding_customers = sorted(
+        (row for row in customer_rows if row["outstanding_amount"] > 0),
+        key=lambda row: (-row["outstanding_amount"], row["customer_name"].lower()),
+    )[:top_n]
+    top_customers = sorted(
+        customer_rows,
+        key=lambda row: (-row["total_bought"], -row["transaction_count"], row["customer_name"].lower()),
+    )[:top_n]
+
+    return {
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
+        "top_n": top_n,
+        "months": months,
+        "low_stock": low_stock,
+        "out_of_stock": out_of_stock,
+        "most_selling": most_selling,
+        "least_selling": least_selling,
+        "monthly_sales": monthly_sales,
+        "top_vendors": top_vendors,
+        "vendor_price_comparisons": price_comparisons,
+        "outstanding_vendors": outstanding_vendors[:top_n],
+        "outstanding_customers": outstanding_customers,
+        "top_customers": top_customers,
+    }
 
 # Sales Reports
 @router.get("/sales/summary", response_model=SalesSummaryReport)
@@ -233,6 +462,247 @@ def get_top_products(
         return export_to_csv(csv_data, f"top_products_{start.date()}_{end.date()}.csv")
 
     return result
+
+
+@router.get("/sales/product-history", response_model=ProductSalesHistoryReport)
+def get_product_sales_history(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    search: str = Query("", max_length=200),
+    export: bool = Query(False),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """Show product-level purchases, sales, and gross profit/loss."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    start, end = validate_date_range(start_date, end_date)
+    # Date inputs from the report UI represent whole calendar days.
+    if end_date and len(end_date.strip()) == 10:
+        end = end + timedelta(days=1) - timedelta(microseconds=1)
+
+    normalized_search = search.strip()
+    products_query = db.query(Product)
+    if normalized_search:
+        pattern = f"%{normalized_search}%"
+        matching_variations = db.query(ProductVariation.product_id).filter(
+            or_(
+                ProductVariation.sku.ilike(pattern),
+                ProductVariation.barcode.ilike(pattern),
+            )
+        )
+        products_query = products_query.filter(
+            or_(
+                Product.name.ilike(pattern),
+                Product.sku.ilike(pattern),
+                Product.category.ilike(pattern),
+                Product.id.in_(matching_variations),
+            )
+        )
+
+    products = products_query.order_by(Product.name.asc(), Product.id.asc()).all()
+    product_ids = [product.id for product in products]
+
+    purchase_map: Dict[int, Dict[str, Any]] = {}
+    sales_map: Dict[int, Dict[str, Any]] = {}
+
+    if product_ids:
+        products_by_id = {product.id: product for product in products}
+
+        def to_base_quantity(product: Product, unit: Optional[str], quantity: float) -> float:
+            conversion = 1.0
+            selling_units = product.selling_units or []
+            if isinstance(selling_units, str):
+                try:
+                    selling_units = json.loads(selling_units)
+                except (TypeError, ValueError):
+                    selling_units = []
+            if unit and unit != product.base_unit:
+                for selling_unit in selling_units:
+                    if selling_unit.get("unit") == unit:
+                        conversion = float(selling_unit.get("conversion") or 1)
+                        break
+            return float(quantity or 0) * conversion
+
+        purchase_rows = db.query(
+            PurchaseItem.product_id,
+            func.coalesce(func.sum(PurchaseItem.quantity), 0).label("quantity"),
+            func.coalesce(
+                func.sum(
+                    func.coalesce(
+                        PurchaseItem.total_cost,
+                        PurchaseItem.quantity * PurchaseItem.unit_cost,
+                    )
+                ),
+                0,
+            ).label("cost"),
+            func.count(func.distinct(PurchaseItem.purchase_id)).label("orders"),
+        ).join(Purchase, Purchase.id == PurchaseItem.purchase_id).filter(
+            PurchaseItem.product_id.in_(product_ids),
+            Purchase.created_at >= start,
+            Purchase.created_at <= end,
+        ).group_by(PurchaseItem.product_id).all()
+
+        purchase_map = {
+            row.product_id: {
+                "quantity": float(row.quantity or 0),
+                "cost": float(row.cost or 0),
+                "orders": int(row.orders or 0),
+            }
+            for row in purchase_rows
+        }
+
+        purchase_return_rows = db.query(
+            ReturnItem.product_id,
+            ReturnItem.quantity_returned,
+            ReturnItem.total_refund,
+            ReturnItem.unit_price,
+        ).join(PosReturn, PosReturn.id == ReturnItem.return_id).filter(
+            ReturnItem.product_id.in_(product_ids),
+            ReturnItem.sale_item_id.is_(None),
+            PosReturn.status == "approved",
+            PosReturn.notes.like("%[PURCHASE_RETURN:%"),
+            PosReturn.created_at >= start,
+            PosReturn.created_at <= end,
+        ).all()
+
+        for row in purchase_return_rows:
+            purchase_data = purchase_map.setdefault(row.product_id, {
+                "quantity": 0.0,
+                "cost": 0.0,
+                "orders": 0,
+            })
+            returned_quantity = float(row.quantity_returned or 0)
+            returned_cost = row.total_refund
+            if returned_cost is None:
+                returned_cost = returned_quantity * float(row.unit_price or 0)
+            purchase_data["quantity"] -= returned_quantity
+            purchase_data["cost"] -= float(returned_cost or 0)
+
+        sale_rows = db.query(
+            SaleItem.product_id,
+            SaleItem.sale_id,
+            SaleItem.quantity,
+            SaleItem.unit,
+            SaleItem.total_price,
+            StockBatch.unit_cost,
+        ).join(Sale, Sale.id == SaleItem.sale_id).outerjoin(
+            StockBatch, StockBatch.id == SaleItem.batch_id
+        ).filter(
+            SaleItem.product_id.in_(product_ids),
+            Sale.created_at >= start,
+            Sale.created_at <= end,
+        ).all()
+
+        for row in sale_rows:
+            product = products_by_id[row.product_id]
+            base_quantity = to_base_quantity(product, row.unit, row.quantity)
+            unit_cost = row.unit_cost
+            if unit_cost is None:
+                unit_cost = product.cost_price or 0
+
+            sales_data = sales_map.setdefault(row.product_id, {
+                "quantity": 0.0,
+                "revenue": 0.0,
+                "cogs": 0.0,
+                "sale_ids": set(),
+            })
+            sales_data["quantity"] += base_quantity
+            sales_data["revenue"] += float(row.total_price or 0)
+            sales_data["cogs"] += base_quantity * float(unit_cost or 0)
+            sales_data["sale_ids"].add(row.sale_id)
+
+        sale_return_rows = db.query(
+            ReturnItem.product_id,
+            ReturnItem.quantity_returned,
+            ReturnItem.unit,
+            ReturnItem.total_refund,
+            ReturnItem.unit_price,
+            StockBatch.unit_cost,
+        ).join(PosReturn, PosReturn.id == ReturnItem.return_id).join(
+            SaleItem, SaleItem.id == ReturnItem.sale_item_id
+        ).outerjoin(
+            StockBatch, StockBatch.id == SaleItem.batch_id
+        ).filter(
+            ReturnItem.product_id.in_(product_ids),
+            ReturnItem.sale_item_id.isnot(None),
+            PosReturn.status == "approved",
+            PosReturn.created_at >= start,
+            PosReturn.created_at <= end,
+        ).all()
+
+        for row in sale_return_rows:
+            product = products_by_id[row.product_id]
+            base_quantity = to_base_quantity(product, row.unit, row.quantity_returned)
+            returned_revenue = row.total_refund
+            if returned_revenue is None:
+                returned_revenue = float(row.quantity_returned or 0) * float(row.unit_price or 0)
+            unit_cost = row.unit_cost
+            if unit_cost is None:
+                unit_cost = product.cost_price or 0
+
+            sales_data = sales_map.setdefault(row.product_id, {
+                "quantity": 0.0,
+                "revenue": 0.0,
+                "cogs": 0.0,
+                "sale_ids": set(),
+            })
+            sales_data["quantity"] -= base_quantity
+            sales_data["revenue"] -= float(returned_revenue or 0)
+            sales_data["cogs"] -= base_quantity * float(unit_cost or 0)
+
+    report_products = []
+    for product in products:
+        purchase_data = purchase_map.get(product.id, {"quantity": 0.0, "cost": 0.0, "orders": 0})
+        sales_data = sales_map.get(product.id, {"quantity": 0.0, "revenue": 0.0, "cogs": 0.0, "sale_ids": set()})
+        profit_loss = sales_data["revenue"] - sales_data["cogs"]
+        report_products.append({
+            "product_id": product.id,
+            "product_name": product.name,
+            "sku": product.sku,
+            "base_unit": product.base_unit or "piece",
+            "purchased_quantity": purchase_data["quantity"],
+            "sold_quantity": sales_data["quantity"],
+            "purchase_cost": purchase_data["cost"],
+            "sales_revenue": sales_data["revenue"],
+            "cost_of_goods_sold": sales_data["cogs"],
+            "profit_loss": profit_loss,
+            "purchase_orders": purchase_data["orders"],
+            "sales_transactions": len(sales_data["sale_ids"]),
+        })
+
+    summary = {
+        "matched_products": len(report_products),
+        "purchased_quantity": sum(item["purchased_quantity"] for item in report_products),
+        "sold_quantity": sum(item["sold_quantity"] for item in report_products),
+        "purchase_cost": sum(item["purchase_cost"] for item in report_products),
+        "sales_revenue": sum(item["sales_revenue"] for item in report_products),
+        "cost_of_goods_sold": sum(item["cost_of_goods_sold"] for item in report_products),
+        "profit_loss": sum(item["profit_loss"] for item in report_products),
+    }
+
+    if export:
+        csv_data = [{
+            "Product": item["product_name"],
+            "SKU": item["sku"] or "",
+            "Base Unit": item["base_unit"],
+            "Quantity Purchased": item["purchased_quantity"],
+            "Quantity Sold": item["sold_quantity"],
+            "Purchase Cost": f'{item["purchase_cost"]:.2f}',
+            "Sales Revenue": f'{item["sales_revenue"]:.2f}',
+            "COGS": f'{item["cost_of_goods_sold"]:.2f}',
+            "Profit/Loss": f'{item["profit_loss"]:.2f}',
+        } for item in report_products]
+        return export_to_csv(csv_data, f"product_sales_history_{start.date()}_{end.date()}.csv")
+
+    return {
+        "products": report_products,
+        "summary": summary,
+        "search": normalized_search,
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
+    }
 
 @router.get("/sales/by-payment-method", response_model=PaymentMethodReport)
 def get_sales_by_payment_method(
@@ -2075,4 +2545,3 @@ def send_scheduled_reports(
         return send_weekly_summary_text(phone_number=phone_number, db=db, current_user=current_user)
     else:
         raise HTTPException(status_code=400, detail="Invalid report type")
-
