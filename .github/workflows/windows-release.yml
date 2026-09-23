@@ -113,10 +113,22 @@ jobs:
       - name: Confirm lock files did not change
         shell: pwsh
         run: |
+          git diff -- frontend/package-lock.json frontend/src-tauri/Cargo.lock
           git diff --exit-code -- frontend/package-lock.json frontend/src-tauri/Cargo.lock
           if ($LASTEXITCODE -ne 0) {
             throw "The build changed a lock file. Commit the dependency update separately."
           }
+
+      - name: Upload changed lock files for diagnosis
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: changed-lock-files-${{ github.run_number }}
+          path: |
+            frontend/package-lock.json
+            frontend/src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Create the build record and checksums
         shell: pwsh
