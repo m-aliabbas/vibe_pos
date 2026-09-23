@@ -1,4 +1,4 @@
-# POS Desktop - Tauri Application
+# VibePOS Desktop - Tauri Application
 
 A modern Point of Sale (POS) desktop application built with **Tauri** and **Next.js**.
 

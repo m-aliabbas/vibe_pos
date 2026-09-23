@@ -40,6 +40,7 @@ import {
   RotateCcw,
   Database,
   Settings,
+  Download,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -152,10 +153,16 @@ export function Navbar() {
                   Profile
                 </DropdownMenuItem>
                 {user?.role === 'admin' && (
-                  <DropdownMenuItem onClick={() => router.push('/settings')}>
-                    <Settings className="mr-2 h-4 w-4" />
-                    Store Settings
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem onClick={() => router.push('/settings')}>
+                      <Settings className="mr-2 h-4 w-4" />
+                      Store Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/updates')}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Application Updates
+                    </DropdownMenuItem>
+                  </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setLogoutDialogOpen(true)} className="text-red-600">

@@ -39,10 +39,10 @@ const cargoMacVersion = cargoMacToml.match(
   /^version\s*=\s*"([^"]+)"\s*$/m,
 )?.[1];
 const cargoLockVersion = cargoLock.match(
-  /\[\[package\]\]\s+name\s*=\s*"pos-desktop"\s+version\s*=\s*"([^"]+)"/,
+  /\[\[package\]\]\s+name\s*=\s*"vibepos"\s+version\s*=\s*"([^"]+)"/,
 )?.[1];
 const cargoMacLockVersion = cargoMacLock.match(
-  /\[\[package\]\]\s+name\s*=\s*"pos-desktop"\s+version\s*=\s*"([^"]+)"/,
+  /\[\[package\]\]\s+name\s*=\s*"vibepos"\s+version\s*=\s*"([^"]+)"/,
 )?.[1];
 
 const versions = {

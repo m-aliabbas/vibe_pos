@@ -53,7 +53,7 @@ for (const name of ["Cargo.toml", "Cargo_mac.toml"]) {
 for (const name of ["Cargo.lock", "Cargo_mac.lock"]) {
   replaceVersion(
     path.join(tauriDir, name),
-    /(\[\[package\]\]\s+name\s*=\s*"pos-desktop"\s+version\s*=\s*")[^"]+("\s*)/,
+    /(\[\[package\]\]\s+name\s*=\s*"vibepos"\s+version\s*=\s*")[^"]+("\s*)/,
     "Cargo lock version",
   );
 }

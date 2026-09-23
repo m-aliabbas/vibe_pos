@@ -2410,7 +2410,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pos-desktop"
+name = "vibepos"
 version = "0.2.2"
 dependencies = [
  "serde",

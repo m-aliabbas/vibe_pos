@@ -1,5 +1,5 @@
 {
-  "productName": "POS System",
+  "productName": "VibePOS",
   "version": "0.2.2",
   "identifier": "com.pos.desktop",
   "build": {
@@ -24,13 +24,13 @@
     ],
     "copyright": "",
     "category": "Business",
-    "shortDescription": "Point of Sale System",
-    "longDescription": "A modern desktop POS system with inventory management, sales tracking, and invoicing"
+    "shortDescription": "VibePOS by vibe.exe",
+    "longDescription": "VibePOS desktop point-of-sale and inventory management"
   },
   "app": {
     "windows": [
       {
-        "title": "POS System",
+        "title": "VibePOS",
         "width": 1280,
         "height": 800,
         "resizable": true,
@@ -40,7 +40,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* http://*:* ws://*:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:* http://127.0.0.1:* http://*:*; font-src 'self' data:;"
+      "csp": "default-src 'self'; connect-src 'self' https://github.com https://release-assets.githubusercontent.com https://objects.githubusercontent.com http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* http://*:* ws://*:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:* http://127.0.0.1:* http://*:*; font-src 'self' data:;"
     }
   }
 }

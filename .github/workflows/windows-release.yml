@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: windows-release-${{ github.ref }}
@@ -21,6 +21,7 @@ jobs:
       NODE_VERSION: "20.19.5"
       PYTHON_VERSION: "3.12.10"
       RUST_VERSION: "1.88.0"
+      RELEASE_REPOSITORY: "m-aliabbas/vibepos-releases"
 
     steps:
       - name: Check out the private repository
@@ -128,12 +129,13 @@ jobs:
             throw "The NSIS installer was not produced."
           }
 
-          Copy-Item -LiteralPath $installer.FullName -Destination $releaseDir -Force
-          $copiedInstaller = Join-Path $releaseDir $installer.Name
-          $installerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $copiedInstaller).Hash.ToLowerInvariant()
-          "$installerHash  $($installer.Name)" | Set-Content -Encoding ascii (Join-Path $releaseDir "SHA256SUMS.txt")
-
           $package = Get-Content "frontend\package.json" -Raw | ConvertFrom-Json
+          $installerName = "VibePOS_$($package.version)_x64-setup.exe"
+          $copiedInstaller = Join-Path $releaseDir $installerName
+          Copy-Item -LiteralPath $installer.FullName -Destination $copiedInstaller -Force
+          $installerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $copiedInstaller).Hash.ToLowerInvariant()
+          "$installerHash  $installerName" | Set-Content -Encoding ascii (Join-Path $releaseDir "SHA256SUMS.txt")
+
           $record = [ordered]@{
             application = "VibePOS"
             version = $package.version
@@ -150,12 +152,35 @@ jobs:
             npm_lock_sha256 = (Get-FileHash -Algorithm SHA256 "frontend\package-lock.json").Hash.ToLowerInvariant()
             python_lock_sha256 = (Get-FileHash -Algorithm SHA256 "backend\requirements-windows.lock").Hash.ToLowerInvariant()
             cargo_lock_sha256 = (Get-FileHash -Algorithm SHA256 "frontend\src-tauri\Cargo.lock").Hash.ToLowerInvariant()
-            installer = $installer.Name
+            installer = $installerName
             installer_sha256 = $installerHash
             signed = $false
           }
           $record | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $releaseDir "build-manifest.json")
           python -m pip freeze | Set-Content -Encoding utf8 (Join-Path $releaseDir "python-packages.txt")
+
+          $tag = "v$($package.version)"
+          $releaseUrl = "https://github.com/$env:RELEASE_REPOSITORY/releases/tag/$tag"
+          $downloadUrl = "https://github.com/$env:RELEASE_REPOSITORY/releases/download/$tag/$installerName"
+          $releaseNotes = (git log -1 --pretty=%s).Trim()
+          if ([string]::IsNullOrWhiteSpace($releaseNotes)) {
+            $releaseNotes = "VibePOS $tag"
+          }
+          $manifest = [ordered]@{
+            schema_version = 1
+            version = $package.version
+            published_at = (Get-Date).ToUniversalTime().ToString("o")
+            notes = $releaseNotes
+            release_url = $releaseUrl
+            downloads = [ordered]@{
+              "windows-x86_64" = [ordered]@{
+                url = $downloadUrl
+                sha256 = $installerHash
+                size = (Get-Item -LiteralPath $copiedInstaller).Length
+              }
+            }
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $releaseDir "latest.json")
 
       - name: Upload the Windows build artifact
         uses: actions/upload-artifact@v7
@@ -165,21 +190,29 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Create or update a draft GitHub release
+      - name: Publish the customer release
         if: github.ref_type == 'tag'
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
         run: |
           $tag = $env:GITHUB_REF_NAME
           $assets = Get-ChildItem "release\windows\*" | ForEach-Object { $_.FullName }
+          $manifest = Get-Content "release\windows\latest.json" -Raw | ConvertFrom-Json
 
-          & gh release view $tag *> $null
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+            throw "Repository secret RELEASE_REPO_TOKEN is required to publish customer releases."
+          }
+
+          & gh release view $tag --repo $env:RELEASE_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            & gh release upload $tag @assets --clobber
+            & gh release upload $tag @assets --clobber --repo $env:RELEASE_REPOSITORY
+            if ($LASTEXITCODE -eq 0) {
+              & gh release edit $tag --repo $env:RELEASE_REPOSITORY --latest --title "VibePOS $tag" --notes $manifest.notes
+            }
           } else {
-            & gh release create $tag @assets --verify-tag --draft --generate-notes --title "VibePOS $tag"
+            & gh release create $tag @assets --repo $env:RELEASE_REPOSITORY --latest --title "VibePOS $tag" --notes $manifest.notes
           }
           if ($LASTEXITCODE -ne 0) {
-            throw "Creating the draft GitHub release failed."
+            throw "Publishing the customer release failed."
           }

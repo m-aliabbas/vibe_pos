@@ -26,7 +26,8 @@ import {
   Store,
   Truck,
   Tags,
-  Layers
+  Layers,
+  Download,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -101,6 +102,12 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       label: 'Backup & Restore',
       icon: Settings,
       description: 'Database backup management'
+    },
+    {
+      href: '/updates',
+      label: 'Application Updates',
+      icon: Download,
+      description: 'Check for new VibePOS releases'
     },
   ];
 

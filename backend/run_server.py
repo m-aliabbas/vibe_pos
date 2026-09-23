@@ -95,6 +95,7 @@
 #         print(f"❌ Failed to start server: {e}")
 #         sys.exit(1)
 import os
+import shutil
 import sys
 from pathlib import Path
 import socket
@@ -156,21 +157,67 @@ def load_env_from_exe_dir() -> None:
         log(f".env not found at: {env_path} (continuing with OS env vars)")
 
 
+def user_data_root() -> Path:
+    """Return a writable, per-user directory that survives application upgrades."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    return base / "VibePOS"
+
+
+def migrate_legacy_data_dir(legacy_dir: Path, data_dir: Path) -> None:
+    """Copy legacy bundled runtime data once without overwriting an active database."""
+    legacy_dir = legacy_dir.resolve()
+    data_dir = data_dir.resolve()
+    if (
+        legacy_dir == data_dir
+        or not legacy_dir.is_dir()
+        or (data_dir / "pos.db").exists()
+    ):
+        return
+
+    legacy_database = legacy_dir / "pos.db"
+    if not legacy_database.exists():
+        return
+
+    log(f"Migrating legacy VibePOS data from {legacy_dir} to {data_dir}")
+    data_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(legacy_dir, data_dir, dirs_exist_ok=True)
+    log("Legacy VibePOS data migration completed")
+
+
 def resolve_data_dir() -> Path:
     """
     Priority:
       1) AP_DATA (if provided)
       2) DATA_DIR (from .env or OS env)
       3) default: "data" directory
-    Relative paths are resolved using resolve_resource_path to find bundled data.
+    Packaged builds resolve relative paths beneath the OS user-data directory so
+    installers cannot replace customer data. Development keeps its existing
+    repository-relative behavior.
     """
     raw = os.environ.get("AP_DATA") or os.environ.get("DATA_DIR")
-    if raw:
-        p = Path(raw).expanduser()
-        if not p.is_absolute():
-            p = resolve_resource_path(str(p))
+    configured_path = Path(raw).expanduser() if raw else Path("data")
+
+    if configured_path.is_absolute():
+        p = configured_path
+    elif getattr(sys, "frozen", False):
+        root = user_data_root().resolve()
+        p = (root / configured_path).resolve()
+        legacy_path = configured_path
+        try:
+            p.relative_to(root)
+        except ValueError:
+            log(f"Ignoring unsafe relative DATA_DIR outside {root}: {configured_path}")
+            p = root / "data"
+            legacy_path = Path("data")
+
+        migrate_legacy_data_dir(resolve_resource_path(str(legacy_path)), p)
     else:
-        p = resolve_resource_path("data")
+        p = resolve_resource_path(str(configured_path))
 
     p.mkdir(parents=True, exist_ok=True)
     os.environ["DATA_DIR"] = str(p.resolve())
