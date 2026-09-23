@@ -19,22 +19,22 @@ jobs:
     timeout-minutes: 60
     env:
       NODE_VERSION: "20.19.5"
-      PYTHON_VERSION: "3.12.11"
+      PYTHON_VERSION: "3.12.10"
       RUST_VERSION: "1.88.0"
 
     steps:
       - name: Check out the private repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -158,7 +158,7 @@ jobs:
           python -m pip freeze | Set-Content -Encoding utf8 (Join-Path $releaseDir "python-packages.txt")
 
       - name: Upload the Windows build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: VibePOS-Windows-${{ github.run_number }}
           path: release/windows/*
