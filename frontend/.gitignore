@@ -16,6 +16,10 @@
 # Tauri
 /src-tauri/target
 /src-tauri/WixTools
+/src-tauri/bin/*
+!/src-tauri/bin/data/
+/src-tauri/bin/data/*
+!/src-tauri/bin/data/.gitkeep
 
 # next.js
 /.next/
