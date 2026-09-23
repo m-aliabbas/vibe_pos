@@ -31,6 +31,9 @@ function replaceVersion(filePath, pattern, description) {
 updateJson("package.json", (document) => {
   document.version = version;
 });
+updateJson("package_win.json", (document) => {
+  document.version = version;
+});
 updateJson("package-lock.json", (document) => {
   document.version = version;
   document.packages[""].version = version;

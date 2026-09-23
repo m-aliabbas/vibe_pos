@@ -7,6 +7,9 @@ const frontendDir = path.resolve(scriptDir, "..");
 const packageJson = JSON.parse(
   fs.readFileSync(path.join(frontendDir, "package.json"), "utf8"),
 );
+const packageWinJson = JSON.parse(
+  fs.readFileSync(path.join(frontendDir, "package_win.json"), "utf8"),
+);
 const packageLock = JSON.parse(
   fs.readFileSync(path.join(frontendDir, "package-lock.json"), "utf8"),
 );
@@ -47,6 +50,7 @@ const cargoMacLockVersion = cargoMacLock.match(
 
 const versions = {
   "frontend/package.json": packageJson.version,
+  "frontend/package_win.json": packageWinJson.version,
   "frontend/package-lock.json": packageLock.packages?.[""]?.version,
   "frontend/src-tauri/tauri.conf.json": tauriConfig.version,
   "frontend/src-tauri/tauri.conf_mac.json": tauriMacConfig.version,
