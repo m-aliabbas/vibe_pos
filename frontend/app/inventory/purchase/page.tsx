@@ -1148,7 +1148,7 @@ function PurchasePageContent() {
                                         if (sel === 'keep') continue;
                                         const newPrice = sel === 'suggested' ? item.suggested_selling_price : parseFloat(sel);
                                         if (!isNaN(newPrice) && newPrice > 0) {
-                                            await api.patch(`/products/${item.product_id}`, { selling_price: newPrice });
+                                            await api.put(`/products/${item.product_id}`, { selling_price: newPrice });
                                         }
                                     }
                                     setPriceChangeDialogOpen(false);

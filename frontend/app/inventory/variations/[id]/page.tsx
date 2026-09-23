@@ -188,7 +188,7 @@ export default function ManageVariationsPage() {
             // Delete existing variations
             if (product.variations && product.variations.length > 0) {
                 for (const variation of product.variations) {
-                    await api.delete(`/variations/${variation.id}`, {
+                    await api.delete(`/products/variations/${variation.id}`, {
                         headers: { Authorization: `Bearer ${token}` },
                     });
                 }
