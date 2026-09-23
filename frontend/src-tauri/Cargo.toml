@@ -1,6 +1,6 @@
 [package]
 name = "vibepos"
-version = "1.0.18"
+version = "1.0.19"
 description = "VibePOS Desktop Application"
 authors = ["you"]
 edition = "2021"

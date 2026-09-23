@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
@@ -98,6 +98,23 @@ interface Sale {
   customer?: Customer;
 }
 
+const getWhatsAppNumber = (phone: string): string => {
+  const mobileMatch = phone.match(/(?:\+?92|0)?3\d{2}[\s-]?\d{7}/);
+  if (mobileMatch) return mobileMatch[0].trim();
+
+  return phone.split(/[\/,|]/)[0]?.trim() || "—";
+};
+
+const getErrorMessage = (error: unknown, fallback: string): string => {
+  if (!error || typeof error !== "object") return fallback;
+
+  const requestError = error as {
+    message?: string;
+    response?: { data?: { detail?: string } };
+  };
+  return requestError.response?.data?.detail || requestError.message || fallback;
+};
+
 export default function InvoicePage() {
   const params = useParams();
   const router = useRouter();
@@ -112,12 +129,7 @@ export default function InvoicePage() {
   const [returnRefundTotal, setReturnRefundTotal] = useState(0);
   const [storeInfo, setStoreInfo] = useState<StoreInfo>(storeConfig);
 
-  useEffect(() => {
-    fetchSaleDetails();
-    fetchStoreConfig().then(setStoreInfo);
-  }, [params.id]);
-
-  const fetchSaleDetails = async () => {
+  const fetchSaleDetails = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
@@ -178,12 +190,17 @@ export default function InvoicePage() {
         user: userData,
         customer: customerData,
       });
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Failed to load invoice");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to load invoice"));
     } finally {
       setLoading(false);
     }
-  };
+  }, [params.id]);
+
+  useEffect(() => {
+    void fetchSaleDetails();
+    void fetchStoreConfig().then(setStoreInfo);
+  }, [fetchSaleDetails]);
 
   const formatInvoiceNumber = (saleId: number): string => {
     return `INV-${String(saleId).padStart(6, "0")}`;
@@ -211,9 +228,9 @@ export default function InvoicePage() {
       alert('Invoice sent successfully!');
       setSendDialogOpen(false);
       setPhoneNumber('');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to send invoice:', err);
-      alert(err.response?.data?.detail || err.message || 'Failed to send invoice. Please try again.');
+      alert(getErrorMessage(err, 'Failed to send invoice. Please try again.'));
     } finally {
       setSending(false);
     }
@@ -264,6 +281,7 @@ export default function InvoicePage() {
   const paymentStatus = accountBalance > 0 ? "Cash Unpaid" : "Cash Paid";
   const customerDisplayName = sale.customer_name || sale.customer?.name || "Walk-in";
   const customerDisplayPhone = sale.customer?.phone || sale.customer?.id || "";
+  const whatsappNumber = getWhatsAppNumber(storeInfo.phone);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -304,7 +322,6 @@ export default function InvoicePage() {
               )}
               <p className="text-[12px] mt-0.5">
                 {storeInfo.phone ? `Cell:${storeInfo.phone}` : "Cell: —"}
-                {storeInfo.phone ? ` / Wapp:${storeInfo.phone.replace(/^0/, "")}` : ""}
               </p>
               {storeInfo.email && <p className="text-[12px]">{storeInfo.email}</p>}
             </div>
@@ -423,9 +440,15 @@ export default function InvoicePage() {
                 </>
               )}
               <div className="flex justify-between">
-                <span>Received</span>
+                <span>Cash Received</span>
                 <span>{sale.amount_paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
+              {sale.payment_method === "cash" && (
+                <div className="flex justify-between font-semibold">
+                  <span>Return Cash</span>
+                  <span>{sale.change_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
               <div className="flex justify-between font-semibold">
                 <span>Total Balance</span>
                 <span>{(sale.previous_balance + sale.amount_due).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -446,7 +469,7 @@ export default function InvoicePage() {
               <p>1. Return and Exchange acceptable with invoice.</p>
               <p>2. Frozen and cosmetic items cannot be returned.</p>
               <p>3. Home delivery available.</p>
-              <p>4. For complaint and suggestion call: {storeInfo.phone || "—"}</p>
+              <p>4. Complaint &amp; suggestion Wapp: {whatsappNumber}</p>
               <p className="text-center mt-1">VibePOS (by vibeexe.com)</p>
             </div>
           </div>
@@ -459,7 +482,7 @@ export default function InvoicePage() {
           <DialogHeader>
             <DialogTitle>Send Invoice via WhatsApp</DialogTitle>
             <DialogDescription>
-              Enter customer's phone number to send the invoice
+              Enter customer&apos;s phone number to send the invoice
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
