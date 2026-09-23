@@ -31,21 +31,21 @@ A manual run never publishes a release. It creates an installer artifact retaine
 
 ## Make a versioned release
 
-The current application version is `0.2.2`. Set the next version with one command; it updates the frontend, both Tauri configurations, and both Rust lock files:
+The current application version is `1.0.16`. Set the next version with one command; it updates the frontend, both Tauri configurations, and both Rust lock files:
 
 ```bash
 cd frontend
-npm run set:version -- 0.2.3
+npm run set:version -- 1.0.17
 cd ..
 git add frontend/package.json frontend/package-lock.json frontend/src-tauri
-git commit -m "release: v0.2.3"
+git commit -m "release: v1.0.17"
 ```
 
 After updating and committing the version, create and push a matching tag:
 
 ```bash
-git tag v0.2.3
-git push origin v0.2.3
+git tag v1.0.17
+git push origin v1.0.17
 ```
 
 The workflow builds the installer and automatically publishes the release to `m-aliabbas/vibepos-releases`. The in-app **Application Updates** page discovers it through the permanent URL:

@@ -2538,7 +2538,7 @@ dependencies = [
 
 [[package]]
 name = "vibepos"
-version = "0.2.2"
+version = "1.0.16"
 dependencies = [
  "chrono",
  "serde",
