@@ -1,6 +1,6 @@
 {
   "productName": "POS System",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.pos.desktop",
   "build": {
     "beforeBuildCommand": "npm run build && node scripts/package-server.js",
@@ -10,7 +10,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.ico"],
+    "icon": [
+      "icons/icon.ico"
+    ],
     "resources": [
       "../.next/standalone/**/*",
       "bin/.env",
