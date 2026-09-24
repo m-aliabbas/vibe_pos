@@ -20,3 +20,7 @@ class StoreSettings(Base):
     whatsapp_daily_report_enabled = Column(Boolean, default=False)
     whatsapp_daily_report_time = Column(String, default="09:00")
     whatsapp_last_daily_report_date = Column(Date, nullable=True)
+
+    # When enabled, users must open a cash drawer session (declare starting
+    # cash) before selling and close it out (declare counted cash) later.
+    cash_register_enabled = Column(Boolean, default=False)

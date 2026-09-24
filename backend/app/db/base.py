@@ -11,3 +11,5 @@ from app.models.settings import StoreSettings
 from app.models.hold_purchase import HoldPurchase
 from app.models.stock_adjustment import ProductStockAdjustment
 from app.models.stock_batch import StockBatch
+from app.models.expense import Expense
+from app.models.cash_register import CashRegisterSession

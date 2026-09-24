@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, vendors, products, purchases, sales, files, reports, whatsapp, customers, returns, backup, accounting, hold_sales, hold_purchases, settings, stock_audit
+from app.api.v1.endpoints import auth, users, vendors, products, purchases, sales, files, reports, whatsapp, customers, returns, backup, accounting, hold_sales, hold_purchases, settings, stock_audit, expenses, cash_register
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -19,3 +19,5 @@ api_router.include_router(whatsapp.router, tags=["whatsapp"])
 api_router.include_router(backup.router, prefix="/backup", tags=["backup"])
 api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
 api_router.include_router(stock_audit.router, prefix="/stock-audit", tags=["stock-audit"])
+api_router.include_router(expenses.router, prefix="/expenses", tags=["expenses"])
+api_router.include_router(cash_register.router, prefix="/cash-register", tags=["cash-register"])

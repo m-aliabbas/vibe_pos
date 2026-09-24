@@ -15,6 +15,8 @@ from reportlab.lib.utils import ImageReader
 from PIL import Image
 import io
 import requests
+from types import SimpleNamespace
+from pydantic import BaseModel, Field
 
 from app.api import deps
 from app.models.sale import Sale, SaleItem
@@ -28,6 +30,24 @@ from app.schemas.sale import SaleCreate, SaleUpdate, Sale as SaleSchema, SaleSta
 from app.services import accounting as accounting_service
 
 router = APIRouter()
+
+
+class QuotationItemRequest(BaseModel):
+    product_id: int
+    variation_id: Optional[int] = None
+    quantity: float = Field(gt=0)
+    unit: str = "piece"
+    item_discount: float = Field(default=0.0, ge=0)
+    unit_price: Optional[float] = Field(default=None, ge=0)
+
+
+class QuotationSendRequest(BaseModel):
+    phone_number: str
+    customer_name: Optional[str] = None
+    items: List[QuotationItemRequest]
+    discount: float = Field(default=0.0, ge=0)
+    tax: float = Field(default=0.0, ge=0)
+    delivery_charges: float = Field(default=0.0, ge=0)
 
 
 def _deduct_from_batches_fifo(db: Session, product_id: int, variation_id, qty_needed: float) -> int | None:
@@ -199,7 +219,14 @@ def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) ->
     return "\n".join(lines)
 
 
-def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_amount: float = 0.0) -> None:
+def _render_invoice_image(
+    sale: Sale,
+    file_path: Path,
+    dpi: int = 300,
+    refunded_amount: float = 0.0,
+    document_title: str = "INVOICE",
+    document_number: Optional[str] = None,
+) -> None:
     """Render an invoice image with consistent design across OSes."""
     from PIL import ImageDraw
 
@@ -247,13 +274,13 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
     draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
     y += mm(4)
 
-    invoice_text = "INVOICE"
+    invoice_text = document_title
     bbox = draw.textbbox((0, 0), invoice_text, font=font_xl)
     text_width = bbox[2] - bbox[0]
     draw.text(((width - text_width) // 2, y), invoice_text, fill="black", font=font_xl)
     y += mm(7)
 
-    invoice_num = f"#{str(sale.id).zfill(6)}"
+    invoice_num = document_number or f"#{str(sale.id).zfill(6)}"
     bbox = draw.textbbox((0, 0), invoice_num, font=font_md)
     text_width = bbox[2] - bbox[0]
     draw.text(((width - text_width) // 2, y), invoice_num, fill="black", font=font_md)
@@ -401,33 +428,34 @@ def _render_invoice_image(sale: Sale, file_path: Path, dpi: int = 300, refunded_
     draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
     y += mm(4)
 
-    draw.text((mm(3), y), "Amount Paid", fill="black", font=font_md)
-    paid_text = f"RS {sale.amount_paid:.2f}"
-    bbox = draw.textbbox((0, 0), paid_text, font=font_md)
-    text_width = bbox[2] - bbox[0]
-    draw.text((width - text_width - mm(3), y), paid_text, fill="black", font=font_md)
-    y += mm(5)
-
-    account_balance = previous_balance + float(sale.amount_due or 0.0)
-    if account_balance > 0:
-        draw.text((mm(3), y), "Total Balance (Udhar)", fill="black", font=font_sm_bold)
-        due_text = f"RS {account_balance:.2f}"
-        bbox = draw.textbbox((0, 0), due_text, font=font_sm_bold)
+    if document_title == "INVOICE":
+        draw.text((mm(3), y), "Amount Paid", fill="black", font=font_md)
+        paid_text = f"RS {sale.amount_paid:.2f}"
+        bbox = draw.textbbox((0, 0), paid_text, font=font_md)
         text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - mm(3), y), due_text, fill="#cc0000", font=font_sm_bold)
+        draw.text((width - text_width - mm(3), y), paid_text, fill="black", font=font_md)
         y += mm(5)
 
-    if sale.change_amount > 0:
-        draw.text((mm(3), y), "Change", fill="black", font=font_md)
-        change_text = f"RS {sale.change_amount:.2f}"
-        bbox = draw.textbbox((0, 0), change_text, font=font_md)
-        text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - mm(3), y), change_text, fill="#0a7d2c", font=font_md)
-        y += mm(5)
+        account_balance = previous_balance + float(sale.amount_due or 0.0)
+        if account_balance > 0:
+            draw.text((mm(3), y), "Total Balance (Udhar)", fill="black", font=font_sm_bold)
+            due_text = f"RS {account_balance:.2f}"
+            bbox = draw.textbbox((0, 0), due_text, font=font_sm_bold)
+            text_width = bbox[2] - bbox[0]
+            draw.text((width - text_width - mm(3), y), due_text, fill="#cc0000", font=font_sm_bold)
+            y += mm(5)
 
-    payment_text = f"Payment: {sale.payment_method}"
-    draw.text((mm(3), y), payment_text, fill="black", font=font_sm)
-    y += mm(7)
+        if sale.change_amount > 0:
+            draw.text((mm(3), y), "Change", fill="black", font=font_md)
+            change_text = f"RS {sale.change_amount:.2f}"
+            bbox = draw.textbbox((0, 0), change_text, font=font_md)
+            text_width = bbox[2] - bbox[0]
+            draw.text((width - text_width - mm(3), y), change_text, fill="#0a7d2c", font=font_md)
+            y += mm(5)
+
+        payment_text = f"Payment: {sale.payment_method}"
+        draw.text((mm(3), y), payment_text, fill="black", font=font_sm)
+        y += mm(7)
 
     draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
     y += mm(4)
@@ -1244,6 +1272,113 @@ def get_sale(
     # All authenticated users can view any sale (removed cashier restriction)
     
     return sale
+
+
+@router.post("/send-quotation")
+def send_quotation(
+    quotation_in: QuotationSendRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Render and queue a quotation image without creating a sale or changing stock."""
+    normalized_phone = normalize_phone_number(quotation_in.phone_number)
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+    if not quotation_in.items:
+        raise HTTPException(status_code=400, detail="Quotation must have at least one item")
+
+    rendered_items = []
+    subtotal = 0.0
+    for item_in in quotation_in.items:
+        product = db.query(Product).filter(Product.id == item_in.product_id).first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Product {item_in.product_id} not found")
+
+        variation = None
+        if item_in.variation_id:
+            variation = db.query(ProductVariation).filter(
+                ProductVariation.id == item_in.variation_id,
+                ProductVariation.product_id == product.id,
+            ).first()
+            if not variation:
+                raise HTTPException(status_code=400, detail="Invalid product variation")
+
+        unit_price = item_in.unit_price
+        if unit_price is None:
+            unit_price = float(product.selling_price or 0.0)
+            if variation:
+                unit_price += float(variation.price_adjustment or 0.0)
+            if item_in.unit != product.base_unit:
+                selling_unit = next(
+                    (entry for entry in (product.selling_units or []) if entry.get("unit") == item_in.unit),
+                    None,
+                )
+                if selling_unit:
+                    unit_price = float(selling_unit.get("price") or unit_price)
+
+        line_total = max(0.0, unit_price * item_in.quantity - item_in.item_discount)
+        subtotal += line_total
+        rendered_items.append(SimpleNamespace(
+            product_id=product.id,
+            product=product,
+            variation=variation,
+            quantity=item_in.quantity,
+            unit=item_in.unit,
+            unit_price=unit_price,
+            item_discount=item_in.item_discount,
+            total_price=line_total,
+        ))
+
+    total = max(0.0, subtotal - quotation_in.discount + quotation_in.tax + quotation_in.delivery_charges)
+    quotation = SimpleNamespace(
+        id=0,
+        document_number=f"Q-{now_pkt().strftime('%Y%m%d-%H%M%S')}",
+        user=current_user,
+        created_at=now_pkt(),
+        customer_name=quotation_in.customer_name,
+        items=rendered_items,
+        subtotal=subtotal,
+        discount=quotation_in.discount,
+        tax=quotation_in.tax,
+        delivery_charges=quotation_in.delivery_charges,
+        total=total,
+        previous_balance=0.0,
+        amount_paid=0.0,
+        amount_due=0.0,
+        change_amount=0.0,
+        payment_method="quotation",
+    )
+
+    try:
+        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
+        file_path = INVOICE_DIR / f"quotation_{timestamp}.png"
+        _render_invoice_image(
+            quotation,
+            file_path,
+            dpi=300,
+            document_title="QUOTATION",
+            document_number=quotation.document_number,
+        )
+        response = requests.post(
+            "http://127.0.0.1:8000/api/v1/whatsapp/send-image",
+            json={
+                "phone_number": normalized_phone,
+                "image_url": str(file_path.absolute()),
+                "caption": f"Quotation {quotation.document_number} from {_get_store_details()[0]} - RS {total:.2f}",
+            },
+            headers={"accept": "application/json", "Content-Type": "application/json"},
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"WhatsApp API error: {response.text}")
+        return {
+            "status": "success",
+            "message": "Quotation image queued successfully",
+            "phone_number": normalized_phone,
+            "quotation_number": quotation.document_number,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to send quotation: {exc}")
 
 
 @router.post("/{id}/send-invoice")

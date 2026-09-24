@@ -18,6 +18,7 @@ SYSTEM_ACCOUNTS: Dict[str, Dict[str, str]] = {
     "ACCOUNTS_PAYABLE": {"code": "2000", "name": "Accounts Payable", "type": AccountType.LIABILITY},
     "SALES_REVENUE": {"code": "4000", "name": "Sales Revenue", "type": AccountType.INCOME},
     "SALES_RETURNS": {"code": "4100", "name": "Sales Returns & Allowances", "type": AccountType.INCOME},
+    "OPERATING_EXPENSES": {"code": "5000", "name": "Operating Expenses", "type": AccountType.EXPENSE},
 }
 
 

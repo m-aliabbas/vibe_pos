@@ -328,6 +328,16 @@ LEGACY_PRODUCT_COLUMNS = {
     "allow_decimal_qty": "BOOLEAN DEFAULT 0",
 }
 
+# Columns added to store_settings after some clients already had the table.
+# New columns for existing features must be added here so upgrades self-heal.
+LEGACY_STORE_SETTINGS_COLUMNS = {
+    "whatsapp_owner_number": "TEXT DEFAULT ''",
+    "whatsapp_daily_report_enabled": "BOOLEAN DEFAULT 0",
+    "whatsapp_daily_report_time": "TEXT DEFAULT '09:00'",
+    "whatsapp_last_daily_report_date": "DATE",
+    "cash_register_enabled": "BOOLEAN DEFAULT 0",
+}
+
 
 def _get_sqlite_tables(db_path: Path) -> set[str]:
     conn = sqlite3.connect(str(db_path))
@@ -358,6 +368,33 @@ def ensure_legacy_product_columns(db_path: Path) -> None:
             col_sql = LEGACY_PRODUCT_COLUMNS[column]
             cur.execute(f"ALTER TABLE products ADD COLUMN {column} {col_sql}")
             log(f"Added missing products.{column}")
+
+        if missing:
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def ensure_legacy_store_settings_columns(db_path: Path) -> None:
+    """
+    Add columns expected by the current StoreSettings model when opening older
+    SQLite DBs, so shipped clients self-upgrade without a manual migration.
+    """
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='store_settings'")
+        if not cur.fetchone():
+            return
+
+        cur.execute("PRAGMA table_info(store_settings)")
+        existing = {row[1] for row in cur.fetchall()}
+
+        missing = [c for c in LEGACY_STORE_SETTINGS_COLUMNS if c not in existing]
+        for column in missing:
+            col_sql = LEGACY_STORE_SETTINGS_COLUMNS[column]
+            cur.execute(f"ALTER TABLE store_settings ADD COLUMN {column} {col_sql}")
+            log(f"Added missing store_settings.{column}")
 
         if missing:
             conn.commit()
@@ -426,6 +463,7 @@ if __name__ == "__main__":
     # 3) Ensure schema exists before seeding
     db_path = ensure_schema_ready()
     ensure_legacy_product_columns(db_path)
+    ensure_legacy_store_settings_columns(db_path)
 
     # 4) Now seed safely
     from seed import ensure_seeded

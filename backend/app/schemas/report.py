@@ -120,6 +120,18 @@ class AnalyticsCustomer(BaseModel):
     outstanding_amount: float
 
 
+class AnalyticsUserSale(BaseModel):
+    user_id: int
+    username: str
+    role: str
+    transaction_count: int
+    total_revenue: float
+    items_sold: float
+    average_transaction: float
+    cash_register_status: Optional[str] = None
+    cash_on_hand: Optional[float] = None
+
+
 class AnalyticsOverviewReport(BaseModel):
     period_start: str
     period_end: str
@@ -135,6 +147,7 @@ class AnalyticsOverviewReport(BaseModel):
     outstanding_vendors: List[AnalyticsOutstandingVendor]
     outstanding_customers: List[AnalyticsCustomer]
     top_customers: List[AnalyticsCustomer]
+    staff_sales: List[AnalyticsUserSale] = []
 
 class PaymentMethodData(BaseModel):
     method: str

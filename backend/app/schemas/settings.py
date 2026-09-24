@@ -11,6 +11,7 @@ class StoreSettingsBase(BaseModel):
     store_city: Optional[str] = ""
     store_tax_id: Optional[str] = ""
     store_website: Optional[str] = ""
+    cash_register_enabled: Optional[bool] = False
 
 
 class StoreSettingsUpdate(StoreSettingsBase):

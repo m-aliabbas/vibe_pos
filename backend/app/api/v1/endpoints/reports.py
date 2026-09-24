@@ -19,6 +19,7 @@ from app.models.pos_return import PosReturn, ReturnItem
 from app.models.accounting import JournalEntry, JournalLine, Account
 from app.models.stock_batch import StockBatch
 from app.models.user import User, UserRole
+from app.models.cash_register import CashRegisterSession, CashRegisterStatus
 from app.services import accounting as accounting_service
 from app.schemas.report import (
     SalesSummaryReport, TopProductsReport, ProductSalesHistoryReport, AnalyticsOverviewReport, PaymentMethodReport,
@@ -296,6 +297,57 @@ def get_analytics_overview(
         key=lambda row: (-row["total_bought"], -row["transaction_count"], row["customer_name"].lower()),
     )[:top_n]
 
+    staff_sales_rows = db.query(
+        User.id,
+        User.username,
+        User.role,
+        func.count(Sale.id).label("transaction_count"),
+        func.coalesce(func.sum(Sale.total), 0).label("total_revenue"),
+        func.coalesce(func.sum(SaleItem.quantity), 0).label("items_sold"),
+    ).join(Sale, Sale.user_id == User.id).outerjoin(
+        SaleItem, SaleItem.sale_id == Sale.id
+    ).filter(
+        Sale.created_at >= start,
+        Sale.created_at <= end,
+    ).group_by(User.id, User.username, User.role).all()
+
+    open_sessions_by_user = {
+        session.user_id: session
+        for session in db.query(CashRegisterSession).filter(
+            CashRegisterSession.status == CashRegisterStatus.OPEN
+        ).all()
+    }
+    now = now_pkt()
+    cash_on_hand_by_user = {}
+    for user_id, session in open_sessions_by_user.items():
+        net_cash = db.query(
+            func.coalesce(func.sum(Sale.amount_paid - Sale.change_amount), 0)
+        ).filter(
+            Sale.user_id == user_id,
+            Sale.payment_method == "cash",
+            Sale.created_at >= session.opened_at,
+            Sale.created_at <= now,
+        ).scalar() or 0
+        cash_on_hand_by_user[user_id] = float(session.opening_cash or 0) + float(net_cash)
+
+    staff_sales = []
+    for row in staff_sales_rows:
+        transaction_count = int(row.transaction_count or 0)
+        total_revenue = float(row.total_revenue or 0)
+        session = open_sessions_by_user.get(row.id)
+        staff_sales.append({
+            "user_id": row.id,
+            "username": row.username,
+            "role": row.role,
+            "transaction_count": transaction_count,
+            "total_revenue": total_revenue,
+            "items_sold": float(row.items_sold or 0),
+            "average_transaction": total_revenue / transaction_count if transaction_count > 0 else 0.0,
+            "cash_register_status": "open" if session else None,
+            "cash_on_hand": cash_on_hand_by_user.get(row.id) if session else None,
+        })
+    staff_sales.sort(key=lambda item: -item["total_revenue"])
+
     return {
         "period_start": start.isoformat(),
         "period_end": end.isoformat(),
@@ -311,6 +363,7 @@ def get_analytics_overview(
         "outstanding_vendors": outstanding_vendors[:top_n],
         "outstanding_customers": outstanding_customers,
         "top_customers": top_customers,
+        "staff_sales": staff_sales,
     }
 
 # Sales Reports
@@ -1192,8 +1245,27 @@ def get_profit_loss(
     # Gross profit
     gross_profit = revenue - cogs
 
-    # Operating expenses (if any - this would need additional expense tracking)
-    operating_expenses = 0  # Placeholder
+    expense_rows = db.query(
+        Account.name,
+        func.sum(JournalLine.debit).label("amount"),
+    ).join(JournalLine, JournalLine.account_id == Account.id).join(
+        JournalEntry, JournalEntry.id == JournalLine.entry_id
+    ).filter(
+        Account.type == "expense",
+        JournalEntry.source_type == "expense",
+        JournalEntry.entry_date >= start,
+        JournalEntry.entry_date <= end,
+    ).group_by(Account.id, Account.name).order_by(Account.name.asc()).all()
+
+    operating_expenses = sum(float(row.amount or 0) for row in expense_rows)
+    expenses = [
+        {
+            "category": row.name,
+            "amount": float(row.amount or 0),
+            "description": f"{row.name} expenses",
+        }
+        for row in expense_rows
+    ]
 
     # Net profit
     net_profit = gross_profit - operating_expenses
@@ -1202,7 +1274,7 @@ def get_profit_loss(
         "revenue": revenue,
         "cost_of_goods_sold": cogs,
         "gross_profit": gross_profit,
-        "expenses": [], # No detailed expenses tracked currently
+        "expenses": expenses,
         "net_profit": net_profit,
         "period_start": start.isoformat(),
         "period_end": end.isoformat()
