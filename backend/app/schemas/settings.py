@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 from pydantic import BaseModel
 
@@ -21,3 +22,13 @@ class StoreSettingsResponse(StoreSettingsBase):
 
     class Config:
         from_attributes = True
+
+
+class WhatsAppReportSettingsUpdate(BaseModel):
+    owner_number: str = ""
+    daily_report_enabled: bool = False
+    daily_report_time: str = "09:00"
+
+
+class WhatsAppReportSettingsResponse(WhatsAppReportSettingsUpdate):
+    last_daily_report_date: Optional[date] = None

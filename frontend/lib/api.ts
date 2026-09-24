@@ -26,6 +26,26 @@ api.interceptors.request.use((config) => {
 
 export default api;
 
+export interface WhatsAppReportSettings {
+    owner_number: string;
+    daily_report_enabled: boolean;
+    daily_report_time: string;
+    last_daily_report_date: string | null;
+}
+
+export type WhatsAppReportSettingsUpdate = Omit<WhatsAppReportSettings, 'last_daily_report_date'>;
+
+export const whatsappReportSettingsApi = {
+    get: async (): Promise<WhatsAppReportSettings> => {
+        const response = await api.get('/settings/whatsapp-reports');
+        return response.data;
+    },
+    update: async (payload: WhatsAppReportSettingsUpdate): Promise<WhatsAppReportSettings> => {
+        const response = await api.put('/settings/whatsapp-reports', payload);
+        return response.data;
+    },
+};
+
 // ============ CUSTOMER API FUNCTIONS ============
 
 export interface CustomerSimple {

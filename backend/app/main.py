@@ -11,6 +11,7 @@ from app.api.v1.endpoints.whatsapp import init_whatsapp
 
 # Import backup scheduler
 from app.services import backup_scheduler
+from app.services import whatsapp_report_scheduler
 
 # Create tables (for simplicity in MVP, usually handled by Alembic)
 Base.metadata.create_all(bind=engine)
@@ -26,6 +27,12 @@ def ensure_schema_columns() -> None:
             "customer_notes": [
                 ("amount", "REAL"),
                 ("payment_method", "VARCHAR"),
+            ],
+            "store_settings": [
+                ("whatsapp_owner_number", "VARCHAR DEFAULT ''"),
+                ("whatsapp_daily_report_enabled", "BOOLEAN DEFAULT 0"),
+                ("whatsapp_daily_report_time", "VARCHAR DEFAULT '09:00'"),
+                ("whatsapp_last_daily_report_date", "DATE"),
             ],
         }
         for table, columns in additions.items():
@@ -79,9 +86,17 @@ async def startup_event():
     backup_scheduler.start_scheduler()
     print("✅ Backup scheduler started")
 
+    print("🚀 Starting WhatsApp report scheduler...")
+    whatsapp_report_scheduler.start_scheduler()
+    print("✅ WhatsApp report scheduler started")
+
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Stop backup scheduler on application shutdown"""
+    """Stop background schedulers on application shutdown."""
+    print("🛑 Stopping WhatsApp report scheduler...")
+    whatsapp_report_scheduler.stop_scheduler()
+    print("✅ WhatsApp report scheduler stopped")
+
     print("🛑 Stopping backup scheduler...")
     backup_scheduler.stop_scheduler()
     print("✅ Backup scheduler stopped")

@@ -3,33 +3,29 @@ import os
 import queue
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 from neonize.client import NewClient
-from neonize.events import ConnectedEv, MessageEv, PairStatusEv, LoggedOutEv, event
+from neonize.events import ConnectedEv, MessageEv, PairStatusEv, LoggedOutEv
 from neonize.utils import build_jid
 import multiprocessing
 import threading
 import time
 import datetime
-import requests
-from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
-from app.models.user import User, UserRole
-import random
-
-
-
-
-def get_today_date_time_pakistan_time():
-    """Get today's date and time in Pakistan timezone"""
-    pakistan_tz = datetime.timezone(datetime.timedelta(hours=5))
-    now = datetime.datetime.now(pakistan_tz)
-    return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
-
-# Create data directory for WhatsApp session
 from app.core.config import settings
+from app.core.timezone import now_pkt
+from app.models.settings import StoreSettings
+from app.services.whatsapp_reports import (
+    create_low_stock_report_pdf,
+    create_sales_report_pdf,
+    create_vendor_outstanding_report_pdf,
+    find_customer_balance,
+    get_customer_outstanding_total,
+    get_owner_number,
+    get_sales_snapshot,
+    normalize_whatsapp_number,
+)
 
 # Create data directory for WhatsApp session
 WHATSAPP_DATA_DIR = Path(settings.DATA_DIR) / "whatsapp"
@@ -37,6 +33,7 @@ WHATSAPP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 SESSION_FILE = str(WHATSAPP_DATA_DIR / "my_bot_session.db")
 
 client = NewClient(SESSION_FILE)
+logger = logging.getLogger(__name__)
 
 def _default_connection_status():
     return {
@@ -138,74 +135,273 @@ def on_logged_out(client: NewClient, evt: LoggedOutEv):
 
 @client.event(MessageEv)
 def on_message(client: NewClient, message: MessageEv):
-    # Basic auto-reply logic
-    if message:
-        sender = str(message.Info.MessageSource.Sender.User)
-        
-            
-        # print(f"📩 New message from {sender}")
-        
-        if message.Message.extendedTextMessage:
-            text = message.Message.extendedTextMessage.text
-            # print(f"💬 Message content: {text} from sender: {sender}")
-            if sender in ["923171585452"]:
-                x = random.uniform(0.1, 5.2)
-                if 'day' in text.lower() and 'daily' not in text.lower() or 'today' in text.lower():
-                    time.sleep(x)  # Simulate processing delay
-                    print("📊 Processing daily report request")
-                    try:
-                        # Create a database session
-                        db = SessionLocal()
-                        
-                        # Get admin user for authorization
-                        admin_user = db.query(User).filter(User.role == UserRole.ADMIN).first()
-                        
-                        if not admin_user:
-                            reply = "⚠️ System error: No admin user found"
-                        else:
-                            # Import and call the report function directly
-                            from app.api.v1.endpoints.reports import get_daily_summary_text
-                            
-                            report_data = get_daily_summary_text(db=db, current_user=admin_user)
-                            reply = report_data.get("report", "Unable to generate report")
-                            print("✅ Daily report generated successfully")
-                        
-                        db.close()
-                        client.reply_message(reply, message)
-                        
-                    except Exception as e:
-                        print(f"❌ Error generating daily report: {e}")
-                        error_reply = "⚠️ Error generating daily report. Please contact admin."
-                        client.reply_message(error_reply, message)
-                        
-                elif 'week' in text.lower():
-                    
-                    time.sleep(x)  # Simulate processing delay
-                    print("📊 Processing weekly report request")
-                    try:
-                        # Create a database session
-                        db = SessionLocal()
-                        
-                        # Get admin user for authorization
-                        admin_user = db.query(User).filter(User.role == UserRole.ADMIN).first()
-                        
-                        if not admin_user:
-                            reply = "⚠️ System error: No admin user found"
-                        else:
-                            # Import and call the report function directly
-                            from app.api.v1.endpoints.reports import get_weekly_summary_text
-                            
-                            report_data = get_weekly_summary_text(db=db, current_user=admin_user)
-                            reply = report_data.get("report", "Unable to generate report")
-                            print("✅ Weekly report generated successfully")
-                        
-                        db.close()
-                        client.reply_message(reply, message)
-                        
-                    except Exception as e:
-                        print(f"❌ Error generating weekly report: {e}")
-                        error_reply = "⚠️ Error generating weekly report. Please contact admin."
-                        client.reply_message(error_reply, message)
+    """Handle exact owner-only report commands received over WhatsApp."""
+    if not message:
+        return
+    sender = ""
+    reply_jid = None
+    try:
+        source = message.Info.MessageSource
+        if bool(getattr(source, "IsFromMe", False)):
+            return
+        if bool(getattr(source, "IsGroup", False)):
+            return
+        sender = _resolve_sender_phone(client, source)
+        reply_jid = source.Chat
+        text = _extract_message_text(message)
+        if not sender or not text or not text.startswith("/"):
+            return
+
+        with SessionLocal() as db:
+            if sender != get_owner_number(db):
+                return
+            command = text.partition(" ")[0].lower()
+            logger.info("Processing WhatsApp owner command: %s", command)
+            _handle_owner_command(client, reply_jid, text, db)
+    except Exception:
+        logger.exception("Failed to process WhatsApp owner command")
+        if reply_jid is not None:
+            try:
+                _send_text(client, reply_jid, "Unable to process that command. Please try again.")
+            except Exception:
+                logger.exception("Failed to send WhatsApp command error response")
+
+
+def _jid_has_value(jid) -> bool:
+    if jid is None:
+        return False
+    try:
+        return bool(jid.ListFields())
+    except (AttributeError, TypeError):
+        return bool(getattr(jid, "User", ""))
+
+
+def _resolve_sender_phone(client: NewClient, source) -> str:
+    """Resolve modern LID-addressed messages back to the owner's phone number."""
+    sender = getattr(source, "Sender", None)
+    sender_alt = getattr(source, "SenderAlt", None)
+
+    # WhatsApp normally includes the phone JID as SenderAlt when Sender is a LID.
+    for candidate in (sender_alt, sender):
+        if not _jid_has_value(candidate):
+            continue
+        server = str(getattr(candidate, "Server", "") or "").lower()
+        if server != "lid":
+            phone = normalize_whatsapp_number(str(getattr(candidate, "User", "")))
+            if phone:
+                return phone
+
+    # Fall back to Neonize's local LID-to-phone mapping when SenderAlt is absent.
+    if _jid_has_value(sender) and hasattr(client, "get_pn_from_lid"):
+        try:
+            phone_jid = client.get_pn_from_lid(sender)
+            return normalize_whatsapp_number(str(getattr(phone_jid, "User", "")))
+        except Exception:
+            logger.warning("Could not resolve incoming WhatsApp LID to a phone number")
+    return ""
+
+
+def _extract_message_text(message: MessageEv) -> str:
+    payload = message.Message
+    conversation = getattr(payload, "conversation", None)
+    if conversation:
+        return str(conversation).strip()
+    extended = getattr(payload, "extendedTextMessage", None)
+    return str(getattr(extended, "text", "") or "").strip()
+
+
+def _send_text(client: NewClient, reply_jid, text: str) -> None:
+    client.send_message(reply_jid, text)
+
+
+def _send_pdf(client: NewClient, reply_jid, path: Path, caption: str) -> None:
+    client.send_document(
+        reply_jid,
+        str(path),
+        caption=caption,
+        filename=path.name,
+    )
+
+
+def _command_help() -> str:
+    return (
+        "VibePOS owner commands:\n"
+        "/today - today's sales summary\n"
+        "/sales <YYYY-MM-DD> - report for a date\n"
+        "/day - yesterday's sales report\n"
+        "/week - previous week's sales report\n"
+        "/top - today's top products\n"
+        "/cash - today's invoice collections\n"
+        "/due - total customer outstanding\n"
+        "/summary - today's compact dashboard\n"
+        "/stock - low-stock report\n"
+        "/bal <customer phone> - customer balance\n"
+        "/vendors - vendor outstanding report\n"
+        "/help"
+    )
+
+
+def _format_sales_summary(snapshot: dict, report_date: datetime.date) -> str:
+    return (
+        f"Sales summary - {report_date:%d %b %Y}\n"
+        f"Transactions: {snapshot['transaction_count']}\n"
+        f"Gross sales: PKR {snapshot['gross_sales']:,.2f}\n"
+        f"Approved refunds: PKR {snapshot['refunds']:,.2f}\n"
+        f"Net sales: PKR {snapshot['net_sales']:,.2f}\n"
+        f"Collected against invoices: PKR {snapshot['amount_collected']:,.2f}\n"
+        f"Credit added: PKR {snapshot['credit_sales']:,.2f}"
+    )
+
+
+def _format_top_products(snapshot: dict, report_date: datetime.date) -> str:
+    products = snapshot["top_products"]
+    if not products:
+        return f"No products sold on {report_date:%d %b %Y}."
+    lines = [f"Top products - {report_date:%d %b %Y}"]
+    for index, product in enumerate(products, start=1):
+        quantity = f"{product['quantity']:,.3f}".rstrip("0").rstrip(".")
+        lines.append(
+            f"{index}. {product['name']}: {quantity} sold, PKR {product['revenue']:,.2f}"
+        )
+    return "\n".join(lines)
+
+
+def _format_collections(snapshot: dict, report_date: datetime.date) -> str:
+    payment_totals = snapshot["payment_totals"]
+    if not payment_totals:
+        return f"No invoice collections recorded on {report_date:%d %b %Y}."
+    lines = [f"Invoice collections - {report_date:%d %b %Y}"]
+    for method, amount in sorted(payment_totals.items()):
+        lines.append(f"{method.title()}: PKR {amount:,.2f}")
+    lines.append(f"Total: PKR {snapshot['amount_collected']:,.2f}")
+    return "\n".join(lines)
+
+
+def _format_daily_dashboard(db, snapshot: dict, report_date: datetime.date) -> str:
+    top_product = snapshot["top_products"][0] if snapshot["top_products"] else None
+    lines = [
+        f"Daily dashboard - {report_date:%d %b %Y}",
+        f"Net sales: PKR {snapshot['net_sales']:,.2f}",
+        f"Transactions: {snapshot['transaction_count']}",
+        f"Invoice collections: PKR {snapshot['amount_collected']:,.2f}",
+        f"Customer outstanding: PKR {get_customer_outstanding_total(db):,.2f}",
+    ]
+    if top_product:
+        lines.append(
+            f"Top product: {top_product['name']} (PKR {top_product['revenue']:,.2f})"
+        )
+    return "\n".join(lines)
+
+
+def _handle_owner_command(
+    client: NewClient,
+    reply_jid,
+    raw_text: str,
+    db,
+) -> None:
+    command, _, argument = raw_text.strip().partition(" ")
+    command = {
+        "/day": "/previous-day-report",
+        "/daily": "/previous-day-report",
+        "/week": "/previous-week-report",
+        "/weekly": "/previous-week-report",
+        "/stock": "/low-stock-item",
+        "/lowstock": "/low-stock-item",
+        "/vendors": "/vendoroutstanding",
+        "/vendor": "/vendoroutstanding",
+        "/bal": "/balance",
+    }.get(command.lower(), command.lower())
+    today = now_pkt().date()
+
+    if command == "/previous-day-report":
+        report_date = today - datetime.timedelta(days=1)
+        path = create_sales_report_pdf(db, report_date, report_date)
+        _send_pdf(client, reply_jid, path, f"Previous day report - {report_date:%d %b %Y}")
+        return
+
+    if command == "/previous-week-report":
+        current_week_start = today - datetime.timedelta(days=today.weekday())
+        week_start = current_week_start - datetime.timedelta(days=7)
+        week_end = current_week_start - datetime.timedelta(days=1)
+        path = create_sales_report_pdf(db, week_start, week_end)
+        _send_pdf(client, reply_jid, path, f"Previous week report - {week_start:%d %b} to {week_end:%d %b %Y}")
+        return
+
+    if command == "/today":
+        _send_text(client, reply_jid, _format_sales_summary(get_sales_snapshot(db, today, today), today))
+        return
+
+    if command == "/sales":
+        try:
+            report_date = datetime.date.fromisoformat(argument.strip())
+        except ValueError:
+            _send_text(client, reply_jid, "Usage: /sales <YYYY-MM-DD>")
+            return
+        path = create_sales_report_pdf(db, report_date, report_date)
+        _send_pdf(client, reply_jid, path, f"Sales report - {report_date:%d %b %Y}")
+        return
+
+    if command == "/top":
+        _send_text(client, reply_jid, _format_top_products(get_sales_snapshot(db, today, today), today))
+        return
+
+    if command == "/cash":
+        _send_text(client, reply_jid, _format_collections(get_sales_snapshot(db, today, today), today))
+        return
+
+    if command == "/due":
+        _send_text(
+            client,
+            reply_jid,
+            f"Total customer outstanding: PKR {get_customer_outstanding_total(db):,.2f}",
+        )
+        return
+
+    if command == "/summary":
+        _send_text(
+            client,
+            reply_jid,
+            _format_daily_dashboard(db, get_sales_snapshot(db, today, today), today),
+        )
+        return
+
+    if command == "/low-stock-item":
+        path = create_low_stock_report_pdf(db)
+        _send_pdf(client, reply_jid, path, "Current low-stock report")
+        return
+
+    if command == "/vendoroutstanding":
+        path = create_vendor_outstanding_report_pdf(db)
+        _send_pdf(client, reply_jid, path, "Current vendor outstanding report")
+        return
+
+    if command == "/balance":
+        if not argument.strip():
+            _send_text(client, reply_jid, "Usage: /balance <customer phone number>")
+            return
+        customer = find_customer_balance(db, argument)
+        if customer is None:
+            _send_text(client, reply_jid, "No customer found for that phone number.")
+            return
+        balance = float(customer["balance"])
+        if balance > 0.005:
+            position = f"Outstanding: PKR {balance:,.2f}"
+        elif balance < -0.005:
+            position = f"Advance credit: PKR {abs(balance):,.2f}"
+        else:
+            position = "Balance is settled: PKR 0.00"
+        _send_text(
+            client,
+            reply_jid,
+            f"Customer: {customer['name']}\nPhone: {customer['phone']}\n{position}",
+        )
+        return
+
+    if command in {"/help", "/commands"}:
+        _send_text(client, reply_jid, _command_help())
+        return
+
+    _send_text(client, reply_jid, f"Unknown command.\n\n{_command_help()}")
 
 
 def connect_client_loop():
@@ -313,6 +509,10 @@ def run_whatsapp_worker(status_proxy, task_queue):
     global connection_status
     connection_status = status_proxy
 
+    # Multiprocessing spawn imports only this endpoint module. Register every
+    # ORM model before the worker opens a SessionLocal (notably PosReturn.User).
+    import app.db.base  # noqa: F401
+
     connect_thread = threading.Thread(target=run_whatsapp_client, daemon=True)
     connect_thread.start()
     
@@ -379,10 +579,34 @@ def run_whatsapp_worker(status_proxy, task_queue):
                     caption=task.get("caption") or "",
                     filename=task.get("filename") or "",
                 )
+                if task.get("daily_report_end_date"):
+                    try:
+                        _mark_daily_report_sent(task["daily_report_end_date"])
+                    except Exception:
+                        logger.exception(
+                            "WhatsApp report was sent but its delivery marker could not be saved"
+                        )
             else:
                 print(f"⚠️ Unknown WhatsApp task type: {task_type}")
         except Exception as e:
             print(f"❌ WhatsApp send error: {e}")
+            if retries < 5:
+                task["retries"] = retries + 1
+                time.sleep(2)
+                task_queue.put(task)
+
+
+def _mark_daily_report_sent(report_end_date: str) -> None:
+    """Persist delivery completion from the WhatsApp worker process/thread."""
+    delivered_date = datetime.date.fromisoformat(report_end_date)
+    with SessionLocal() as db:
+        row = db.query(StoreSettings).filter(StoreSettings.id == 1).first()
+        if row and (
+            row.whatsapp_last_daily_report_date is None
+            or row.whatsapp_last_daily_report_date < delivered_date
+        ):
+            row.whatsapp_last_daily_report_date = delivered_date
+            db.commit()
 
 
 def _ensure_whatsapp_worker():
@@ -420,6 +644,31 @@ def _enqueue_task(task: dict):
     message_queue.put(task)
 
 
+def queue_report_document(
+    phone_number: str,
+    document_path: Path,
+    caption: str,
+    *,
+    daily_report_end_date: Optional[datetime.date] = None,
+) -> None:
+    """Queue a generated owner report for delivery by the connected worker."""
+    task = {
+        "type": "document",
+        "phone_number": normalize_whatsapp_number(phone_number),
+        "document_url": str(document_path),
+        "caption": caption,
+        "filename": document_path.name,
+        "retries": 0,
+    }
+    if daily_report_end_date is not None:
+        task["daily_report_end_date"] = daily_report_end_date.isoformat()
+    _enqueue_task(task)
+
+
+def whatsapp_is_connected() -> bool:
+    return bool(connection_status.get("connected"))
+
+
 # Initialize WhatsApp client
 def init_whatsapp():
     """Initialize WhatsApp client in a separate worker process"""
@@ -432,7 +681,7 @@ router = APIRouter(prefix="/whatsapp", tags=["WhatsApp"])
 @router.get("/status", response_model=ConnectionStatus)
 async def get_status():
     """Get the current connection status of the WhatsApp bot"""
-    return connection_status
+    return dict(connection_status)
 
 @router.get("/connected")
 async def is_connected():

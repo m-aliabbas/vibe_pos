@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -20,9 +21,18 @@ import {
     Clock,
     Store,
     Save,
+    MessageCircle,
 } from 'lucide-react';
-import api from '@/lib/api';
+import api, { WhatsAppReportSettings, whatsappReportSettingsApi } from '@/lib/api';
 import { invoke } from '@tauri-apps/api/core';
+import axios from 'axios';
+
+const getErrorMessage = (error: unknown, fallback: string): string => {
+    if (axios.isAxiosError(error)) {
+        return error.response?.data?.detail || error.message || fallback;
+    }
+    return error instanceof Error ? error.message : fallback;
+};
 
 interface DatabaseFile {
     path: string;
@@ -65,6 +75,14 @@ const BackupRestorePage: React.FC = () => {
     });
     const [storeLoading, setStoreLoading] = useState(false);
     const [storeMessage, setStoreMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [whatsAppForm, setWhatsAppForm] = useState<WhatsAppReportSettings>({
+        owner_number: '',
+        daily_report_enabled: false,
+        daily_report_time: '09:00',
+        last_daily_report_date: null,
+    });
+    const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+    const [whatsAppMessage, setWhatsAppMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const fetchStoreSettings = async () => {
         try {
@@ -90,10 +108,47 @@ const BackupRestorePage: React.FC = () => {
         try {
             await api.put('/settings/store', storeForm);
             setStoreMessage({ type: 'success', text: 'Store information saved successfully!' });
-        } catch (err: any) {
-            setStoreMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to save.' });
+        } catch (error: unknown) {
+            setStoreMessage({ type: 'error', text: getErrorMessage(error, 'Failed to save.') });
         } finally {
             setStoreLoading(false);
+        }
+    };
+
+    const fetchWhatsAppReportSettings = async () => {
+        try {
+            const data = await whatsappReportSettingsApi.get();
+            setWhatsAppForm({
+                owner_number: data.owner_number || '',
+                daily_report_enabled: Boolean(data.daily_report_enabled),
+                daily_report_time: data.daily_report_time || '09:00',
+                last_daily_report_date: data.last_daily_report_date || null,
+            });
+        } catch {
+            // The main settings screen remains usable if WhatsApp is unavailable.
+        }
+    };
+
+    const handleWhatsAppSave = async () => {
+        setWhatsAppLoading(true);
+        setWhatsAppMessage(null);
+        try {
+            const data = await whatsappReportSettingsApi.update({
+                owner_number: whatsAppForm.owner_number,
+                daily_report_enabled: whatsAppForm.daily_report_enabled,
+                daily_report_time: whatsAppForm.daily_report_time,
+            });
+            setWhatsAppForm({
+                owner_number: data.owner_number || '',
+                daily_report_enabled: Boolean(data.daily_report_enabled),
+                daily_report_time: data.daily_report_time || '09:00',
+                last_daily_report_date: data.last_daily_report_date || null,
+            });
+            setWhatsAppMessage({ type: 'success', text: 'WhatsApp owner and report schedule saved.' });
+        } catch (error: unknown) {
+            setWhatsAppMessage({ type: 'error', text: getErrorMessage(error, 'Failed to save WhatsApp settings.') });
+        } finally {
+            setWhatsAppLoading(false);
         }
     };
 
@@ -119,6 +174,7 @@ const BackupRestorePage: React.FC = () => {
         fetchDatabaseFiles();
         fetchBackups();
         fetchStoreSettings();
+        fetchWhatsAppReportSettings();
     }, []);
 
     const handleCreateBackup = async () => {
@@ -162,10 +218,10 @@ const BackupRestorePage: React.FC = () => {
 
                 fetchBackups();
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             setMessage({
                 type: 'error',
-                text: `Backup failed: ${error.response?.data?.detail || error.message}`
+                text: `Backup failed: ${getErrorMessage(error, 'Unknown error')}`
             });
         } finally {
             setLoading(false);
@@ -202,8 +258,8 @@ const BackupRestorePage: React.FC = () => {
             fileInput.type = 'file';
             fileInput.accept = '.zip';
 
-            fileInput.onchange = async (e: any) => {
-                const file = e.target.files[0];
+            fileInput.onchange = async (event: Event) => {
+                const file = (event.target as HTMLInputElement).files?.[0];
                 if (!file) return;
 
                 const formData = new FormData();
@@ -222,10 +278,10 @@ const BackupRestorePage: React.FC = () => {
                             text: 'Backup restored successfully! Please restart the application for changes to take effect.'
                         });
                     }
-                } catch (error: any) {
+                } catch (error: unknown) {
                     setMessage({
                         type: 'error',
-                        text: `Restore failed: ${error.response?.data?.detail || error.message}`
+                        text: `Restore failed: ${getErrorMessage(error, 'Unknown error')}`
                     });
                 } finally {
                     setLoading(false);
@@ -233,10 +289,10 @@ const BackupRestorePage: React.FC = () => {
             };
 
             fileInput.click();
-        } catch (error: any) {
+        } catch (error: unknown) {
             setMessage({
                 type: 'error',
-                text: `Restore failed: ${error.message}`
+                text: `Restore failed: ${getErrorMessage(error, 'Unknown error')}`
             });
             setLoading(false);
         }
@@ -253,7 +309,7 @@ const BackupRestorePage: React.FC = () => {
                     {/* Header */}
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-                        <p className="text-gray-600 mt-1">Manage store information and database backups</p>
+                        <p className="text-gray-600 mt-1">Manage store information, WhatsApp reports, and database backups</p>
                     </div>
 
                     {/* Store Information */}
@@ -349,6 +405,87 @@ const BackupRestorePage: React.FC = () => {
                                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
                                 ) : (
                                     <><Save className="h-4 w-4 mr-2" />Save Store Info</>
+                                )}
+                            </Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <MessageCircle className="h-5 w-5" />
+                                WhatsApp Owner Reports
+                            </CardTitle>
+                            <CardDescription>
+                                Only this number can request private reports. Use the international format, for example 923001234567.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {whatsAppMessage && (
+                                <Alert variant={whatsAppMessage.type === 'error' ? 'destructive' : 'default'}>
+                                    {whatsAppMessage.type === 'success' ? (
+                                        <CheckCircle2 className="h-4 w-4" />
+                                    ) : (
+                                        <AlertCircle className="h-4 w-4" />
+                                    )}
+                                    <AlertDescription>{whatsAppMessage.text}</AlertDescription>
+                                </Alert>
+                            )}
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div className="space-y-1">
+                                    <Label htmlFor="whatsapp_owner_number">Owner WhatsApp Number</Label>
+                                    <Input
+                                        id="whatsapp_owner_number"
+                                        inputMode="tel"
+                                        placeholder="e.g. 923001234567"
+                                        value={whatsAppForm.owner_number}
+                                        onChange={event => setWhatsAppForm(form => ({ ...form, owner_number: event.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="whatsapp_daily_report_time">Daily Send Time (Pakistan time)</Label>
+                                    <Input
+                                        id="whatsapp_daily_report_time"
+                                        type="time"
+                                        value={whatsAppForm.daily_report_time}
+                                        onChange={event => setWhatsAppForm(form => ({ ...form, daily_report_time: event.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex items-start gap-3 rounded-md border p-3">
+                                <Checkbox
+                                    id="whatsapp_daily_report_enabled"
+                                    checked={whatsAppForm.daily_report_enabled}
+                                    onCheckedChange={checked => setWhatsAppForm(form => ({ ...form, daily_report_enabled: checked === true }))}
+                                />
+                                <div className="space-y-1">
+                                    <Label htmlFor="whatsapp_daily_report_enabled">Send automatic previous-day PDF</Label>
+                                    <p className="text-sm text-muted-foreground">
+                                        If the system was off, the next PDF includes all completed days not yet delivered.
+                                    </p>
+                                </div>
+                            </div>
+                            {whatsAppForm.last_daily_report_date && (
+                                <p className="text-sm text-muted-foreground">
+                                    Last automatic report delivered through {whatsAppForm.last_daily_report_date}.
+                                </p>
+                            )}
+                            <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+                                <p className="font-medium">Owner commands</p>
+                                <p className="mt-1 font-mono text-xs leading-5">
+                                    /previous-day-report<br />
+                                    /previous-week-report<br />
+                                    /low-stock-item<br />
+                                    /balance &lt;customer phone&gt;<br />
+                                    /VendorOutstanding<br />
+                                    /help
+                                </p>
+                            </div>
+                            <Button onClick={handleWhatsAppSave} disabled={whatsAppLoading}>
+                                {whatsAppLoading ? (
+                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+                                ) : (
+                                    <><Save className="mr-2 h-4 w-4" />Save WhatsApp Settings</>
                                 )}
                             </Button>
                         </CardContent>
