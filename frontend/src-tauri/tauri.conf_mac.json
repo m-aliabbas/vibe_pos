@@ -1,6 +1,6 @@
 {
   "productName": "VibePOS",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "identifier": "com.pos.desktop",
   "build": {
     "beforeBuildCommand": "npm run build && node scripts/package-server.js",

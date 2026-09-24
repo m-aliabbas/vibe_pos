@@ -209,15 +209,50 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
         run: |
           $tag = $env:GITHUB_REF_NAME
-          $assets = Get-ChildItem "release\windows\*" | ForEach-Object { $_.FullName }
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE "release\windows"
+          $installers = @(Get-ChildItem -LiteralPath $releaseDir -Filter "VibePOS_*_x64-setup.exe")
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one customer installer, found $($installers.Count)."
+          }
+          $assets = @(
+            $installers[0].FullName
+            (Join-Path $releaseDir "SHA256SUMS.txt")
+            (Join-Path $releaseDir "latest.json")
+          )
+          $allowedAssetNames = @($assets | ForEach-Object { Split-Path -Leaf $_ })
           $manifest = Get-Content "release\windows\latest.json" -Raw | ConvertFrom-Json
 
           if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
             throw "Repository secret RELEASE_REPO_TOKEN is required to publish customer releases."
           }
 
+          # GitHub always adds source archives for the release repository's tag.
+          # Keep that repository content-free apart from its public README so a
+          # release can never expose files from the private application repository.
+          $headers = @{
+            Accept = "application/vnd.github+json"
+            Authorization = "Bearer $env:GH_TOKEN"
+            "X-GitHub-Api-Version" = "2026-03-10"
+          }
+          $repository = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$env:RELEASE_REPOSITORY"
+          $tree = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$env:RELEASE_REPOSITORY/git/trees/$($repository.default_branch)?recursive=1"
+          $unexpectedFiles = @($tree.tree | Where-Object { $_.type -eq "blob" -and $_.path -ne "README.md" })
+          if ($unexpectedFiles.Count -gt 0) {
+            $paths = ($unexpectedFiles.path -join ", ")
+            throw "The public release repository contains unexpected files: $paths"
+          }
+
           & gh release view $tag --repo $env:RELEASE_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
+            $release = (& gh release view $tag --repo $env:RELEASE_REPOSITORY --json assets | ConvertFrom-Json)
+            foreach ($asset in $release.assets) {
+              if ($asset.name -notin $allowedAssetNames) {
+                & gh release delete-asset $tag $asset.name --yes --repo $env:RELEASE_REPOSITORY
+                if ($LASTEXITCODE -ne 0) {
+                  throw "Failed to remove non-customer release asset $($asset.name)."
+                }
+              }
+            }
             & gh release upload $tag @assets --clobber --repo $env:RELEASE_REPOSITORY
             if ($LASTEXITCODE -eq 0) {
               & gh release edit $tag --repo $env:RELEASE_REPOSITORY --latest --title "VibePOS $tag" --notes $manifest.notes

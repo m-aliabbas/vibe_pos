@@ -31,21 +31,21 @@ A manual run never publishes a release. It creates an installer artifact retaine
 
 ## Make a versioned release
 
-The current application version is `1.0.16`. Set the next version with one command; it updates the frontend, both Tauri configurations, and both Rust lock files:
+Set the next version with one command; it updates the frontend, both Tauri configurations, and both Rust lock files:
 
 ```bash
 cd frontend
-npm run set:version -- 1.0.17
+npm run set:version -- 1.0.20
 cd ..
 git add frontend/package.json frontend/package-lock.json frontend/src-tauri
-git commit -m "release: v1.0.17"
+git commit -m "release: v1.0.20"
 ```
 
 After updating and committing the version, create and push a matching tag:
 
 ```bash
-git tag v1.0.17
-git push origin v1.0.17
+git tag v1.0.20
+git push origin v1.0.20
 ```
 
 The workflow builds the installer and automatically publishes the release to `m-aliabbas/vibepos-releases`. The in-app **Application Updates** page discovers it through the permanent URL:
@@ -54,13 +54,22 @@ The workflow builds the installer and automatically publishes the release to `m-
 https://github.com/m-aliabbas/vibepos-releases/releases/latest/download/latest.json
 ```
 
+The bundled Next.js server fetches this URL for the desktop UI so GitHub's release-asset redirects do not depend on browser CORS behavior. To use a different manifest source for a custom build, set the server-side `UPDATE_MANIFEST_SOURCE_URL` environment variable.
+
 Only push a version tag after the corresponding commit has passed release testing. Re-running the tagged workflow replaces the assets for that same release.
 
-## Files saved with every build
+## Public release files
 
 - Windows NSIS setup executable
 - `latest.json` consumed by the in-app update checker
 - `SHA256SUMS.txt`
+
+GitHub automatically adds **Source code (zip)** and **Source code (tar.gz)** links to every release. They contain the tagged contents of the public `vibepos-releases` repository, not this private application repository. The release workflow refuses to publish if that public repository contains anything except its harmless `README.md`.
+
+## Private workflow artifact files
+
+Manual and tagged builds retain a private GitHub Actions artifact for diagnosis. It contains the three public release files plus:
+
 - `build-manifest.json` with the commit, tool versions, lock-file hashes, and installer hash
 - `python-packages.txt` with the installed Python package versions
 

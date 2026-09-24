@@ -2,9 +2,7 @@ import packageJson from '@/package.json';
 
 export const CURRENT_APP_VERSION = packageJson.version;
 
-export const UPDATE_MANIFEST_URL =
-  process.env.NEXT_PUBLIC_UPDATE_MANIFEST_URL ??
-  'https://github.com/m-aliabbas/vibepos-releases/releases/latest/download/latest.json';
+export const UPDATE_MANIFEST_URL = '/api/updates/latest';
 
 export type ReleaseTarget =
   | 'windows-x86_64'
