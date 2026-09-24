@@ -133,6 +133,7 @@ export default function SalesTerminal() {
   const [amountPaid, setAmountPaid] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [quotationMode, setQuotationMode] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
   const [creditLimitAlert, setCreditLimitAlert] = useState<{
     limit: number; current: number; available: number; attempted?: number;
@@ -622,6 +623,68 @@ export default function SalesTerminal() {
     deliveryCharges,
     amountPaid,
     buildHoldRequest,
+    clearCart,
+    fetchHeldSales,
+  ]);
+
+  const saveQuotation = useCallback(async (sendToCustomer = false) => {
+    if (cart.length === 0) {
+      alert("Cart is empty");
+      return;
+    }
+
+    const { label, payload } = buildHoldRequest({
+      cart,
+      customerId,
+      customerPhone,
+      customerName,
+      selectedCustomer,
+      paymentMethod,
+      discount,
+      tax,
+      deliveryCharges,
+      amountPaid,
+    });
+    const quotationPayload = { ...payload, kind: "quotation" };
+    if (sendToCustomer && !customerPhone.trim()) {
+      alert("Enter the customer's WhatsApp number before sending");
+      return;
+    }
+
+    try {
+      await holdSalesApi.create({ label: `Quotation • ${label}`, payload: quotationPayload });
+      if (sendToCustomer) {
+        await api.post("/sales/send-quotation", {
+          phone_number: customerPhone.trim(),
+          customer_name: customerName.trim() || undefined,
+          items: quotationPayload.cart,
+          discount,
+          tax,
+          delivery_charges: deliveryCharges,
+        });
+      }
+      setCheckoutOpen(false);
+      setQuotationMode(false);
+      clearCart();
+      fetchHeldSales();
+      alert(sendToCustomer ? "Quotation saved and sent" : "Quotation saved");
+    } catch (error) {
+      console.error("Failed to save quotation:", error);
+      alert(sendToCustomer ? "Failed to save or send quotation" : "Failed to save quotation");
+    }
+  }, [
+    cart,
+    customerId,
+    customerPhone,
+    customerName,
+    selectedCustomer,
+    paymentMethod,
+    discount,
+    tax,
+    deliveryCharges,
+    amountPaid,
+    buildHoldRequest,
+    calculateTotal,
     clearCart,
     fetchHeldSales,
   ]);
@@ -1341,6 +1404,16 @@ export default function SalesTerminal() {
       alert("Cart is empty!");
       return;
     }
+    setQuotationMode(false);
+    setCheckoutOpen(true);
+  }, [cart.length]);
+
+  const handleQuotation = useCallback(() => {
+    if (cart.length === 0) {
+      alert("Cart is empty!");
+      return;
+    }
+    setQuotationMode(true);
     setCheckoutOpen(true);
   }, [cart.length]);
 
@@ -1609,7 +1682,7 @@ export default function SalesTerminal() {
 
       if (e.code === "KeyE") {
         e.preventDefault();
-        if (cart.length > 0) setEstimateOpen(true);
+        if (cart.length > 0) handleQuotation();
         return;
       }
 
@@ -1623,7 +1696,7 @@ export default function SalesTerminal() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleCheckout, holdCurrentSale, cart.length, checkoutOpen]);
+  }, [handleCheckout, handleQuotation, holdCurrentSale, cart.length, checkoutOpen]);
 
   // keep snapshot for auto-hold
   useEffect(() => {
@@ -2084,6 +2157,9 @@ export default function SalesTerminal() {
                 <Button size="sm" className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold text-xs" onClick={() => void holdCurrentSale()}>
                   Hold (Ctrl+H)
                 </Button>
+                <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleQuotation}>
+                  <FileText className="h-3.5 w-3.5 mr-1 shrink-0" />Quotation
+                </Button>
               </div>
             </div>
           </div>
@@ -2211,8 +2287,12 @@ export default function SalesTerminal() {
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Complete Sale</DialogTitle>
-            <DialogDescription>Enter customer and payment details to complete the transaction.</DialogDescription>
+            <DialogTitle>{quotationMode ? "Create Quotation" : "Complete Sale"}</DialogTitle>
+            <DialogDescription>
+              {quotationMode
+                ? "Enter customer details, then save or send this quotation. It will not affect stock or balances."
+                : "Enter customer and payment details to complete the transaction."}
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 py-4 px-1 relative">
@@ -2223,6 +2303,16 @@ export default function SalesTerminal() {
                 placeholder="e.g., 0300xxxxxxx"
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="customerId">Customer ID</Label>
+              <Input
+                id="customerId"
+                placeholder="Optional customer ID"
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
               />
             </div>
 
@@ -2404,7 +2494,7 @@ export default function SalesTerminal() {
               />
             </div>
 
-            <div className="space-y-1">
+            {!quotationMode && <div className="space-y-1">
               <Label htmlFor="payment" className="text-sm">
                 Payment Method
               </Label>
@@ -2419,7 +2509,7 @@ export default function SalesTerminal() {
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </div>}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -2452,7 +2542,7 @@ export default function SalesTerminal() {
               </div>
             </div>
 
-            <div className="space-y-1">
+            {!quotationMode && <div className="space-y-1">
               <Label htmlFor="amountPaid" className="text-sm">
                 Amount Paid (rs)
               </Label>
@@ -2470,7 +2560,7 @@ export default function SalesTerminal() {
               {amountPaidInWords && (
                 <p className="text-xs font-medium text-primary">In words: {amountPaidInWords}</p>
               )}
-            </div>
+            </div>}
 
             <div className="border-t pt-2 space-y-1 text-xs">
               <div className="flex justify-between">
@@ -2506,7 +2596,7 @@ export default function SalesTerminal() {
                 </div>
               )}
 
-              {selectedCustomer && Math.abs(selectedCustomer.outstanding_balance) > 0.005 && (
+              {!quotationMode && selectedCustomer && Math.abs(selectedCustomer.outstanding_balance) > 0.005 && (
                 <div className="flex justify-between text-orange-700 font-semibold">
                   <span>Previous Balance:</span>
                   <span>{selectedCustomer.outstanding_balance >= 0 ? "+" : "-"}rs {Math.abs(selectedCustomer.outstanding_balance).toFixed(2)}</span>
@@ -2515,24 +2605,24 @@ export default function SalesTerminal() {
 
               <div className="flex justify-between font-bold border-t-2 pt-1 mt-1">
                 <span>GRAND TOTAL:</span>
-                <span className="text-lg">rs {(calculateTotal() + (selectedCustomer?.outstanding_balance || 0)).toFixed(2)}</span>
+                <span className="text-lg">rs {(calculateTotal() + (quotationMode ? 0 : selectedCustomer?.outstanding_balance || 0)).toFixed(2)}</span>
               </div>
 
-              {amountPaidValue < calculateTotal() && (
+              {!quotationMode && amountPaidValue < calculateTotal() && (
                 <div className="flex justify-between text-red-600 font-semibold">
                   <span>New Bill Due (Udhar):</span>
                   <span>rs {(calculateTotal() - amountPaidValue).toFixed(2)}</span>
                 </div>
               )}
 
-              {selectedCustomer && selectedCustomer.outstanding_balance > 0 && (
+              {!quotationMode && selectedCustomer && selectedCustomer.outstanding_balance > 0 && (
                 <div className="flex justify-between text-red-700 font-bold">
                   <span>Total Balance After Payment:</span>
                   <span>rs {(selectedCustomer.outstanding_balance + Math.max(0, calculateTotal() - amountPaidValue)).toFixed(2)}</span>
                 </div>
               )}
 
-              {amountPaidValue > calculateTotal() && (
+              {!quotationMode && amountPaidValue > calculateTotal() && (
                 <div className="flex justify-between text-green-600 font-semibold">
                   <span>Change:</span>
                   <span>rs {(amountPaidValue - calculateTotal()).toFixed(2)}</span>
@@ -2540,21 +2630,28 @@ export default function SalesTerminal() {
               )}
             </div>
 
-            <div className="bg-primary/10 p-2 rounded border border-primary/20">
+            {!quotationMode && <div className="bg-primary/10 p-2 rounded border border-primary/20">
               <div className="flex justify-between items-center">
                 <span className="font-semibold text-sm">Amount Paid:</span>
                 <span className="text-xl font-bold text-primary">rs {amountPaidValue.toFixed(2)}</span>
               </div>
-            </div>
+            </div>}
           </div>
 
           <DialogFooter className="border-t pt-3">
-            <Button variant="outline" onClick={() => setCheckoutOpen(false)} disabled={loading}>
+            <Button variant="outline" onClick={() => { setCheckoutOpen(false); setQuotationMode(false); }} disabled={loading}>
               Cancel
             </Button>
-            <Button onClick={() => void completeSale()} disabled={loading}>
-              {loading ? "Processing..." : "Complete Sale"}
-            </Button>
+            {quotationMode ? (
+              <>
+                <Button variant="outline" onClick={() => void saveQuotation(false)} disabled={loading}>Save Quotation</Button>
+                <Button onClick={() => void saveQuotation(true)} disabled={loading}>Save &amp; Send</Button>
+              </>
+            ) : (
+              <Button onClick={() => void completeSale()} disabled={loading}>
+                {loading ? "Processing..." : "Complete Sale"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3154,6 +3251,12 @@ export default function SalesTerminal() {
           <DialogFooter className="border-t pt-3 gap-2">
             <Button variant="outline" onClick={() => setEstimateOpen(false)}>
               Close
+            </Button>
+            <Button variant="outline" onClick={() => void saveQuotation(false)}>
+              Save Quotation
+            </Button>
+            <Button onClick={() => void saveQuotation(true)}>
+              Save &amp; Send
             </Button>
             <Button onClick={() => {
               const printArea = document.getElementById('estimate-print-area');

@@ -46,6 +46,50 @@ export const whatsappReportSettingsApi = {
     },
 };
 
+// ============ CASH REGISTER (CASH DRAWER) API FUNCTIONS ============
+
+export interface CashRegisterSession {
+    id: number;
+    user_id: number;
+    username?: string | null;
+    opening_cash: number;
+    opened_at: string;
+    closing_cash?: number | null;
+    expected_cash?: number | null;
+    difference?: number | null;
+    closed_at?: string | null;
+    status: 'open' | 'closed';
+    notes?: string | null;
+}
+
+export interface CashRegisterStatus {
+    enabled: boolean;
+    session: CashRegisterSession | null;
+}
+
+export const cashRegisterApi = {
+    getStatus: async (): Promise<CashRegisterStatus> => {
+        const response = await api.get('/cash-register/status');
+        return response.data;
+    },
+    open: async (opening_cash: number): Promise<CashRegisterSession> => {
+        const response = await api.post('/cash-register/open', { opening_cash });
+        return response.data;
+    },
+    close: async (closing_cash: number, notes?: string): Promise<CashRegisterSession> => {
+        const response = await api.post('/cash-register/close', { closing_cash, notes });
+        return response.data;
+    },
+    getOpenSessions: async (): Promise<CashRegisterSession[]> => {
+        const response = await api.get('/cash-register/open-sessions');
+        return response.data;
+    },
+    getSessions: async (params?: { user_id?: number; start_date?: string; end_date?: string; limit?: number }): Promise<CashRegisterSession[]> => {
+        const response = await api.get('/cash-register/sessions', { params });
+        return response.data;
+    },
+};
+
 // ============ CUSTOMER API FUNCTIONS ============
 
 export interface CustomerSimple {
@@ -549,6 +593,18 @@ export interface AnalyticsCustomer {
     outstanding_amount: number;
 }
 
+export interface AnalyticsUserSale {
+    user_id: number;
+    username: string;
+    role: string;
+    transaction_count: number;
+    total_revenue: number;
+    items_sold: number;
+    average_transaction: number;
+    cash_register_status?: string | null;
+    cash_on_hand?: number | null;
+}
+
 export interface AnalyticsOverviewReport {
     period_start: string;
     period_end: string;
@@ -587,6 +643,7 @@ export interface AnalyticsOverviewReport {
     }>;
     outstanding_customers: AnalyticsCustomer[];
     top_customers: AnalyticsCustomer[];
+    staff_sales: AnalyticsUserSale[];
 }
 
 export const reportsApi = {

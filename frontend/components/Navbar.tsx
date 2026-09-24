@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from '@/components/ui/badge';
+import { CashDrawerWidget } from '@/components/CashDrawerWidget';
 import {
   Store,
   BarChart3,
@@ -39,6 +40,7 @@ import {
   UserCheck,
   RotateCcw,
   Database,
+  Lock,
   Settings,
   Download,
 } from 'lucide-react';
@@ -50,6 +52,8 @@ export function Navbar() {
   const { user, logout } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [cashDrawerRequestId, setCashDrawerRequestId] = useState(0);
+  const [cashDrawerEnabled, setCashDrawerEnabled] = useState(false);
 
   // Don't show navbar on login page
   if (pathname === '/login') return null;
@@ -78,7 +82,6 @@ export function Navbar() {
     { href: '/accounting', label: 'Accounting', icon: BarChart3, show: user?.role === 'admin' },
     { href: '/reports', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
     { href: '/users', label: 'Users', icon: Users, show: user?.role === 'admin' },
-    { href: '/backup', label: 'Backup', icon: Database, show: user?.role === 'admin' },
   ];
 
   const visibleNavItems = navItems.filter(item => item.show);
@@ -126,6 +129,11 @@ export function Navbar() {
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
+            <CashDrawerWidget
+              requestId={cashDrawerRequestId}
+              hideTrigger
+              onEnabledChange={setCashDrawerEnabled}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2">
@@ -140,7 +148,7 @@ export function Navbar() {
                   </div>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" sideOffset={8} collisionPadding={12} className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium">{user?.username}</p>
@@ -152,8 +160,18 @@ export function Navbar() {
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
+                {cashDrawerEnabled && (
+                  <DropdownMenuItem onSelect={() => setCashDrawerRequestId((requestId) => requestId + 1)}>
+                    <Lock className="mr-2 h-4 w-4" />
+                    Cash Drawer
+                  </DropdownMenuItem>
+                )}
                 {user?.role === 'admin' && (
                   <>
+                    <DropdownMenuItem onClick={() => router.push('/backup')}>
+                      <Database className="mr-2 h-4 w-4" />
+                      Backup
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => router.push('/settings')}>
                       <Settings className="mr-2 h-4 w-4" />
                       Store Settings

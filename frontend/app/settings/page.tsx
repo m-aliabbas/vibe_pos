@@ -22,8 +22,9 @@ import {
     Store,
     Save,
     MessageCircle,
+    Wallet,
 } from 'lucide-react';
-import api, { WhatsAppReportSettings, whatsappReportSettingsApi } from '@/lib/api';
+import api, { WhatsAppReportSettings, whatsappReportSettingsApi, cashRegisterApi, CashRegisterSession } from '@/lib/api';
 import { invoke } from '@tauri-apps/api/core';
 import axios from 'axios';
 
@@ -55,6 +56,7 @@ interface StoreSettingsForm {
     store_email: string;
     store_tax_id: string;
     store_website: string;
+    cash_register_enabled: boolean;
 }
 
 const BackupRestorePage: React.FC = () => {
@@ -72,8 +74,11 @@ const BackupRestorePage: React.FC = () => {
         store_email: '',
         store_tax_id: '',
         store_website: '',
+        cash_register_enabled: false,
     });
     const [storeLoading, setStoreLoading] = useState(false);
+    const [openCashSessions, setOpenCashSessions] = useState<CashRegisterSession[]>([]);
+    const [cashSessionsLoading, setCashSessionsLoading] = useState(false);
     const [storeMessage, setStoreMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [whatsAppForm, setWhatsAppForm] = useState<WhatsAppReportSettings>({
         owner_number: '',
@@ -96,6 +101,7 @@ const BackupRestorePage: React.FC = () => {
                 store_email: d.store_email || '',
                 store_tax_id: d.store_tax_id || '',
                 store_website: d.store_website || '',
+                cash_register_enabled: Boolean(d.cash_register_enabled),
             });
         } catch {
             // not critical
@@ -175,7 +181,20 @@ const BackupRestorePage: React.FC = () => {
         fetchBackups();
         fetchStoreSettings();
         fetchWhatsAppReportSettings();
+        fetchOpenCashSessions();
     }, []);
+
+    const fetchOpenCashSessions = async () => {
+        setCashSessionsLoading(true);
+        try {
+            const sessions = await cashRegisterApi.getOpenSessions();
+            setOpenCashSessions(sessions);
+        } catch {
+            // Cash register endpoints may be unavailable on older backends.
+        } finally {
+            setCashSessionsLoading(false);
+        }
+    };
 
     const handleCreateBackup = async () => {
         try {
@@ -400,6 +419,20 @@ const BackupRestorePage: React.FC = () => {
                                     />
                                 </div>
                             </div>
+                            <div className="flex items-start gap-3 rounded-md border p-3">
+                                <Checkbox
+                                    id="cash_register_enabled"
+                                    checked={storeForm.cash_register_enabled}
+                                    onCheckedChange={checked => setStoreForm(f => ({ ...f, cash_register_enabled: checked === true }))}
+                                />
+                                <div className="space-y-1">
+                                    <Label htmlFor="cash_register_enabled">Enable cash drawer tracking</Label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Users must declare opening cash after login and closing cash before ending their shift.
+                                        A summary comparing expected vs. counted cash is generated automatically.
+                                    </p>
+                                </div>
+                            </div>
                             <Button onClick={handleStoreSave} disabled={storeLoading} className="mt-2">
                                 {storeLoading ? (
                                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
@@ -488,6 +521,43 @@ const BackupRestorePage: React.FC = () => {
                                     <><Save className="mr-2 h-4 w-4" />Save WhatsApp Settings</>
                                 )}
                             </Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Wallet className="h-5 w-5" />
+                                Open Cash Drawers
+                            </CardTitle>
+                            <CardDescription>
+                                See which users currently have an open cash drawer session and how much cash they started with.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="flex justify-end">
+                                <Button variant="outline" size="sm" onClick={fetchOpenCashSessions} disabled={cashSessionsLoading}>
+                                    {cashSessionsLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                                    Refresh
+                                </Button>
+                            </div>
+                            {openCashSessions.length === 0 ? (
+                                <p className="text-sm text-gray-500">No cash drawers are currently open.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {openCashSessions.map(session => (
+                                        <div key={session.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                                            <div>
+                                                <p className="font-medium">{session.username}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    Opened {new Date(session.opened_at).toLocaleString()}
+                                                </p>
+                                            </div>
+                                            <Badge variant="secondary">Rs {session.opening_cash.toFixed(2)}</Badge>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
