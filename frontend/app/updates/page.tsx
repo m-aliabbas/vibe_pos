@@ -17,7 +17,6 @@ import {
   AlertCircle,
   CheckCircle2,
   Download,
-  ExternalLink,
   Loader2,
   RefreshCw,
   ShieldCheck,
@@ -164,13 +163,6 @@ export default function UpdatesPage() {
                     </AlertDescription>
                   </Alert>
                 )}
-
-                <Button variant="outline" asChild>
-                  <a href={manifest.release_url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    View release details
-                  </a>
-                </Button>
               </CardContent>
             </Card>
           )}

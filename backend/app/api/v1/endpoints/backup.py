@@ -1,4 +1,6 @@
 import os
+import shutil
+import tempfile
 import zipfile
 import json
 from datetime import datetime
@@ -8,11 +10,13 @@ from typing import List
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 # Import backup scheduler for status and manual trigger
 from app.services import backup_scheduler
 
 router = APIRouter()
+MAX_BACKUP_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 
 class BackupInfo(BaseModel):
@@ -36,12 +40,15 @@ def get_data_dir() -> Path:
 
 
 def find_all_db_files(data_dir: Path) -> List[Path]:
-    """Recursively find all .db files in the data directory"""
+    """Find databases and user-managed branding assets in the data directory."""
     db_files = []
     for root, dirs, files in os.walk(data_dir):
         for file in files:
             if file.endswith('.db'):
                 db_files.append(Path(root) / file)
+    branding_dir = data_dir / "branding"
+    if branding_dir.is_dir():
+        db_files.extend(path for path in branding_dir.rglob("*") if path.is_file())
     return db_files
 
 
@@ -200,61 +207,94 @@ def download_backup(filename: str):
 @router.post("/restore")
 async def restore_backup(file: UploadFile = File(...)):
     """Restore database files from a backup ZIP"""
+    temp_backup_path: Path | None = None
+
     try:
         data_dir = get_data_dir()
-        
+
         # Validate file type
-        if not file.filename.endswith('.zip'):
+        if not (file.filename or '').lower().endswith('.zip'):
             raise HTTPException(status_code=400, detail="Invalid file type. Must be a ZIP file")
-        
-        # Save uploaded file temporarily
-        temp_backup_path = data_dir.parent / f"temp_restore_{now_pkt().strftime('%Y%m%d_%H%M%S')}.zip"
-        
-        try:
-            # Write uploaded file
-            with open(temp_backup_path, 'wb') as f:
-                content = await file.read()
-                f.write(content)
-            
-            # Validate ZIP file and read metadata
-            with zipfile.ZipFile(temp_backup_path, 'r') as zipf:
-                # Check if backup_info.json exists
-                if 'backup_info.json' not in zipf.namelist():
-                    raise HTTPException(status_code=400, detail="Invalid backup file: missing metadata")
-                
-                # Read metadata
-                metadata_content = zipf.read('backup_info.json')
-                backup_metadata = json.loads(metadata_content)
-                
-                # Extract all database files
-                restored_files = []
-                for file_info in backup_metadata["files"]:
-                    file_path = file_info["path"]
-                    target_path = data_dir / file_path
-                    
-                    # Create parent directories if needed
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    # Extract file
-                    zipf.extract(file_path, data_dir)
-                    restored_files.append(file_path)
-            
-            return {
-                "success": True,
-                "message": "Backup restored successfully. Please restart the application.",
-                "restored_files": restored_files,
-                "backup_timestamp": backup_metadata["timestamp"]
-            }
-        
-        finally:
-            # Clean up temporary file
-            if temp_backup_path.exists():
-                temp_backup_path.unlink()
-    
+
+        data_dir.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode='wb',
+            prefix='temp_restore_',
+            suffix='.zip',
+            dir=data_dir.parent,
+            delete=False,
+        ) as temp_file:
+            temp_backup_path = Path(temp_file.name)
+            uploaded_size = 0
+            while chunk := await file.read(1024 * 1024):
+                uploaded_size += len(chunk)
+                if uploaded_size > MAX_BACKUP_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="Backup file is too large")
+                temp_file.write(chunk)
+
+        restored_files, backup_timestamp = await run_in_threadpool(
+            _restore_backup_archive,
+            temp_backup_path,
+            data_dir,
+        )
+
+        return {
+            "success": True,
+            "message": "Backup restored successfully. Please restart the application.",
+            "restored_files": restored_files,
+            "backup_timestamp": backup_timestamp,
+        }
+
     except HTTPException:
         raise
+    except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid backup file: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
+    finally:
+        await file.close()
+        if temp_backup_path and temp_backup_path.exists():
+            temp_backup_path.unlink()
+
+
+def _restore_backup_archive(backup_path: Path, data_dir: Path) -> tuple[List[str], str]:
+    """Validate and restore an uploaded archive without blocking the async server loop."""
+    data_dir = data_dir.resolve()
+
+    with zipfile.ZipFile(backup_path, 'r') as zipf:
+        archive_names = set(zipf.namelist())
+        if 'backup_info.json' not in archive_names:
+            raise ValueError("missing metadata")
+
+        corrupt_member = zipf.testzip()
+        if corrupt_member:
+            raise ValueError(f"corrupt archive member: {corrupt_member}")
+
+        backup_metadata = json.loads(zipf.read('backup_info.json'))
+        file_entries = backup_metadata.get("files")
+        backup_timestamp = backup_metadata.get("timestamp")
+        if not isinstance(file_entries, list) or not isinstance(backup_timestamp, str):
+            raise ValueError("invalid metadata")
+
+        restored_files: List[str] = []
+        for file_info in file_entries:
+            if not isinstance(file_info, dict) or not isinstance(file_info.get("path"), str):
+                raise ValueError("invalid file metadata")
+
+            file_path = file_info["path"]
+            if file_path not in archive_names:
+                raise ValueError(f"missing archive member: {file_path}")
+
+            target_path = (data_dir / file_path).resolve()
+            if target_path == data_dir or data_dir not in target_path.parents:
+                raise ValueError("invalid backup file path")
+
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            with zipf.open(file_path, 'r') as source, target_path.open('wb') as destination:
+                shutil.copyfileobj(source, destination, length=1024 * 1024)
+            restored_files.append(file_path)
+
+    return restored_files, backup_timestamp
 
 
 @router.get("/list")

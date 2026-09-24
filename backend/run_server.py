@@ -336,6 +336,17 @@ LEGACY_STORE_SETTINGS_COLUMNS = {
     "whatsapp_daily_report_time": "TEXT DEFAULT '09:00'",
     "whatsapp_last_daily_report_date": "DATE",
     "cash_register_enabled": "BOOLEAN DEFAULT 0",
+    "store_logo_filename": "TEXT",
+    "default_print_format": "TEXT DEFAULT 'compact'",
+    "default_whatsapp_format": "TEXT DEFAULT 'mobile'",
+    "default_print_design": "TEXT DEFAULT 'classic'",
+    "default_whatsapp_design": "TEXT DEFAULT 'modern'",
+    "invoice_show_tax_id": "BOOLEAN DEFAULT 1",
+    "invoice_show_cashier": "BOOLEAN DEFAULT 1",
+    "invoice_show_sku": "BOOLEAN DEFAULT 0",
+    "invoice_show_customer_balance": "BOOLEAN DEFAULT 1",
+    "invoice_footer_message": "TEXT DEFAULT 'Thank you for your business!'",
+    "invoice_terms": "TEXT DEFAULT 'Return and exchange accepted with invoice.'",
 }
 
 

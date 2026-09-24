@@ -26,6 +26,55 @@ api.interceptors.request.use((config) => {
 
 export default api;
 
+export type InvoiceFormat = 'compact' | 'professional' | 'mobile';
+export type InvoiceDesign = 'classic' | 'modern' | 'minimal';
+
+export interface StoreSettings {
+    id: number;
+    store_name: string;
+    store_address: string;
+    store_city: string;
+    store_phone: string;
+    store_email: string;
+    store_tax_id: string;
+    store_website: string;
+    cash_register_enabled: boolean;
+    logo_url: string | null;
+    default_print_format: InvoiceFormat;
+    default_whatsapp_format: InvoiceFormat;
+    default_print_design: InvoiceDesign;
+    default_whatsapp_design: InvoiceDesign;
+    invoice_show_tax_id: boolean;
+    invoice_show_cashier: boolean;
+    invoice_show_sku: boolean;
+    invoice_show_customer_balance: boolean;
+    invoice_footer_message: string;
+    invoice_terms: string;
+}
+
+export type StoreSettingsUpdate = Omit<StoreSettings, 'id' | 'logo_url'>;
+
+export const storeSettingsApi = {
+    get: async (): Promise<StoreSettings> => {
+        const response = await api.get('/settings/store');
+        return response.data;
+    },
+    update: async (payload: StoreSettingsUpdate): Promise<StoreSettings> => {
+        const response = await api.put('/settings/store', payload);
+        return response.data;
+    },
+    uploadLogo: async (file: File): Promise<StoreSettings> => {
+        const body = new FormData();
+        body.append('file', file);
+        const response = await api.put('/settings/logo', body);
+        return response.data;
+    },
+    deleteLogo: async (): Promise<StoreSettings> => {
+        const response = await api.delete('/settings/logo');
+        return response.data;
+    },
+};
+
 export interface WhatsAppReportSettings {
     owner_number: string;
     daily_report_enabled: boolean;

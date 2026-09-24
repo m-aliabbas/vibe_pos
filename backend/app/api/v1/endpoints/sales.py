@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 import os
 import re
 import json
@@ -8,17 +8,21 @@ from sqlalchemy import func, or_
 from datetime import datetime, date, timezone, timedelta
 from app.core.timezone import now_pkt
 from pathlib import Path
-from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Image as ReportLabImage
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from PIL import Image
 import io
 import requests
 from types import SimpleNamespace
 from pydantic import BaseModel, Field
+from xml.sax.saxutils import escape
 
 from app.api import deps
+from app.core.config import settings
 from app.models.sale import Sale, SaleItem
 from app.models.product import Product, ProductVariation
 from app.models.user import User, UserRole
@@ -137,6 +141,51 @@ def _get_store_details():
     return name, address, ""
 
 
+def _get_invoice_design() -> Dict[str, object]:
+    """Load invoice preferences without tying renderers to an API request session."""
+    from app.db.session import SessionLocal
+    from app.models.settings import StoreSettings
+
+    defaults: Dict[str, object] = {
+        "tax_id": "",
+        "logo_path": None,
+        "default_whatsapp_format": "mobile",
+        "default_whatsapp_design": "modern",
+        "show_tax_id": True,
+        "show_cashier": True,
+        "show_sku": False,
+        "show_customer_balance": True,
+        "footer_message": "Thank you for your business!",
+        "terms": "Return and exchange accepted with invoice.",
+    }
+    db = SessionLocal()
+    try:
+        row = db.query(StoreSettings).filter(StoreSettings.id == 1).first()
+        if not row:
+            return defaults
+        logo_path = None
+        if row.store_logo_filename:
+            candidate = Path(settings.DATA_DIR) / "branding" / Path(row.store_logo_filename).name
+            if candidate.is_file():
+                logo_path = candidate
+        return {
+            "tax_id": row.store_tax_id or "",
+            "logo_path": logo_path,
+            "default_whatsapp_format": row.default_whatsapp_format or "mobile",
+            "default_whatsapp_design": row.default_whatsapp_design or "modern",
+            "show_tax_id": bool(row.invoice_show_tax_id),
+            "show_cashier": bool(row.invoice_show_cashier),
+            "show_sku": bool(row.invoice_show_sku),
+            "show_customer_balance": bool(row.invoice_show_customer_balance),
+            "footer_message": row.invoice_footer_message or "",
+            "terms": row.invoice_terms or "",
+        }
+    except Exception:
+        return defaults
+    finally:
+        db.close()
+
+
 def _convert_utc_to_pakistan(dt: datetime) -> datetime:
     """
     Times are now stored as naive PKT (GMT+5) in the DB — return as-is.
@@ -186,14 +235,18 @@ def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) ->
     account_balance = previous_balance + amount_due
     net_total = max(0.0, total - float(refunded_amount or 0.0))
 
+    design = _get_invoice_design()
     lines = [
         f"Invoice #{str(sale.id).zfill(6)}",
         f"Date/Time (GMT+5): {_convert_utc_to_pakistan(sale.created_at).strftime('%Y-%m-%d %H:%M')}",
-        f"Cashier: {sale.user.username if sale.user else 'N/A'}",
+    ]
+    if design["show_cashier"]:
+        lines.append(f"Cashier: {sale.user.username if sale.user else 'N/A'}")
+    lines.extend([
         f"Customer: {sale.customer_name or 'Walk-in Customer'}",
         "",
         f"Subtotal: RS {subtotal:.2f}",
-    ]
+    ])
 
     if total_discount > 0:
         lines.append(f"Discount: -RS {total_discount:.2f}")
@@ -212,10 +265,11 @@ def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) ->
         lines.append(f"Net Total: RS {net_total:.2f}")
 
     lines.append(f"Amount Paid: RS {amount_paid:.2f}")
-    if account_balance > 0:
+    if design["show_customer_balance"] and account_balance > 0:
         lines.append(f"Total Outstanding (Udhar): RS {account_balance:.2f}")
 
-    lines.append("Thank you for your business!")
+    if design["footer_message"]:
+        lines.append(str(design["footer_message"]))
     return "\n".join(lines)
 
 
@@ -226,6 +280,8 @@ def _render_invoice_image(
     refunded_amount: float = 0.0,
     document_title: str = "INVOICE",
     document_number: Optional[str] = None,
+    layout_format: Literal["compact", "mobile"] = "compact",
+    design_format: Literal["classic", "modern", "minimal"] = "classic",
 ) -> None:
     """Render an invoice image with consistent design across OSes."""
     from PIL import ImageDraw
@@ -235,10 +291,13 @@ def _render_invoice_image(
     def mm(mm_val: float) -> int:
         return int(mm_val * mm_to_px)
 
-    # 80mm thermal receipt width
-    width = int(80 * mm_to_px)
+    design = _get_invoice_design()
+    document_width_mm = 108 if layout_format == "mobile" else 80
+    width = int(document_width_mm * mm_to_px)
     has_previous_balance = abs(float(getattr(sale, "previous_balance", 0.0) or 0.0)) > 0.005
-    base_height_mm = 135 + (14 if refunded_amount > 0 else 0) + (12 if has_previous_balance else 0)
+    logo_extra_mm = 24 if design["logo_path"] else 0
+    terms_extra_mm = min(30, len(str(design["terms"]).splitlines()) * 5)
+    base_height_mm = 146 + logo_extra_mm + terms_extra_mm + (14 if refunded_amount > 0 else 0) + (12 if has_previous_balance else 0)
     base_height = int(base_height_mm * mm_to_px)
     item_height = len(sale.items) * int(22 * mm_to_px)
     total_height = base_height + item_height
@@ -254,14 +313,33 @@ def _render_invoice_image(
 
     y = 0
 
+    accent_color = {
+        "classic": "black",
+        "modern": "#173b57",
+        "minimal": "#374151",
+    }[design_format]
+    rule_color = "#d1d5db" if design_format == "minimal" else accent_color
+
     store_name, store_address, store_phone = _get_store_details()
+
+    logo_path = design["logo_path"]
+    if isinstance(logo_path, Path):
+        with Image.open(logo_path) as logo_source:
+            logo = logo_source.convert("RGBA")
+            logo.thumbnail((width - mm(20), mm(20)), Image.Resampling.LANCZOS)
+            logo_x = (width - logo.width) // 2
+            img.paste(logo, (logo_x, y), logo)
+            y += logo.height + mm(3)
 
     # Header bar
     header_height = mm(10)
-    draw.rectangle([(0, y), (width, y + header_height)], fill="black")
+    header_color = "white" if design_format == "minimal" else accent_color
+    draw.rectangle([(0, y), (width, y + header_height)], fill=header_color)
     bbox = draw.textbbox((0, 0), store_name, font=font_lg)
     text_width = bbox[2] - bbox[0]
-    draw.text(((width - text_width) // 2, y + mm(2)), store_name, fill="white", font=font_lg)
+    draw.text(((width - text_width) // 2, y + mm(2)), store_name, fill="black" if design_format == "minimal" else "white", font=font_lg)
+    if design_format == "minimal":
+        draw.line([(mm(3), y + header_height), (width - mm(3), y + header_height)], fill=accent_color, width=max(1, mm(0.4)))
     y += header_height + mm(2)
 
     for line in [l for l in [store_address, store_phone] if l]:
@@ -270,14 +348,20 @@ def _render_invoice_image(
         draw.text(((width - text_width) // 2, y), line, fill="black", font=font_sm)
         y += mm(4)
 
+    if design["show_tax_id"] and design["tax_id"]:
+        tax_line = f"Tax ID / NTN: {design['tax_id']}"
+        bbox = draw.textbbox((0, 0), tax_line, font=font_sm)
+        draw.text(((width - (bbox[2] - bbox[0])) // 2, y), tax_line, fill="black", font=font_sm)
+        y += mm(4)
+
     y += mm(2)
-    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    draw.line([(mm(3), y), (width - mm(3), y)], fill=rule_color, width=1)
     y += mm(4)
 
     invoice_text = document_title
     bbox = draw.textbbox((0, 0), invoice_text, font=font_xl)
     text_width = bbox[2] - bbox[0]
-    draw.text(((width - text_width) // 2, y), invoice_text, fill="black", font=font_xl)
+    draw.text(((width - text_width) // 2, y), invoice_text, fill=accent_color, font=font_xl)
     y += mm(7)
 
     invoice_num = document_number or f"#{str(sale.id).zfill(6)}"
@@ -294,25 +378,26 @@ def _render_invoice_image(
     draw.text(((width - text_width) // 2, y), date_text, fill="black", font=font_sm)
     y += mm(4)
 
-    cashier_text = f"Cashier: {sale.user.username if sale.user else 'N/A'}"
-    bbox = draw.textbbox((0, 0), cashier_text, font=font_sm)
-    text_width = bbox[2] - bbox[0]
-    draw.text(((width - text_width) // 2, y), cashier_text, fill="black", font=font_sm)
-    y += mm(5)
+    if design["show_cashier"]:
+        cashier_text = f"Cashier: {sale.user.username if sale.user else 'N/A'}"
+        bbox = draw.textbbox((0, 0), cashier_text, font=font_sm)
+        text_width = bbox[2] - bbox[0]
+        draw.text(((width - text_width) // 2, y), cashier_text, fill="black", font=font_sm)
+        y += mm(5)
 
-    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    draw.line([(mm(3), y), (width - mm(3), y)], fill=rule_color, width=1)
     y += mm(4)
 
-    draw.text((mm(3), y), "CUSTOMER", fill="black", font=font_sm_bold)
+    draw.text((mm(3), y), "CUSTOMER", fill=accent_color, font=font_sm_bold)
     y += mm(4)
     customer_name = sale.customer_name or "Walk-in Customer"
     draw.text((mm(3), y), customer_name[:40], fill="black", font=font_md)
     y += mm(6)
 
-    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    draw.line([(mm(3), y), (width - mm(3), y)], fill=rule_color, width=1)
     y += mm(4)
 
-    draw.text((mm(3), y), "ITEMS", fill="black", font=font_sm_bold)
+    draw.text((mm(3), y), "ITEMS", fill=accent_color, font=font_sm_bold)
     y += mm(5)
 
     amounts = _get_invoice_amounts(sale)
@@ -330,6 +415,12 @@ def _render_invoice_image(
             attrs = ", ".join([f"{k}: {v}" for k, v in item.variation.attributes.items()])
             draw.text((mm(4), y), attrs[:36], fill="#5c4dff", font=font_sm)
             y += mm(4)
+
+        if design["show_sku"]:
+            sku = (item.variation.sku if item.variation else None) or (item.product.sku if item.product else None)
+            if sku:
+                draw.text((mm(4), y), f"SKU: {sku}"[:48], fill="gray", font=font_sm)
+                y += mm(4)
 
         qty_price = f"{item.quantity} {item.unit} x RS {item.unit_price:.2f}"
         draw.text((mm(4), y), qty_price, fill="black", font=font_sm)
@@ -352,11 +443,12 @@ def _render_invoice_image(
         final_price = f"RS {item.total_price:.2f}"
         bbox = draw.textbbox((0, 0), final_price, font=font_sm_bold)
         text_width = bbox[2] - bbox[0]
-        draw.text((width - text_width - mm(3), y), final_price, fill="#0a7d2c", font=font_sm_bold)
+        final_color = accent_color if design_format != "classic" else "#0a7d2c"
+        draw.text((width - text_width - mm(3), y), final_price, fill=final_color, font=font_sm_bold)
         y += mm(6)
 
     y += mm(1)
-    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    draw.line([(mm(3), y), (width - mm(3), y)], fill=rule_color, width=1)
     y += mm(4)
 
     draw.text((mm(3), y), "Subtotal", fill="black", font=font_md)
@@ -390,11 +482,11 @@ def _render_invoice_image(
         draw.text((width - text_width - mm(3), y), delivery_text, fill="black", font=font_md)
         y += mm(5)
 
-    draw.text((mm(3), y), "CURRENT BILL", fill="black", font=font_lg)
+    draw.text((mm(3), y), "CURRENT BILL", fill=accent_color, font=font_lg)
     total_text = f"RS {sale.total:.2f}"
     bbox = draw.textbbox((0, 0), total_text, font=font_lg)
     text_width = bbox[2] - bbox[0]
-    draw.text((width - text_width - mm(3), y), total_text, fill="black", font=font_lg)
+    draw.text((width - text_width - mm(3), y), total_text, fill=accent_color, font=font_lg)
     y += mm(7)
 
     if abs(previous_balance) > 0.005:
@@ -425,7 +517,7 @@ def _render_invoice_image(
         draw.text((width - text_width - mm(3), y), net_total_text, fill="black", font=font_lg)
         y += mm(7)
 
-    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+    draw.line([(mm(3), y), (width - mm(3), y)], fill=rule_color, width=1)
     y += mm(4)
 
     if document_title == "INVOICE":
@@ -437,7 +529,7 @@ def _render_invoice_image(
         y += mm(5)
 
         account_balance = previous_balance + float(sale.amount_due or 0.0)
-        if account_balance > 0:
+        if design["show_customer_balance"] and account_balance > 0:
             draw.text((mm(3), y), "Total Balance (Udhar)", fill="black", font=font_sm_bold)
             due_text = f"RS {account_balance:.2f}"
             bbox = draw.textbbox((0, 0), due_text, font=font_sm_bold)
@@ -457,8 +549,39 @@ def _render_invoice_image(
         draw.text((mm(3), y), payment_text, fill="black", font=font_sm)
         y += mm(7)
 
-    draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
+        status_text = "BALANCE DUE" if account_balance > 0 else "PAID"
+        bbox = draw.textbbox((0, 0), status_text, font=font_lg)
+        status_width = bbox[2] - bbox[0]
+        if design_format == "modern":
+            status_background = "#fff4e5" if account_balance > 0 else "#e6f6f2"
+            status_foreground = "#a24b05" if account_balance > 0 else "#08765f"
+            draw.rounded_rectangle(
+                [(mm(3), y), (width - mm(3), y + mm(9))],
+                radius=mm(2),
+                fill=status_background,
+            )
+            draw.text((width - status_width - mm(6), y + mm(2)), status_text, fill=status_foreground, font=font_lg)
+        elif design_format == "classic":
+            draw.rectangle([(mm(3), y), (width - mm(3), y + mm(9))], fill="black")
+            draw.text((width - status_width - mm(6), y + mm(2)), status_text, fill="white", font=font_lg)
+        else:
+            draw.line([(mm(3), y), (width - mm(3), y)], fill=rule_color, width=1)
+            draw.text((width - status_width - mm(3), y + mm(2)), status_text, fill=accent_color, font=font_lg)
+        y += mm(12)
+
+    draw.line([(mm(3), y), (width - mm(3), y)], fill=rule_color, width=1)
     y += mm(4)
+
+    footer_message = str(design["footer_message"] or "")
+    if footer_message:
+        bbox = draw.textbbox((0, 0), footer_message[:60], font=font_sm_bold)
+        draw.text(((width - (bbox[2] - bbox[0])) // 2, y), footer_message[:60], fill="black", font=font_sm_bold)
+        y += mm(5)
+
+    for index, term in enumerate(str(design["terms"] or "").splitlines(), start=1):
+        if term.strip():
+            draw.text((mm(3), y), f"{index}. {term.strip()}"[:72], fill="black", font=font_sm)
+            y += mm(4)
 
     footer_text = "VibePOS (by vibeexe.com)"
     bbox = draw.textbbox((0, 0), footer_text, font=font_sm)
@@ -467,6 +590,190 @@ def _render_invoice_image(
 
     img = img.crop((0, 0, width, y + mm(10)))
     img.save(file_path, "PNG", quality=95)
+
+
+def _render_invoice_pdf(
+    sale: Sale,
+    file_path: Path,
+    refunded_amount: float = 0.0,
+    design_format: Literal["classic", "modern", "minimal"] = "modern",
+) -> None:
+    """Render a paginated A4 invoice suitable for printing or WhatsApp documents."""
+    design = _get_invoice_design()
+    store_name, store_address, store_phone = _get_store_details()
+    styles = getSampleStyleSheet()
+    normal = styles["BodyText"]
+    normal.fontSize = 9
+    normal.leading = 12
+    small = styles["BodyText"]
+    accent = {
+        "classic": colors.black,
+        "modern": colors.HexColor("#0f5f78"),
+        "minimal": colors.HexColor("#374151"),
+    }[design_format]
+    header_background = colors.white if design_format == "minimal" else accent
+    header_text = colors.black if design_format == "minimal" else colors.white
+    light_background = colors.white if design_format == "minimal" else colors.HexColor("#eef5f9")
+    doc = SimpleDocTemplate(
+        str(file_path),
+        pagesize=A4,
+        rightMargin=16 * mm,
+        leftMargin=16 * mm,
+        topMargin=14 * mm,
+        bottomMargin=14 * mm,
+        title=f"Invoice {sale.id:06d}",
+    )
+    story = []
+
+    brand_parts = []
+    logo_path = design["logo_path"]
+    if isinstance(logo_path, Path):
+        logo = ReportLabImage(str(logo_path), width=34 * mm, height=20 * mm, kind="proportional")
+        brand_parts.append(logo)
+    store_lines = [f"<b>{escape(store_name)}</b>"]
+    if store_address:
+        store_lines.append(escape(store_address))
+    if store_phone:
+        store_lines.append(escape(store_phone))
+    if design["show_tax_id"] and design["tax_id"]:
+        store_lines.append(f"Tax ID / NTN: {escape(str(design['tax_id']))}")
+    brand_parts.append(Paragraph("<br/>".join(store_lines), normal))
+
+    invoice_meta = [
+        "<b>INVOICE</b>",
+        f"INV-{sale.id:06d}",
+        _convert_utc_to_pakistan(sale.created_at).strftime("%d %b %Y, %I:%M %p"),
+    ]
+    if design["show_cashier"]:
+        invoice_meta.append(f"Cashier: {escape(sale.user.username if sale.user else 'N/A')}")
+    header = Table(
+        [[brand_parts, Paragraph("<br/>".join(invoice_meta), normal)]],
+        colWidths=[115 * mm, 55 * mm],
+    )
+    header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("BOX", (0, 0), (-1, -1), 0.8 if design_format != "minimal" else 0, accent),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.8, accent),
+        ("BACKGROUND", (1, 0), (1, 0), light_background),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.extend([header, Spacer(1, 7 * mm)])
+
+    customer_name = sale.customer_name or "Walk-in Customer"
+    customer_phone = getattr(sale, "customer_phone", None) or ""
+    account_balance = float(sale.previous_balance or 0) + float(sale.amount_due or 0)
+    customer = Table([
+        [Paragraph("<b>Bill to</b>", normal), Paragraph("<b>Payment</b>", normal)],
+        [Paragraph(escape(customer_name), normal), Paragraph(escape(str(sale.payment_method).title()), normal)],
+        [Paragraph(escape(customer_phone), normal), Paragraph(f"Status: {'Balance due' if account_balance > 0 else 'Paid'}", normal)],
+    ], colWidths=[100 * mm, 70 * mm])
+    customer.setStyle(TableStyle([
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.HexColor("#cad5dc")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.extend([customer, Spacer(1, 6 * mm)])
+
+    item_headers = ["#", "Description", "Qty", "Rate", "Discount", "Amount"]
+    item_rows = [item_headers]
+    for index, item in enumerate(sale.items, start=1):
+        description = item.product.name if item.product else f"Product #{item.product_id}"
+        if item.variation:
+            description += " — " + ", ".join(str(value) for value in item.variation.attributes.values())
+        if design["show_sku"]:
+            sku = (item.variation.sku if item.variation else None) or (item.product.sku if item.product else None)
+            if sku:
+                description += f"\nSKU: {sku}"
+        item_rows.append([
+            str(index),
+            Paragraph(escape(description).replace("\n", "<br/>"), normal),
+            f"{item.quantity:g} {item.unit}",
+            f"Rs {item.unit_price:,.2f}",
+            f"Rs {float(item.item_discount or 0):,.2f}",
+            f"Rs {item.total_price:,.2f}",
+        ])
+    items_table = Table(item_rows, repeatRows=1, colWidths=[9 * mm, 69 * mm, 24 * mm, 25 * mm, 22 * mm, 27 * mm])
+    items_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), header_background),
+        ("TEXTCOLOR", (0, 0), (-1, 0), header_text),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cad5dc")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.white if design_format == "minimal" else colors.HexColor("#f7fafb")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.extend([items_table, Spacer(1, 6 * mm)])
+
+    amounts = _get_invoice_amounts(sale)
+    summary_rows = [
+        ["Subtotal", f"Rs {amounts['display_subtotal']:,.2f}"],
+        ["Discount", f"- Rs {amounts['total_discount']:,.2f}"],
+        ["Tax / Other charges", f"Rs {amounts['tax_amount']:,.2f}"],
+        ["Delivery", f"Rs {amounts['delivery_charges']:,.2f}"],
+        ["Current Bill", f"Rs {amounts['total']:,.2f}"],
+    ]
+    if abs(amounts["previous_balance"]) > 0.005:
+        summary_rows.extend([
+            ["Previous Balance", f"Rs {amounts['previous_balance']:,.2f}"],
+            ["Grand Total", f"Rs {amounts['grand_total']:,.2f}"],
+        ])
+    if refunded_amount > 0:
+        summary_rows.append(["Refunded", f"- Rs {refunded_amount:,.2f}"])
+    summary_rows.append(["Amount Paid", f"Rs {sale.amount_paid:,.2f}"])
+    if design["show_customer_balance"]:
+        summary_rows.append(["Total Balance", f"Rs {amounts['previous_balance'] + float(sale.amount_due or 0):,.2f}"])
+    summary = Table(summary_rows, colWidths=[43 * mm, 37 * mm], hAlign="RIGHT")
+    summary.setStyle(TableStyle([
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("LINEABOVE", (0, -2), (-1, -2), 0.6, accent),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.extend([summary, Spacer(1, 5 * mm)])
+
+    status_text = "BALANCE DUE" if account_balance > 0 else "PAID"
+    if design_format == "modern":
+        status_background = colors.HexColor("#fff4e5" if account_balance > 0 else "#e6f6f2")
+        status_foreground = colors.HexColor("#a24b05" if account_balance > 0 else "#08765f")
+    elif design_format == "classic":
+        status_background = colors.black
+        status_foreground = colors.white
+    else:
+        status_background = colors.white
+        status_foreground = colors.HexColor("#374151")
+    status = Table([[status_text]], colWidths=[80 * mm], hAlign="RIGHT")
+    status.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), status_background),
+        ("TEXTCOLOR", (0, 0), (-1, -1), status_foreground),
+        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 13),
+        ("LINEABOVE", (0, 0), (-1, 0), 0.8 if design_format == "minimal" else 0, accent),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.extend([status, Spacer(1, 8 * mm)])
+
+    if design["footer_message"]:
+        story.append(Paragraph(f"<b>{escape(str(design['footer_message']))}</b>", styles["Heading3"]))
+    terms = [line.strip() for line in str(design["terms"] or "").splitlines() if line.strip()]
+    if terms:
+        story.append(Paragraph("<b>Terms</b>", normal))
+        for index, term in enumerate(terms, start=1):
+            story.append(Paragraph(f"{index}. {escape(term)}", small))
+    story.extend([Spacer(1, 4 * mm), Paragraph("VibePOS (by vibeexe.com)", small)])
+    doc.build(story)
 
 
 def parse_json_field(value):
@@ -639,19 +946,37 @@ def generate_and_send_invoice(sale_id: int, phone_number: str):
             or 0.0
         )
 
-        # Generate invoice image
+        invoice_preferences = _get_invoice_design()
+        invoice_format = str(invoice_preferences["default_whatsapp_format"])
+        invoice_design = str(invoice_preferences["default_whatsapp_design"])
         timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
-        filename = f"invoice_{timestamp}.png"
+        is_pdf = invoice_format == "professional"
+        filename = f"invoice_{timestamp}.{'pdf' if is_pdf else 'png'}"
         file_path = INVOICE_DIR / filename
-        _render_invoice_image(sale, file_path, dpi=300, refunded_amount=refunded_amount)
+        if is_pdf:
+            _render_invoice_pdf(
+                sale,
+                file_path,
+                refunded_amount=refunded_amount,
+                design_format=invoice_design,
+            )
+        else:
+            _render_invoice_image(
+                sale,
+                file_path,
+                dpi=300,
+                refunded_amount=refunded_amount,
+                layout_format="mobile" if invoice_format == "mobile" else "compact",
+                design_format=invoice_design,
+            )
         
         # Send to WhatsApp
-        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"
-        payload = {
-            "phone_number": phone_number,
-            "image_url": str(file_path.absolute()),
-            "caption": _build_whatsapp_invoice_caption(sale, refunded_amount=refunded_amount)
-        }
+        whatsapp_url = f"http://127.0.0.1:8000/api/v1/whatsapp/send-{'document' if is_pdf else 'image'}"
+        payload = {"phone_number": phone_number, "caption": _build_whatsapp_invoice_caption(sale, refunded_amount=refunded_amount)}
+        if is_pdf:
+            payload.update({"document_url": str(file_path.absolute()), "filename": filename})
+        else:
+            payload["image_url"] = str(file_path.absolute())
         
         response = requests.post(
             whatsapp_url,
@@ -1385,11 +1710,13 @@ def send_quotation(
 def send_invoice(
     id: int,
     phone_number: str,
+    invoice_format: Optional[Literal["compact", "professional", "mobile"]] = None,
+    invoice_design: Optional[Literal["classic", "modern", "minimal"]] = None,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
 ):
     """
-    Generate invoice image using PIL and send via WhatsApp API
+    Generate the selected invoice format and send it through WhatsApp.
     """
     # Get the sale with product/variation relationships loaded
     sale = db.query(Sale).options(
@@ -1409,6 +1736,9 @@ def send_invoice(
         raise HTTPException(status_code=400, detail="Invalid phone number")
     
     try:
+        invoice_preferences = _get_invoice_design()
+        selected_format = invoice_format or str(invoice_preferences["default_whatsapp_format"])
+        selected_design = invoice_design or str(invoice_preferences["default_whatsapp_design"])
         refunded_amount = float(
             db.query(func.coalesce(func.sum(PosReturn.refund_amount), 0.0))
             .filter(PosReturn.sale_id == id)
@@ -1416,19 +1746,34 @@ def send_invoice(
             or 0.0
         )
 
-        # Generate invoice image
         timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
-        filename = f"invoice_{timestamp}.png"
+        is_pdf = selected_format == "professional"
+        filename = f"invoice_{timestamp}.{'pdf' if is_pdf else 'png'}"
         file_path = INVOICE_DIR / filename
-        _render_invoice_image(sale, file_path, dpi=300, refunded_amount=refunded_amount)
+        if is_pdf:
+            _render_invoice_pdf(
+                sale,
+                file_path,
+                refunded_amount=refunded_amount,
+                design_format=selected_design,
+            )
+        else:
+            _render_invoice_image(
+                sale,
+                file_path,
+                dpi=300,
+                refunded_amount=refunded_amount,
+                layout_format="mobile" if selected_format == "mobile" else "compact",
+                design_format=selected_design,
+            )
         
         # Send to WhatsApp API
-        whatsapp_url = "http://127.0.0.1:8000/api/v1/whatsapp/send-image"
-        payload = {
-            "phone_number": normalized_phone,
-            "image_url": str(file_path.absolute()),
-            "caption": _build_whatsapp_invoice_caption(sale, refunded_amount=refunded_amount)
-        }
+        whatsapp_url = f"http://127.0.0.1:8000/api/v1/whatsapp/send-{'document' if is_pdf else 'image'}"
+        payload = {"phone_number": normalized_phone, "caption": _build_whatsapp_invoice_caption(sale, refunded_amount=refunded_amount)}
+        if is_pdf:
+            payload.update({"document_url": str(file_path.absolute()), "filename": filename})
+        else:
+            payload["image_url"] = str(file_path.absolute())
         
         response = requests.post(
             whatsapp_url,
@@ -1444,7 +1789,9 @@ def send_invoice(
             "status": "success",
             "message": "Invoice sent successfully",
             "phone_number": normalized_phone,
-            "file_path": str(file_path.absolute())
+            "file_path": str(file_path.absolute()),
+            "invoice_format": selected_format,
+            "invoice_design": selected_design,
         }
         
     except Exception as e:

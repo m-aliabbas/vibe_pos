@@ -28,12 +28,15 @@ def get_data_dir() -> Path:
 
 
 def find_all_db_files(data_dir: Path) -> List[Path]:
-    """Recursively find all .db files in the data directory"""
+    """Find databases and user-managed branding assets in the data directory."""
     db_files = []
     for root, dirs, files in os.walk(data_dir):
         for file in files:
             if file.endswith('.db'):
                 db_files.append(Path(root) / file)
+    branding_dir = data_dir / "branding"
+    if branding_dir.is_dir():
+        db_files.extend(path for path in branding_dir.rglob("*") if path.is_file())
     return db_files
 
 

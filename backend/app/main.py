@@ -33,6 +33,17 @@ def ensure_schema_columns() -> None:
                 ("whatsapp_daily_report_enabled", "BOOLEAN DEFAULT 0"),
                 ("whatsapp_daily_report_time", "VARCHAR DEFAULT '09:00'"),
                 ("whatsapp_last_daily_report_date", "DATE"),
+                ("store_logo_filename", "VARCHAR"),
+                ("default_print_format", "VARCHAR DEFAULT 'compact'"),
+                ("default_whatsapp_format", "VARCHAR DEFAULT 'mobile'"),
+                ("default_print_design", "VARCHAR DEFAULT 'classic'"),
+                ("default_whatsapp_design", "VARCHAR DEFAULT 'modern'"),
+                ("invoice_show_tax_id", "BOOLEAN DEFAULT 1"),
+                ("invoice_show_cashier", "BOOLEAN DEFAULT 1"),
+                ("invoice_show_sku", "BOOLEAN DEFAULT 0"),
+                ("invoice_show_customer_balance", "BOOLEAN DEFAULT 1"),
+                ("invoice_footer_message", "VARCHAR DEFAULT 'Thank you for your business!'"),
+                ("invoice_terms", "TEXT DEFAULT 'Return and exchange accepted with invoice.'"),
             ],
         }
         for table, columns in additions.items():
