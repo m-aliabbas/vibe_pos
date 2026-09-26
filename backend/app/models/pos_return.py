@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean
+from sqlalchemy import Column, Integer, String as SQLString, Float, ForeignKey, DateTime, Text, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 from app.core.timezone import now_pkt
 import enum
+
+String = SQLString(255)
 
 class ReturnReason(str, enum.Enum):
     DEFECTIVE = "defective"

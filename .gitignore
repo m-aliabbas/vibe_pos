@@ -56,3 +56,4 @@ frontend/electron-builder.yml
 
 # Auto backups
 backend/backups/auto/*.zip
+backend/backups/*.zip

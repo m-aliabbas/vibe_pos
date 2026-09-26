@@ -32,6 +32,8 @@ pyinstaller --name "$NAME" \
   --collect-all starlette \
   --collect-all uvicorn \
   --collect-all sqlalchemy \
+  --collect-all psycopg \
+  --collect-all pymysql \
   --collect-all alembic \
   --collect-all pydantic \
   --collect-all pydantic_settings \

@@ -150,6 +150,10 @@ protobuf==6.32.1
     #   grpcio-status
     #   neonize
     #   proto-plus
+psycopg==3.2.10
+    # via -r backend/win_requirements.txt
+psycopg-binary==3.2.10
+    # via psycopg
 pyasn1==0.6.4
     # via
     #   pyasn1-modules
@@ -167,6 +171,8 @@ pydantic==2.13.5
 pydantic-core==2.46.5
     # via pydantic
 pydantic-settings==2.15.0
+    # via -r backend/win_requirements.txt
+pymysql==1.1.2
     # via -r backend/win_requirements.txt
 pyinstaller==6.16.0
     # via -r backend/win_requirements.txt
@@ -239,4 +245,3 @@ uvicorn==0.53.0
     # via -r backend/win_requirements.txt
 zeroconf==0.151.3
     # via -r backend/win_requirements.txt
-

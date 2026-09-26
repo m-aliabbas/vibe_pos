@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String as SQLString, Float, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 from app.core.timezone import now_pkt
 import enum
+
+String = SQLString(255)
 
 
 class AccountType(str, enum.Enum):
@@ -33,7 +35,7 @@ class JournalEntry(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     entry_date = Column(DateTime, default=now_pkt, index=True)
-    description = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
     source_type = Column(String, nullable=True, index=True)
     source_id = Column(Integer, nullable=True, index=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -50,7 +52,7 @@ class JournalLine(Base):
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
     debit = Column(Float, default=0.0)
     credit = Column(Float, default=0.0)
-    memo = Column(String, nullable=True)
+    memo = Column(Text, nullable=True)
 
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
     vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=True)

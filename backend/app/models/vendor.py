@@ -1,5 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float
+from sqlalchemy import Column, Integer, String as SQLString, Float, Text
 from app.db.session import Base
+
+String = SQLString(255)
 
 class Vendor(Base):
     __tablename__ = "vendors"
@@ -9,6 +11,6 @@ class Vendor(Base):
     contact_name = Column(String, nullable=True)
     email = Column(String, nullable=True)
     phone = Column(String, nullable=True)
-    address = Column(String, nullable=True)
+    address = Column(Text, nullable=True)
     opening_balance = Column(Float, default=0.0)  # Initial payables from legacy/manual system
     prepaid_credit = Column(Float, default=0.0)  # Track overpayments/advances

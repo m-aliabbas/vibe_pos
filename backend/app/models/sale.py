@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String as SQLString, Float, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 from app.core.timezone import now_pkt
 import enum
+
+String = SQLString(255)
 
 class PaymentMethod(str, enum.Enum):
     CASH = "cash"

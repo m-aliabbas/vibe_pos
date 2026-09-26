@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "critical_routes": [
+    {"module": "sales.py", "method": "post", "path": "/"},
+    {"module": "purchases.py", "method": "post", "path": "/"},
+    {"module": "returns.py", "method": "post", "path": "/"},
+    {"module": "hold_sales.py", "method": "post", "path": "/"},
+    {"module": "hold_purchases.py", "method": "post", "path": "/"},
+    {"module": "products.py", "method": "get", "path": "/"},
+    {"module": "customers.py", "method": "get", "path": "/"},
+    {"module": "vendors.py", "method": "get", "path": "/"},
+    {"module": "accounting.py", "method": "get", "path": "/accounts"},
+    {"module": "settings.py", "method": "get", "path": "/store"}
+  ]
+}

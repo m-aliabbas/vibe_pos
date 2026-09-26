@@ -1,6 +1,8 @@
-from sqlalchemy import Boolean, Column, Integer, String, Enum
+from sqlalchemy import Boolean, Column, Integer, String as SQLString, Enum
 from app.db.session import Base
 import enum
+
+String = SQLString(255)
 
 class UserRole(str, enum.Enum):
     ADMIN = "admin"

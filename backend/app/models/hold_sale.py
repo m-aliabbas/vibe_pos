@@ -1,8 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String as SQLString, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 from app.core.timezone import now_pkt
+
+String = SQLString(255)
 
 
 class HoldSale(Base):

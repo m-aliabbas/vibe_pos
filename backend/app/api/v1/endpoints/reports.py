@@ -20,6 +20,7 @@ from app.models.accounting import JournalEntry, JournalLine, Account
 from app.models.stock_batch import StockBatch
 from app.models.user import User, UserRole
 from app.services import accounting as accounting_service
+from app.db.query_helpers import report_period
 from app.schemas.report import (
     SalesSummaryReport, TopProductsReport, ProductSalesHistoryReport, AnalyticsOverviewReport, PaymentMethodReport,
     CashierPerformanceReport, CustomerSalesReport, SalesTrendReport,
@@ -169,12 +170,12 @@ def get_analytics_overview(
         year -= 1
     month_start = month_start.replace(year=year, month=month)
     monthly_rows = db.query(
-        func.strftime('%Y-%m', Sale.created_at).label("month"),
+        report_period(Sale.created_at, "monthly").label("month"),
         func.coalesce(func.sum(SaleItem.quantity), 0).label("quantity_sold"),
         func.coalesce(func.sum(SaleItem.total_price), 0).label("revenue"),
     ).join(SaleItem, SaleItem.sale_id == Sale.id).filter(
         Sale.created_at >= month_start,
-    ).group_by(func.strftime('%Y-%m', Sale.created_at)).all()
+    ).group_by(report_period(Sale.created_at, "monthly")).all()
     monthly_map = {
         row.month: {"quantity_sold": float(row.quantity_sold or 0), "revenue": float(row.revenue or 0)}
         for row in monthly_rows
@@ -340,12 +341,7 @@ def get_sales_summary(
     average_transaction = total_revenue / transaction_count if transaction_count > 0 else 0
 
     # Group by period
-    if period == "daily":
-        date_format = func.date(Sale.created_at)
-    elif period == "weekly":
-        date_format = func.strftime('%Y-%W', Sale.created_at)
-    else:  # monthly
-        date_format = func.strftime('%Y-%m', Sale.created_at)
+    date_format = report_period(Sale.created_at, period)
 
     group_by = date_format
 
@@ -827,12 +823,7 @@ def get_sales_trends(
     start, end = validate_date_range(start_date, end_date)
 
     # Determine grouping
-    if period == "daily":
-        date_trunc = func.date(Sale.created_at)
-    elif period == "weekly":
-        date_trunc = func.strftime('%Y-%W', Sale.created_at)
-    else:  # monthly
-        date_trunc = func.strftime('%Y-%m', Sale.created_at)
+    date_trunc = report_period(Sale.created_at, period)
     
     group_by = date_trunc
 
@@ -1473,12 +1464,7 @@ def get_purchase_timeline(
 
     start, end = validate_date_range(start_date, end_date)
 
-    if period == "daily":
-        date_format = func.date(Purchase.created_at)
-    elif period == "weekly":
-        date_format = func.strftime('%Y-%W', Purchase.created_at)
-    else:  # monthly
-        date_format = func.strftime('%Y-%m', Purchase.created_at)
+    date_format = report_period(Purchase.created_at, period)
 
     timeline_data = db.query(
         date_format.label('period'),

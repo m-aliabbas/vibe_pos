@@ -1,0 +1,77 @@
+name: Database Conformance
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/database-conformance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tier-one-providers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vibepos
+          POSTGRES_PASSWORD: vibepos_test
+          POSTGRES_DB: vibepos
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vibepos -d vibepos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: vibepos_root
+          MYSQL_DATABASE: vibepos
+          MYSQL_USER: vibepos
+          MYSQL_PASSWORD: vibepos_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -pvibepos_root"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Run SQLite suite
+        working-directory: backend
+        env:
+          DATA_DIR: ${{ runner.temp }}/vibepos-sqlite
+          LICENSE_ENFORCEMENT: "false"
+        run: python -m unittest discover -s tests -v
+      - name: Run PostgreSQL retail conformance
+        working-directory: backend
+        env:
+          DATA_DIR: ${{ runner.temp }}/vibepos-postgres
+          LICENSE_ENFORCEMENT: "false"
+          VIBEPOS_CONFORMANCE_PROVIDER: postgresql
+          VIBEPOS_CONFORMANCE_DATABASE_URL: postgresql+psycopg://vibepos:vibepos_test@127.0.0.1:5432/vibepos
+        run: python -m unittest tests.test_server_provider_conformance -v
+      - name: Run MySQL retail conformance
+        working-directory: backend
+        env:
+          DATA_DIR: ${{ runner.temp }}/vibepos-mysql
+          LICENSE_ENFORCEMENT: "false"
+          VIBEPOS_CONFORMANCE_PROVIDER: mysql
+          VIBEPOS_CONFORMANCE_DATABASE_URL: mysql+pymysql://vibepos:vibepos_test@127.0.0.1:3306/vibepos
+        run: python -m unittest tests.test_server_provider_conformance -v

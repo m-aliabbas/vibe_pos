@@ -1,0 +1,1 @@
+"""VibePOS backend characterization tests."""

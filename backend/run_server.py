@@ -99,7 +99,6 @@ import shutil
 import sys
 from pathlib import Path
 import socket
-import sqlite3
 import threading
 import multiprocessing
 import uvicorn
@@ -305,100 +304,18 @@ def start_mdns(domain: str, ip: str, port: int) -> None:
         zc.close()
 
 
-# ---- DB sanity checks ----
+def ensure_schema_ready() -> str:
+    """Initialize or safely upgrade the configured application database."""
+    from app.db.session import engine, provider
+    from app.db.base import Base
+    from app.db.bootstrap import bootstrap_database
 
-REQUIRED_TABLES = {
-    "users",
-    "customers",
-    "vendors",
-    "products",
-    "purchases",
-    "sales",
-    # If your schema doesn't have some of these, remove them
-    "purchase_items",
-    "sale_items",
-    "product_variations",
-}
-
-LEGACY_PRODUCT_COLUMNS = {
-    "has_variations": "BOOLEAN DEFAULT 0",
-    "variation_attributes": "TEXT DEFAULT '[]'",
-    "base_unit": "TEXT DEFAULT 'piece'",
-    "selling_units": "TEXT DEFAULT '[]'",
-    "allow_decimal_qty": "BOOLEAN DEFAULT 0",
-}
-
-
-def _get_sqlite_tables(db_path: Path) -> set[str]:
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        return {r[0] for r in cur.fetchall()}
-    finally:
-        conn.close()
-
-
-def ensure_legacy_product_columns(db_path: Path) -> None:
-    """
-    Add columns expected by current Product model when opening older SQLite DBs.
-    """
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='products'")
-        if not cur.fetchone():
-            return
-
-        cur.execute("PRAGMA table_info(products)")
-        existing = {row[1] for row in cur.fetchall()}
-
-        missing = [c for c in LEGACY_PRODUCT_COLUMNS if c not in existing]
-        for column in missing:
-            col_sql = LEGACY_PRODUCT_COLUMNS[column]
-            cur.execute(f"ALTER TABLE products ADD COLUMN {column} {col_sql}")
-            log(f"Added missing products.{column}")
-
-        if missing:
-            conn.commit()
-    finally:
-        conn.close()
-
-
-def ensure_schema_ready() -> Path:
-    """
-    Ensures DB file exists and core tables exist.
-    - Does NOT delete data
-    - If db missing/broken/empty/missing tables -> create_all()
-    Returns the db path actually used.
-    """
-    data_dir = Path(os.environ["DATA_DIR"])
-    db_path = data_dir / "pos.db"
-
-    # If missing or empty => definitely create schema
-    must_create = (not db_path.exists()) or (db_path.exists() and db_path.stat().st_size == 0)
-
-    if not must_create:
-        # Check required tables
-        try:
-            tables = _get_sqlite_tables(db_path)
-            missing = REQUIRED_TABLES - tables
-            if missing:
-                log(f"DB exists but missing tables: {sorted(missing)}")
-                must_create = True
-        except Exception as e:
-            log(f"Could not read sqlite db ({db_path}): {e}")
-            must_create = True
-
-    if must_create:
-        log(f"Ensuring schema (create_all) for DB: {db_path}")
-        # IMPORTANT: Import AFTER DATA_DIR is set so session/engine uses correct path
-        from app.db.session import engine
-        from app.db.base import Base  # should import all models
-        Base.metadata.create_all(bind=engine)
-        log("Schema ready")
-
-    return db_path
+    result = bootstrap_database(provider, engine, Base.metadata)
+    if result.applied:
+        log(f"Applied database migrations: {', '.join(result.applied)}")
+        if result.backup_path:
+            log(f"Pre-migration backup: {result.backup_path}")
+    return provider.redacted_url
 
 
 if __name__ == "__main__":
@@ -425,7 +342,6 @@ if __name__ == "__main__":
 
     # 3) Ensure schema exists before seeding
     db_path = ensure_schema_ready()
-    ensure_legacy_product_columns(db_path)
 
     # 4) Now seed safely
     from seed import ensure_seeded

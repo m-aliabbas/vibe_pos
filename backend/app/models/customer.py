@@ -1,8 +1,10 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Float, DateTime, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Integer, String as SQLString, Float, DateTime, UniqueConstraint, Text
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 from datetime import datetime
 from app.core.timezone import now_pkt
+
+String = SQLString(255)
 
 
 class Customer(Base):
@@ -20,7 +22,7 @@ class Customer(Base):
     
     # Customer details
     name = Column(String, nullable=True)
-    address = Column(String, nullable=True)
+    address = Column(Text, nullable=True)
     
     # Financial tracking
     total_purchases = Column(Integer, default=0)  # Count of sales transactions
@@ -58,7 +60,7 @@ class CustomerNote(Base):
     customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     
     note_type = Column(String, default="general")  # general, credit_history, special_instruction, reminder, preference
-    note_text = Column(String, nullable=False)
+    note_text = Column(Text, nullable=False)
     # Structured values for buy-on-behalf entries. Kept on the note table so
     # existing advance_payment rows and their journal references remain valid.
     amount = Column(Float, nullable=True)
@@ -81,7 +83,7 @@ class CustomerPayment(Base):
     payment_method = Column(String, default="cash")  # cash, card, mobile, etc.
     payment_date = Column(DateTime, default=now_pkt)
     
-    reference_note = Column(String, nullable=True)  # Optional reference or notes
+    reference_note = Column(Text, nullable=True)  # Optional reference or notes
     
     created_at = Column(DateTime, default=now_pkt, index=True)
 

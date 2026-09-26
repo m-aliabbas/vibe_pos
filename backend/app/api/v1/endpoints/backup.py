@@ -1,8 +1,10 @@
-import os
 import zipfile
 import json
 from datetime import datetime
 from app.core.timezone import now_pkt
+from app.core.config import settings
+from app.db.session import engine, provider
+from app.db.integrity import assert_journals_balanced
 from pathlib import Path
 from typing import List
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
@@ -28,21 +30,8 @@ class BackupResponse(BaseModel):
 
 
 def get_data_dir() -> Path:
-    """Get the data directory path from environment"""
-    data_dir = os.environ.get("DATA_DIR")
-    if not data_dir:
-        raise HTTPException(status_code=500, detail="DATA_DIR not configured")
-    return Path(data_dir)
-
-
-def find_all_db_files(data_dir: Path) -> List[Path]:
-    """Recursively find all .db files in the data directory"""
-    db_files = []
-    for root, dirs, files in os.walk(data_dir):
-        for file in files:
-            if file.endswith('.db'):
-                db_files.append(Path(root) / file)
-    return db_files
+    """Return the configured writable application data directory."""
+    return Path(settings.DATA_DIR).resolve()
 
 
 def get_backup_dir() -> Path:
@@ -55,26 +44,24 @@ def get_backup_dir() -> Path:
 
 @router.get("/list-files")
 def list_database_files():
-    """List all database files that will be included in backup"""
+    """Describe the provider-owned database included in a backup."""
     try:
-        data_dir = get_data_dir()
-        db_files = find_all_db_files(data_dir)
-        
-        files_info = []
-        total_size = 0
-        
-        for db_file in db_files:
-            if db_file.exists():
-                size = db_file.stat().st_size
-                total_size += size
-                # Get relative path from data_dir
-                rel_path = db_file.relative_to(data_dir)
-                files_info.append({
-                    "path": str(rel_path),
-                    "size": size,
-                    "size_mb": round(size / (1024 * 1024), 2)
-                })
-        
+        if provider.name == "sqlite":
+            database_path = provider.database_path
+            size = database_path.stat().st_size if database_path.exists() else 0
+            files_info = [{
+                "path": database_path.name,
+                "size": size,
+                "size_mb": round(size / (1024 * 1024), 2),
+            }]
+            total_size = size
+        else:
+            files_info = [{
+                "path": f"{provider.name}:{provider.url.database}",
+                "size": 0,
+                "size_mb": 0,
+            }]
+            total_size = 0
         return {
             "success": True,
             "files": files_info,
@@ -115,58 +102,21 @@ async def test_automatic_backup(background_tasks: BackgroundTasks):
 
 @router.post("/create")
 def create_backup():
-    """Create a backup of all database files"""
+    """Create a provider-aware database backup."""
     try:
-        data_dir = get_data_dir()
         backup_dir = get_backup_dir()
-        
-        # Find all database files
-        db_files = find_all_db_files(data_dir)
-        
-        if not db_files:
-            raise HTTPException(status_code=404, detail="No database files found")
-        
-        # Create timestamped backup filename
-        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
-        backup_filename = f"pos_backup_{timestamp}.zip"
-        backup_path = backup_dir / backup_filename
-        
-        # Create backup metadata
-        backup_metadata = {
-            "timestamp": now_pkt().isoformat(),
-            "files": [],
-            "total_size": 0
-        }
-        
-        # Create ZIP archive
-        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for db_file in db_files:
-                if db_file.exists():
-                    # Store relative path in ZIP to maintain directory structure
-                    rel_path = db_file.relative_to(data_dir)
-                    zipf.write(db_file, arcname=rel_path)
-                    
-                    # Add to metadata
-                    file_size = db_file.stat().st_size
-                    backup_metadata["files"].append({
-                        "path": str(rel_path),
-                        "size": file_size
-                    })
-                    backup_metadata["total_size"] += file_size
-            
-            # Add metadata file to backup
-            metadata_json = json.dumps(backup_metadata, indent=2)
-            zipf.writestr("backup_info.json", metadata_json)
+        backup_path = provider.create_backup(engine, backup_dir, "pos_backup")
+        size = backup_path.stat().st_size
         
         return {
             "success": True,
-            "message": "Backup created successfully",
+            "message": f"{provider.name} backup created successfully",
             "backup_path": str(backup_path),
-            "backup_filename": backup_filename,
+            "backup_filename": backup_path.name,
             "backup_info": BackupInfo(
-                timestamp=backup_metadata["timestamp"],
-                files=[f["path"] for f in backup_metadata["files"]],
-                total_size=backup_metadata["total_size"]
+                timestamp=now_pkt().isoformat(),
+                files=[backup_path.name],
+                total_size=size,
             )
         }
     except Exception as e:
@@ -178,18 +128,20 @@ def download_backup(filename: str):
     """Download a specific backup file"""
     try:
         backup_dir = get_backup_dir()
-        backup_path = backup_dir / filename
+        backup_path = (backup_dir / Path(filename).name).resolve()
+        if backup_dir.resolve() not in backup_path.parents:
+            raise HTTPException(status_code=400, detail="Invalid backup filename")
         
         if not backup_path.exists():
             raise HTTPException(status_code=404, detail="Backup file not found")
         
-        if not backup_path.is_file() or not filename.endswith('.zip'):
+        if not backup_path.is_file():
             raise HTTPException(status_code=400, detail="Invalid backup file")
         
         return FileResponse(
             path=backup_path,
             filename=filename,
-            media_type="application/zip"
+            media_type="application/octet-stream"
         )
     except HTTPException:
         raise
@@ -199,16 +151,16 @@ def download_backup(filename: str):
 
 @router.post("/restore")
 async def restore_backup(file: UploadFile = File(...)):
-    """Restore database files from a backup ZIP"""
+    """Restore a native provider backup while maintenance mode is enabled."""
     try:
         data_dir = get_data_dir()
-        
-        # Validate file type
-        if not file.filename.endswith('.zip'):
-            raise HTTPException(status_code=400, detail="Invalid file type. Must be a ZIP file")
-        
-        # Save uploaded file temporarily
-        temp_backup_path = data_dir.parent / f"temp_restore_{now_pkt().strftime('%Y%m%d_%H%M%S')}.zip"
+        if not settings.DATABASE_MAINTENANCE_MODE:
+            raise HTTPException(
+                status_code=409,
+                detail="Restore requires DATABASE_MAINTENANCE_MODE=true and all other application processes stopped",
+            )
+        suffix = Path(file.filename or "").suffix
+        temp_backup_path = data_dir.parent / f"temp_restore_{now_pkt().strftime('%Y%m%d_%H%M%S')}{suffix}"
         
         try:
             # Write uploaded file
@@ -216,34 +168,39 @@ async def restore_backup(file: UploadFile = File(...)):
                 content = await file.read()
                 f.write(content)
             
-            # Validate ZIP file and read metadata
-            with zipfile.ZipFile(temp_backup_path, 'r') as zipf:
-                # Check if backup_info.json exists
-                if 'backup_info.json' not in zipf.namelist():
-                    raise HTTPException(status_code=400, detail="Invalid backup file: missing metadata")
-                
-                # Read metadata
-                metadata_content = zipf.read('backup_info.json')
-                backup_metadata = json.loads(metadata_content)
-                
-                # Extract all database files
-                restored_files = []
-                for file_info in backup_metadata["files"]:
-                    file_path = file_info["path"]
-                    target_path = data_dir / file_path
-                    
-                    # Create parent directories if needed
-                    target_path.parent.mkdir(parents=True, exist_ok=True)
-                    
-                    # Extract file
-                    zipf.extract(file_path, data_dir)
-                    restored_files.append(file_path)
-            
+            restored_files = [file.filename]
+            if provider.name == "sqlite" and suffix.lower() == ".zip":
+                with zipfile.ZipFile(temp_backup_path, "r") as archive:
+                    if "backup_info.json" not in archive.namelist():
+                        raise HTTPException(status_code=400, detail="Invalid legacy backup metadata")
+                    metadata = json.loads(archive.read("backup_info.json"))
+                    restored_files = []
+                    for file_info in metadata.get("files", []):
+                        relative = Path(file_info["path"])
+                        if relative.is_absolute() or ".." in relative.parts or relative.suffix != ".db":
+                            raise HTTPException(status_code=400, detail="Unsafe legacy backup path")
+                        payload = archive.read(relative.as_posix())
+                        target = (data_dir / relative).resolve()
+                        if data_dir.resolve() not in target.parents:
+                            raise HTTPException(status_code=400, detail="Unsafe legacy backup target")
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        if target.name == "pos.db":
+                            legacy_database = temp_backup_path.with_suffix(".db")
+                            legacy_database.write_bytes(payload)
+                            provider.restore_backup(engine, legacy_database)
+                            legacy_database.unlink(missing_ok=True)
+                        else:
+                            target.write_bytes(payload)
+                        restored_files.append(relative.as_posix())
+            else:
+                provider.restore_backup(engine, temp_backup_path)
+            provider.health_check(engine)
+            assert_journals_balanced(engine)
             return {
                 "success": True,
                 "message": "Backup restored successfully. Please restart the application.",
                 "restored_files": restored_files,
-                "backup_timestamp": backup_metadata["timestamp"]
+                "backup_timestamp": now_pkt().isoformat(),
             }
         
         finally:
@@ -271,8 +228,8 @@ def list_backups():
             }
         
         backups = []
-        for backup_file in backup_dir.glob("pos_backup_*.zip"):
-            if backup_file.is_file():
+        for backup_file in backup_dir.glob("pos_backup_*"):
+            if backup_file.is_file() and backup_file.suffix != ".json":
                 backups.append({
                     "filename": backup_file.name,
                     "size": backup_file.stat().st_size,

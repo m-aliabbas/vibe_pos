@@ -1,6 +1,8 @@
 fastapi==0.109.0
 uvicorn
 sqlalchemy
+psycopg[binary]
+PyMySQL
 alembic
 pydantic
 pydantic-settings

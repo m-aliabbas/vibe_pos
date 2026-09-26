@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String as SQLString, Float, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 from app.core.timezone import now_pkt
 import enum
+
+String = SQLString(255)
 
 class PurchaseStatus(str, enum.Enum):
     PAID = "paid"
@@ -36,7 +38,12 @@ class PurchaseItem(Base):
     unit_cost = Column(Float)
     total_cost = Column(Float) # quantity * unit_cost
     expiry_date = Column(DateTime, nullable=True)
-    batch_id = Column(Integer, ForeignKey("stock_batches.id"), nullable=True)
+    # Break the nullable purchase-item/stock-batch DDL cycle for server databases.
+    batch_id = Column(
+        Integer,
+        ForeignKey("stock_batches.id", use_alter=True, name="fk_purchase_items_batch_id"),
+        nullable=True,
+    )
 
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product")

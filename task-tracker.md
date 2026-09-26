@@ -1,10 +1,10 @@
-# VibePOS Modular Architecture Implementation Tracker
+# VibePOS Modular Business Platform Implementation Tracker
 
 ## Purpose
 
-This document is the execution tracker for converting VibePOS into a modular
-monolith that supports retail, auto workshop, clothing, milk-shop, and
-restaurant profiles from one shared codebase.
+This document is the execution tracker for evolving VibePOS into a modular
+business platform that supports retail, auto workshop, clothing, milk-shop, and
+restaurant products from one shared engineering codebase.
 
 The architecture work must preserve the current retail behavior and all existing
 customer data. This tracker complements `FUTURE_PLAN.md`; it does not replace the
@@ -12,15 +12,82 @@ general product roadmap.
 
 ## Target outcome
 
-- One repository and one shared VibePOS core.
+- One repository and one shared, versioned business platform.
 - One default `retail` profile for every existing installation.
 - Reusable horizontal capabilities such as fractional quantities, units,
   variations, batches, expiry, credit, and stock audit.
-- Optional vertical modules for workshop, restaurant, clothing, and milk-shop
-  workflows.
-- Core fixes flow to every profile because every installer is built from the
-  same source commit.
+- Independent business applications or profiles where workflows genuinely
+  differ, while presenting each product independently to its users.
+- Separate application entry points, installers, runtime data, and migration
+  histories for business domains that are classified as independent apps.
+- Core fixes reach every consuming product through versioned shared modules,
+  regression tests, rebuilds, and application releases.
 - No long-lived per-industry Git branches.
+
+## Platform boundary principles
+
+The implementation must follow these principles:
+
+- Share stable infrastructure and capabilities, not one universal business
+  workflow.
+- Retail sales, workshop job cards, restaurant orders, and rental bookings are
+  different transactions and may use independent domain models.
+- Shared candidates include authentication, permissions, common customer
+  identity, settings, database/migration infrastructure, payments, invoice
+  rendering, printing, reporting primitives, and audit logging.
+- Each business application owns its domain rules, workflows, forms, tables,
+  reports, and application services.
+- No business application may import another business application's domain
+  module. Applications depend only on explicitly shared platform packages.
+- A shared concept does not require one shared database table. For example, a
+  restaurant order and retail sale may remain separate while both use shared
+  payment or invoice capabilities.
+- Each independently installed application owns its SQLite database. Installed
+  applications must never depend on a shared local database file.
+- Existing VibePOS will be migrated incrementally. Establishing the platform is
+  not authorization to rewrite the working FastAPI backend in Rust or replace
+  Next.js/Tauri.
+- Storage interfaces may allow a future PostgreSQL/cloud implementation, but
+  SQLite remains the default offline desktop source of truth. PostgreSQL and
+  MySQL are supported through an explicit database-provider layer, not scattered
+  dialect conditionals.
+
+## Database portability rule
+
+VibePOS must make database selection configuration-driven while acknowledging
+that connecting to a database and moving existing data are different operations.
+
+- Tier 1 providers: SQLite, PostgreSQL, and MySQL.
+- Additional databases may be added through a provider adapter only after they
+  pass the same conformance suite; "any database" is not assumed automatically.
+- SQLAlchemy remains the ORM and transaction boundary for the current backend.
+- Application/domain services must not import `sqlite3`, PostgreSQL drivers, or
+  MySQL drivers directly.
+- Dialect-specific engine options, health checks, SQL functions, migrations,
+  backup/restore, and operational capabilities belong to database adapters.
+- SQLite stays zero-configuration and offline-first. Selecting a server database
+  must never silently fall back to a new SQLite database, because that could
+  split business data.
+- Changing a connection target does not automatically transfer data. A separate,
+  verified export/import or provider-migration workflow is required to move an
+  existing installation.
+- Database URLs and credentials are backend secrets. They must not be returned
+  to the frontend, written to logs, or committed.
+
+## Shared customer rule
+
+Customer identity is shared; business-specific customer data is extended rather
+than added as dozens of nullable columns to the core customer table.
+
+- Common identity: name, phone, email, address, status, and common preferences.
+- Business profiles: workshop vehicles/service details, retail loyalty/pricing,
+  restaurant delivery preferences, or rental verification details.
+- Business fields used for validation, indexing, or reports must be proper typed
+  columns in business-owned extension tables.
+- User-defined informational fields may use a configurable custom-field schema,
+  but critical business rules must not depend on untyped JSON.
+- Frontends compose a common customer form section with an application-owned
+  profile section.
 
 ## Tracker rules
 
@@ -28,6 +95,7 @@ Status values:
 
 - `[ ]` Not started
 - `[~]` In progress
+- `[?]` Implemented and awaiting manual verification
 - `[x]` Complete and verified
 - `[!]` Blocked; record the blocker in the completion log
 
@@ -63,31 +131,46 @@ Working rules:
 - [ ] Runtime data remains outside immutable application resources in packaged
   Windows and macOS builds.
 - [ ] A failed migration leaves a recoverable pre-upgrade database.
+- [ ] Independently installed applications never read or write another
+  application's local database.
+- [ ] A shared-module update is regression-tested against every consuming
+  application before any installer is released.
+- [ ] The same database conformance suite passes for every supported provider.
+- [ ] Provider switching never silently creates a second source of truth or
+  loses existing application data.
 
 ## Architecture decisions
 
 | ID | Decision | Status | Current direction |
 | --- | --- | --- | --- |
-| ADR-001 | Product-line structure | Proposed | Modular monolith in one repository |
-| ADR-002 | Deployment shape | Proposed | One universal installer with a licensed/configured profile |
-| ADR-003 | Profile model | Proposed | One primary profile plus reusable capabilities |
-| ADR-004 | Existing-install default | Proposed | Automatically use `retail` |
-| ADR-005 | Module loading | Proposed | Static registries compatible with PyInstaller |
-| ADR-006 | Profile switching | Proposed | Controlled conversion after transactional data exists |
-| ADR-007 | Vertical-to-sale link | Proposed | Vertical record references a core `sale_id` |
-| ADR-008 | Database upgrades | Proposed | Ordered, idempotent migrations with schema history |
+| ADR-001 | Product-line structure | Accepted | Modular monolith in one repository |
+| ADR-002 | Deployment shape | Accepted | Independent app entry points/installers for distinct domains; profiles may share an app when workflows are truly compatible |
+| ADR-003 | App/profile classification | Accepted | Classify each vertical by transaction model before choosing app versus profile |
+| ADR-004 | Existing-install default | Accepted | Automatically use `retail` |
+| ADR-005 | Module loading | Accepted | Static registries compatible with PyInstaller |
+| ADR-006 | Profile switching | Accepted | Controlled conversion after transactional data exists |
+| ADR-007 | Business transaction integration | Accepted | Domain-owned transaction may produce/reference a shared invoice/payment record; do not force every domain into retail `sales` |
+| ADR-008 | Database upgrades | Accepted | Ordered, idempotent migrations with schema history |
+| ADR-009 | Customer model | Accepted | Common customer identity plus typed business-owned profile tables and composed forms |
+| ADR-010 | Technology migration | Accepted | Keep FastAPI, Next.js, SQLite, and Tauri while extracting boundaries incrementally |
+| ADR-011 | Local data ownership | Accepted | Each independent desktop app owns its database and migrations |
+| ADR-012 | Shared-code delivery | Accepted | Version shared modules and rebuild/test each consuming application before release |
+| ADR-013 | Database provider layer | Accepted | SQLAlchemy-based provider registry with SQLite, PostgreSQL, and MySQL as tested Tier 1 providers |
+| ADR-014 | Database switching | Accepted | Configuration selects a connection; a separate verified workflow transfers existing data |
+| ADR-015 | Offline behavior | Accepted | SQLite is the default; unavailable server databases fail visibly and never silently fall back |
 
 ## Phase overview
 
 | Phase | Focus | Depends on | Status |
 | --- | --- | --- | --- |
-| 0 | Decisions, baseline, and characterization | None | Not started |
-| 1 | Upgrade and migration safety | Phase 0 | Not started |
-| 2 | Business profiles and capability registry | Phase 1 | Not started |
-| 3 | Core transaction and inventory boundaries | Phase 2 | Not started |
-| 4 | Frontend modular shell | Phases 2-3 | Not started |
-| 5 | Auto workshop proof module | Phase 4 | Not started |
-| 6 | Restaurant module | Phase 5 lessons applied | Not started |
+| 0 | Decisions, baseline, and characterization | None | Approved |
+| 1 | Upgrade and migration safety | Phase 0 | Approved |
+| 1B | Database connector and provider portability | Phase 1 | Awaiting manual verification |
+| 2 | Platform capabilities, app manifests, and profiles | Phase 1B | Not started |
+| 3 | Shared capability and business-transaction boundaries | Phase 2 | Not started |
+| 4 | Frontend composition and application shells | Phases 2-3 | Not started |
+| 5 | Auto workshop proof application/module | Phase 4 | Not started |
+| 6 | Restaurant application/module | Phase 5 lessons applied | Not started |
 | 7 | Clothing profile/module | Phase 4 | Not started |
 | 8 | Milk-shop profile/module | Phase 4 | Not started |
 | 9 | Packaging, licensing, release, and rollout | Required module phases | Not started |
@@ -101,31 +184,56 @@ before refactoring it.
 
 ### Tasks
 
-- [ ] **ARCH-001:** Write the modular-monolith architecture decision record,
+- [x] **ARCH-001:** Write the modular-monolith architecture decision record,
   including core domains, horizontal capabilities, vertical modules, and
   dependency rules.
-- [ ] **ARCH-002:** Confirm whether releases use one universal installer or
-  separately branded installers built from the same commit.
-- [ ] **ARCH-003:** Confirm whether a store can enable multiple vertical modules
-  or must have one primary profile with optional capabilities.
-- [ ] **ARCH-004:** Define the minimum workflows for workshop, restaurant,
+- [x] **ARCH-002:** Define application boundaries and independent release units.
+  Default to separate entry points/installers for domains with different primary
+  transactions, while allowing closely related retail profiles to share an app.
+- [x] **ARCH-003:** Classify retail, clothing, milk-shop, workshop, restaurant,
+  and any future rent-a-car/pharmacy product as either an independent app, a
+  profile, or a reusable capability, with written reasons.
+- [x] **ARCH-004:** Define the minimum workflows for workshop, restaurant,
   clothing, and milk-shop before designing their schemas.
-- [ ] **ARCH-005:** Inventory the current API routes, database tables, frontend
+- [x] **ARCH-005:** Inventory the current API routes, database tables, frontend
   routes, navigation entries, and packaging imports by domain.
-- [ ] **ARCH-006:** Document core dependency rules. Vertical modules may depend
-  on core services; core domains must not import vertical modules.
-- [ ] **TEST-001:** Add a backend test foundation using a disposable SQLite
+- [x] **ARCH-006:** Document core dependency rules. Vertical modules may depend
+  on platform services; the platform and business apps must not import another
+  business application's domain module.
+- [x] **ARCH-007:** Produce a share-versus-own matrix for authentication,
+  customers, payments, invoicing, accounting, reporting, inventory, orders, and
+  application-specific workflows.
+- [x] **ARCH-008:** Define the incremental extraction strategy that preserves the
+  current FastAPI/Next.js/Tauri application. Explicitly reject a big-bang Rust or
+  SQLx rewrite for the existing POS.
+- [x] **ARCH-009:** Define shared package versioning and the regression/build
+  matrix required before a core fix is released to consuming applications.
+- [x] **ARCH-010:** Define per-application database paths, migration ownership,
+  backup locations, application identifiers, and rules preventing cross-app
+  database access.
+- [x] **ARCH-011:** Define the common customer identity contract, business
+  profile-table pattern, composed form pattern, and custom-field limits.
+- [x] **ARCH-012:** Define the database-provider support contract and Tier 1
+  versions/drivers for SQLite, PostgreSQL, and MySQL, including packaging and
+  license implications.
+- [x] **ARCH-013:** Decide whether packaged desktop builds bundle all Tier 1
+  drivers or use provider-specific build extras, while keeping configuration
+  behavior consistent.
+- [x] **TEST-001:** Add a backend test foundation using a disposable SQLite
   database and supported license bypass/configuration for tests only.
-- [ ] **TEST-002:** Add retail characterization tests for cash sale, credit sale,
+- [x] **TEST-002:** Add retail characterization tests for cash sale, credit sale,
   partial payment, variation sale, fractional/unit-converted sale, and rollback.
-- [ ] **TEST-003:** Add characterization tests for purchase, return, held sale,
+- [x] **TEST-003:** Add characterization tests for purchase, return, held sale,
   held purchase, customer/vendor balances, stock batches, and journal balance.
-- [ ] **TEST-004:** Capture representative API contracts needed by the current
+- [x] **TEST-004:** Capture representative API contracts needed by the current
   frontend, without copying any real customer data.
 
 ### Exit gate
 
 - Architecture decisions are accepted.
+- Every proposed business product is classified as an app, profile, or reusable
+  capability.
+- Shared platform boundaries and per-app data ownership are documented.
 - Current retail behavior is protected by repeatable tests.
 - The test database cannot resolve to a production/customer data path.
 - No production behavior or schema has changed in this phase.
@@ -139,28 +247,34 @@ profiles or module tables.
 
 ### Tasks
 
-- [ ] **MIG-001:** Add a schema migration history table with a unique migration
+- [x] **MIG-001:** Add a schema migration history table with a unique migration
   identifier, applied timestamp, and application version.
-- [ ] **MIG-002:** Add an ordered migration registry/runner that executes before
+- [x] **MIG-002:** Add an ordered migration registry/runner that executes before
   normal application startup and safely skips already-applied migrations.
-- [ ] **MIG-003:** Define the baseline for databases already upgraded by the
+- [x] **MIG-003:** Define the baseline for databases already upgraded by the
   existing standalone migration scripts and `ensure_schema_columns()`.
-- [ ] **MIG-004:** Move startup column additions into versioned, idempotent
+- [x] **MIG-004:** Move startup column additions into versioned, idempotent
   migrations while preserving compatibility with current installations.
-- [ ] **MIG-005:** Create an automatic timestamped pre-migration backup in the
+- [x] **MIG-005:** Create an automatic timestamped pre-migration backup in the
   writable runtime data directory.
-- [ ] **MIG-006:** Validate the backup before applying a migration and fail closed
+- [x] **MIG-006:** Validate the backup before applying a migration and fail closed
   if a recoverable backup cannot be produced.
-- [ ] **MIG-007:** Ensure each migration is transactional where SQLite supports it
+- [x] **MIG-007:** Ensure each migration is transactional where SQLite supports it
   and has a documented recovery path where it does not.
-- [ ] **MIG-008:** Add migration tests against synthetic old-version databases,
+- [x] **MIG-008:** Add migration tests against synthetic old-version databases,
   run every migration twice, and verify that existing rows survive.
-- [ ] **MIG-009:** Add post-migration integrity checks for important row counts,
+- [x] **MIG-009:** Add post-migration integrity checks for important row counts,
   foreign keys, journal balance, customer/vendor balances, and stock totals.
-- [ ] **MIG-010:** Verify migration discovery and execution in development,
+- [x] **MIG-010:** Verify migration discovery and execution in development,
   PyInstaller backend builds, and Tauri startup paths on supported platforms.
-- [ ] **MIG-011:** Document operator-visible failure and recovery behavior; never
+- [x] **MIG-011:** Document operator-visible failure and recovery behavior; never
   silently open a partially migrated database.
+- [x] **MIG-012:** Add tests proving each independent application resolves only
+  its own writable data directory, database, backups, uploads, and migration
+  history.
+- [x] **MIG-013:** Select and document the migration engine's multi-dialect
+  strategy. New migrations must declare supported providers and avoid raw
+  SQLite-only DDL outside the SQLite adapter.
 
 ### Exit gate
 
@@ -171,23 +285,105 @@ profiles or module tables.
 
 ---
 
-## Phase 2 — Business profiles and capability registry
+## Phase 1B — Database connector and provider portability
 
-**Goal:** Introduce a backend-authoritative profile without changing the current
-retail experience.
+**Goal:** Make database selection a tested backend configuration concern while
+keeping SQLite as the safe default and providing explicit PostgreSQL/MySQL
+support.
 
 ### Tasks
 
-- [ ] **MOD-001:** Define stable identifiers for profiles, modules, and reusable
-  capabilities.
+- [x] **DB-001:** Add validated backend settings for application database
+  provider and URL. Preserve the current SQLite data-directory default for every
+  existing installation.
+- [x] **DB-002:** Add a database-provider registry/factory responsible for driver
+  selection, engine construction, pool settings, timeouts, TLS options, health
+  checks, and dialect capability metadata.
+- [x] **DB-003:** Implement and test the SQLite provider, including WAL,
+  `busy_timeout`, thread settings, writable data-path validation, and offline
+  startup.
+- [x] **DB-004:** Implement and test the PostgreSQL provider using a supported
+  SQLAlchemy driver, deliberate connection pooling, TLS configuration, and clear
+  startup diagnostics.
+- [x] **DB-005:** Implement and test the MySQL provider using a supported
+  SQLAlchemy driver, Unicode settings, strict SQL mode expectations, time-zone
+  handling, pooling, TLS, and clear startup diagnostics.
+- [x] **DB-006:** Define the adapter/conformance interface for future providers.
+  A provider is unsupported until it implements migrations, health checks,
+  backup/restore or logical export, and passes all contract tests.
+- [x] **DB-007:** Remove direct database-driver use from application runtime
+  paths. Restrict `sqlite3`, PostgreSQL-driver, MySQL-driver, `PRAGMA`, and other
+  dialect SQL to provider/migration adapters.
+- [x] **DB-008:** Replace SQLite-specific reporting expressions such as
+  `strftime` with portable query helpers or centralized dialect implementations;
+  verify week/month boundaries and time zones produce equivalent reports.
+- [x] **DB-009:** Audit ORM models and migrations for portability across Boolean,
+  JSON, DateTime, Decimal/Numeric, auto-increment IDs, foreign keys, indexes,
+  unique constraints, and identifier lengths.
+- [x] **DB-010:** Add provider-neutral transaction tests for sale, purchase,
+  return, stock adjustment, customer/vendor balances, and balanced journals.
+- [x] **DB-011:** Run the conformance suite against disposable SQLite plus
+  containerized PostgreSQL and MySQL databases in local/CI test workflows.
+- [x] **DB-012:** Implement provider-aware schema creation/migration locking so
+  two application processes cannot apply the same upgrade concurrently.
+- [x] **DB-013:** Add provider-aware backup and restore adapters. SQLite may use a
+  database/file-safe backup; PostgreSQL/MySQL require consistent logical/native
+  backup strategies with restore verification.
+- [x] **DB-014:** Add a provider-to-provider data transfer tool using a canonical
+  logical format or controlled row-copy process with dependency ordering,
+  identity/sequence repair, and transactional import where supported.
+- [x] **DB-015:** Before transfer, create and verify a source backup. After
+  transfer, compare table counts, key business totals, foreign keys, stock,
+  customer/vendor balances, and journal balance.
+- [x] **DB-016:** Prevent live provider switching while application processes are
+  using the database. Require maintenance mode, exclusive migration lock, and an
+  explicit operator confirmation identifying source and target.
+- [x] **DB-017:** Never silently fall back to SQLite when a configured server
+  database is unavailable. Show an actionable startup error without exposing
+  credentials.
+- [x] **DB-018:** Ensure database credentials remain backend-only, are redacted in
+  errors/logs, and are supplied through secure deployment configuration rather
+  than frontend settings or source control.
+- [x] **DB-019:** Include supported database drivers and migration resources in
+  the appropriate PyInstaller/Tauri builds and test packaged connectivity.
+- [x] **DB-020:** Document configuration examples, supported versions, connection
+  prerequisites, backup differences, migration steps, rollback limits, and
+  offline implications for each Tier 1 provider.
+
+### Exit gate
+
+- Existing installations still open their original SQLite database without
+  configuration changes.
+- A clean installation and the full database conformance suite pass on SQLite,
+  PostgreSQL, and MySQL.
+- The application fails clearly, without fallback, when the selected provider is
+  unavailable or misconfigured.
+- A synthetic SQLite dataset transfers to PostgreSQL and MySQL with verified row
+  counts and matching business totals; the source remains recoverable.
+- No database credentials appear in frontend payloads, logs, source control, or
+  packaged static assets.
+
+---
+
+## Phase 2 — Platform capabilities, app manifests, and profiles
+
+**Goal:** Introduce backend-authoritative application manifests, compatible
+profiles, and shared capability contracts without changing the current retail
+experience.
+
+### Tasks
+
+- [ ] **MOD-001:** Define stable identifiers for applications, profiles, modules,
+  shared packages, and reusable capabilities.
 - [ ] **MOD-002:** Add a persistent business-profile configuration with a safe
   migration that assigns `retail` to every existing database.
-- [ ] **MOD-003:** Add a static backend module registry declaring routers,
-  capabilities, model imports, migrations, and module metadata.
+- [ ] **MOD-003:** Add static, per-application backend manifests declaring shared
+  capabilities, app-owned routers, model imports, migrations, and metadata.
 - [ ] **MOD-004:** Ensure all registered models are imported for SQLAlchemy
   metadata discovery and included in packaged builds.
-- [ ] **MOD-005:** Add a typed `GET /api/v1/app-config` contract returning the
-  profile, enabled capabilities, branding, and application/schema versions.
+- [ ] **MOD-005:** Add a typed `GET /api/v1/app-config` contract returning the app
+  identity, profile, enabled capabilities, branding, shared-package versions,
+  and application/schema versions.
 - [ ] **MOD-006:** Add backend capability dependencies/guards and apply them to
   module-only endpoints.
 - [ ] **MOD-007:** Define profile-change rules. Prevent unsafe direct switching
@@ -198,6 +394,13 @@ retail experience.
   directly and existing retail endpoints remain available.
 - [ ] **MOD-010:** Document the source of truth: backend configuration and license
   determine capability access; frontend configuration controls presentation only.
+- [ ] **MOD-011:** Define shared service interfaces for customer identity,
+  payments, invoice rendering, printing, reporting, permissions, and audit
+  logging without forcing app-specific tables into one universal schema.
+- [ ] **MOD-012:** Add typed business customer-profile tables only in the owning
+  app/module; do not add their fields to the common customer table.
+- [ ] **MOD-013:** Define shared package compatibility/version metadata and fail
+  startup/build clearly when an application requests an incompatible version.
 
 ### Exit gate
 
@@ -205,13 +408,16 @@ retail experience.
 - The current retail API contract and behavior remain unchanged.
 - Capabilities are enforced by the backend.
 - App configuration is available to the frontend through one typed endpoint.
+- Independent app manifests cannot activate another app's domain routes or
+  database migrations.
 
 ---
 
-## Phase 3 — Core transaction and inventory boundaries
+## Phase 3 — Shared capability and business-transaction boundaries
 
 **Goal:** Create explicit extension points so vertical modules do not add large
-conditional blocks to sales, purchases, returns, or accounting endpoints.
+conditional blocks to sales, purchases, returns, or accounting endpoints, while
+avoiding a universal transaction model for unrelated businesses.
 
 ### Tasks
 
@@ -222,7 +428,7 @@ conditional blocks to sales, purchases, returns, or accounting endpoints.
   HTTP endpoints and cover rounding, discounts, tax, and price overrides.
 - [ ] **CORE-003:** Introduce an inventory service for receiving, issuing,
   returning, and adjusting stock, including variations and FIFO batches.
-- [ ] **CORE-004:** Introduce an application-level sale service that validates,
+- [ ] **CORE-004:** Introduce an application-level retail sale service that validates,
   prices, persists, applies inventory, updates customer balances, posts
   accounting, and commits atomically.
 - [ ] **CORE-005:** Define an inventory-consumption policy for stock, service, and
@@ -231,13 +437,23 @@ conditional blocks to sales, purchases, returns, or accounting endpoints.
   inventory boundary without changing their external contracts.
 - [ ] **CORE-007:** Preserve held-transaction behavior and prove that holds do not
   prematurely mutate final stock or journals.
-- [ ] **CORE-008:** Define how vertical records link to finalized sales. Prefer a
-  vertical table with a unique `sale_id` over vertical columns on `sales`.
+- [ ] **CORE-008:** Define how domain-owned transactions produce or reference
+  shared invoice/payment records. Use a unique `sale_id` only for a workflow that
+  is genuinely a retail sale; do not store workshop, restaurant, or rental state
+  on the retail `sales` table.
 - [ ] **CORE-009:** Add failure-injection tests proving rollback across stock,
   balances, sale records, and accounting.
 - [ ] **CORE-010:** Decide and document the staged precision strategy for currency
   and quantities. Do not combine a full Float-to-Decimal migration with an
   unrelated module change.
+- [ ] **CORE-011:** Define application-layer commands for each domain workflow so
+  React pages call business operations rather than SQL/repository details.
+- [ ] **CORE-012:** Place storage behind focused repository/service boundaries
+  where it materially improves testability or future database replacement; do
+  not create a generic repository abstraction with no domain value.
+- [ ] **CORE-013:** Separate shared invoice rendering/payment capabilities from
+  retail sale orchestration so other apps can consume them without importing
+  the retail sales domain.
 
 ### Exit gate
 
@@ -245,14 +461,18 @@ conditional blocks to sales, purchases, returns, or accounting endpoints.
 - Core transaction endpoints orchestrate application services rather than owning
   all business logic.
 - Stock and accounting remain atomic under induced failures.
-- A new consumption policy can be added without editing the core sale algorithm.
+- A new retail/prepared-item consumption policy can be added without editing the
+  retail sale algorithm.
+- A workshop job or restaurant order can use shared invoice/payment capabilities
+  without pretending to be a retail sale.
 
 ---
 
-## Phase 4 — Frontend modular shell
+## Phase 4 — Frontend composition and application shells
 
-**Goal:** Make navigation and vertical UI composition profile-aware while keeping
-the existing retail UI intact.
+**Goal:** Make navigation and composition app/profile-aware, support independent
+React/Tauri entry points when selected by Phase 0, and keep the existing retail
+UI intact.
 
 ### Tasks
 
@@ -274,28 +494,40 @@ the existing retail UI intact.
   workflows, receipts, and reports as before the refactor.
 - [ ] **UI-009:** Run accessibility, keyboard/scanner workflow, empty-state,
   loading-state, and error-state checks on the refactored screens.
+- [ ] **UI-010:** Compose customer forms from a shared common-information section
+  and an app-owned profile section; do not make the common customer form aware
+  of every business type.
+- [ ] **UI-011:** Where Phase 0 selects independent products, create separate app
+  shells/entry points with independent navigation, branding, Tauri identifiers,
+  data directories, and build targets.
+- [ ] **UI-012:** Add import-boundary checks so one business application cannot
+  import another application's frontend features.
 
 ### Exit gate
 
 - Retail users see no unintended navigation or workflow change.
 - Module routes are hidden and blocked when disabled.
 - The core sales and inventory pages accept controlled module contributions.
+- Independent application shells share approved UI packages but remain separate
+  from the user's perspective.
 - Frontend lint and production build pass.
 
 ---
 
-## Phase 5 — Auto workshop proof module
+## Phase 5 — Auto workshop proof application/module
 
-**Goal:** Validate the module architecture using the workshop behavior that has
-already leaked into the shared customer model.
+**Goal:** Validate the platform architecture using the workshop behavior that has
+already leaked into the shared customer model. Implement it within the app or
+profile boundary selected and documented in Phase 0.
 
 ### Tasks
 
 - [ ] **WS-001:** Confirm workshop workflows: multiple vehicles per customer,
   job cards, technicians, parts, labour, mileage, reminders, estimates, and
   invoicing.
-- [ ] **WS-002:** Add workshop models for vehicles, service reminders, work
-  orders/job cards, and work-order lines using additive migrations.
+- [ ] **WS-002:** Add workshop-owned models for vehicles, service reminders, work
+  orders/job cards, and work-order lines using additive migrations in the
+  workshop application's/schema's migration history.
 - [ ] **WS-003:** Copy existing customer oil-change data into vehicle/reminder
   records without deleting the legacy customer columns.
 - [ ] **WS-004:** Add a migration verification report for copied oil-change data,
@@ -305,8 +537,9 @@ already leaked into the shared customer model.
   capability is enabled.
 - [ ] **WS-007:** Support parts as stock items and labour/services as non-stock
   sale lines.
-- [ ] **WS-008:** Finalize a work order into exactly one core sale and balanced
-  journal transaction; prevent duplicate invoicing.
+- [ ] **WS-008:** Finalize a work order into exactly one workshop invoice/payment
+  outcome and balanced journal transaction through shared capabilities; prevent
+  duplicate invoicing without forcing job-card state into retail sales.
 - [ ] **WS-009:** Add service history and due-reminder reporting.
 - [ ] **WS-010:** Test old retail databases, old oil-tracking databases, workshop
   sale rollback, returns, customer credit, and invoice printing.
@@ -322,7 +555,7 @@ already leaked into the shared customer model.
 
 ---
 
-## Phase 6 — Restaurant module
+## Phase 6 — Restaurant application/module
 
 **Goal:** Support menu preparation, ingredient consumption, dining tables, and
 kitchen workflow without duplicating core sales/accounting.
@@ -343,8 +576,9 @@ kitchen workflow without duplicating core sales/accounting.
   permissions and valid state transitions.
 - [ ] **REST-007:** Add restaurant POS, floor/table, kitchen, recipe, and menu
   management screens behind restaurant capabilities.
-- [ ] **REST-008:** Finalize restaurant orders through the core sale/payment/
-  accounting service and prevent duplicate finalization.
+- [ ] **REST-008:** Finalize restaurant orders through shared invoice, payment,
+  and accounting capabilities while keeping restaurant order state in the
+  restaurant domain; prevent duplicate finalization.
 - [ ] **REST-009:** Add restaurant reports for ingredient usage, theoretical
   versus actual stock, wastage, menu profitability, tables, and order channels.
 - [ ] **REST-010:** Test fractional ingredients, insufficient ingredients,
@@ -356,14 +590,16 @@ kitchen workflow without duplicating core sales/accounting.
 - Selling a menu item consumes the correct ingredients once.
 - Order state transitions cannot create duplicate stock or accounting effects.
 - Retail and workshop profiles do not expose restaurant APIs or screens.
-- Restaurant sales still use the shared customer, payment, and accounting core.
+- Restaurant orders use shared customer, invoice, payment, and accounting
+  capabilities without importing the retail sales workflow.
 
 ---
 
 ## Phase 7 — Clothing profile/module
 
 **Goal:** Reuse existing variation and fractional-unit capabilities, adding a
-module only for workflows that cannot be expressed by configuration.
+module or independent application only for workflows that cannot be expressed
+by an existing retail profile and shared capabilities.
 
 ### Tasks
 
@@ -392,7 +628,9 @@ module only for workflows that cannot be expressed by configuration.
 ## Phase 8 — Milk-shop profile/module
 
 **Goal:** Implement only the milk business model actually required, rather than
-assuming that all milk shops operate the same way.
+assuming that all milk shops operate the same way. Use a retail profile for
+simple counter sales and an independent app boundary if subscriptions,
+collection, or production becomes the primary transaction model.
 
 ### Tasks
 
@@ -422,17 +660,20 @@ assuming that all milk shops operate the same way.
 
 ## Phase 9 — Packaging, licensing, release, and rollout
 
-**Goal:** Ship enabled profiles safely from the same codebase and prove upgrades
-on real packaging paths without exposing customer data.
+**Goal:** Ship independent products and compatible profiles safely from the same
+codebase and prove upgrades on real packaging paths without exposing or sharing
+customer data between installed applications.
 
 ### Tasks
 
 - [ ] **REL-001:** Ensure static module imports, models, migrations, routers, and
   assets are included in Windows and macOS packaged builds.
-- [ ] **REL-002:** Confirm module licensing and cached offline entitlements do not
-  prevent an already licensed retail installation from starting.
-- [ ] **REL-003:** Decide whether branding is runtime configuration or a CI build
-  matrix; all variants must use the same source commit and version.
+- [ ] **REL-002:** Confirm application/module licensing and cached offline
+  entitlements do not prevent an already licensed retail installation from
+  starting.
+- [ ] **REL-003:** Build independent installers from explicit application targets
+  with distinct Tauri identifiers, branding, data directories, and app versions;
+  profile variants of the same app may use runtime configuration.
 - [ ] **REL-004:** Add upgrade tests from representative tagged versions to the
   modular release using disposable database copies.
 - [ ] **REL-005:** Verify pre-upgrade backup, migration logs, startup recovery,
@@ -447,12 +688,26 @@ on real packaging paths without exposing customer data.
   pilot with a verified backup, then broader installations.
 - [ ] **REL-010:** Monitor migration failures, integrity warnings, startup issues,
   and module-specific transaction errors before expanding rollout.
+- [ ] **REL-011:** Version shared packages and run a CI regression/build matrix
+  for every consuming application before publishing a shared-core fix.
+- [ ] **REL-012:** Prove that simultaneously installed applications use separate
+  databases, backups, uploads, license/application identity, and update channels.
+- [ ] **REL-013:** Maintain independent application release notes and versions
+  while recording the shared-platform version consumed by each release.
+- [ ] **REL-014:** Publish and enforce a supported database version/driver matrix;
+  run provider conformance tests before releasing backend or migration changes.
+- [ ] **REL-015:** Smoke-test packaged applications with the default SQLite
+  database and external PostgreSQL/MySQL connections, including unavailable
+  server, TLS failure, credential redaction, backup, and migration behavior.
 
 ### Exit gate
 
-- Every released profile is built from the same tagged core commit.
+- Every released application records the exact shared-platform version/commit it
+  consumes.
 - Existing retail data upgrades without loss.
 - Offline startup, LAN behavior, licensing, backups, and packaging still work.
+- Independent applications can coexist without reading, overwriting, backing up,
+  or migrating each other's data.
 - Recovery steps have been exercised rather than only documented.
 
 ---
@@ -472,6 +727,15 @@ the initial modularization unreviewable:
 - [ ] **X-006:** Add granular permissions and manager approvals.
 - [ ] **X-007:** Define supported module API/version compatibility rules if
   modules are ever distributed independently.
+- [ ] **X-008:** Evaluate JavaScript workspace/package extraction only after
+  internal boundaries stabilize; do not reorganize the repository merely to
+  imitate a target directory diagram.
+- [ ] **X-009:** Evaluate a future Rust/SQLx backend only for a truly new product
+  with measured benefits. Do not make it a prerequisite for modularizing the
+  existing POS.
+- [ ] **X-010:** Add cloud synchronization or a hosted API only when a concrete
+  multi-user deployment requires it. Direct PostgreSQL/MySQL connectivity does
+  not by itself solve offline sync, conflict resolution, or tenancy.
 
 ## Standard verification gate for every implementation phase
 
@@ -491,6 +755,9 @@ Additionally:
 - Run migrations twice against a disposable old-schema database.
 - Compare row counts and important business totals before and after migrations.
 - Test transaction validation failure and database rollback paths.
+- Run the database conformance suite for SQLite and the supported PostgreSQL and
+  MySQL versions whenever ORM queries, migrations, reporting SQL, engine setup,
+  backup/restore, or transaction handling changes.
 - Run `cargo check` when Tauri code or configuration changes.
 - Run a production Tauri build when sidecars, packaging, resources, migration
   discovery, or startup behavior changes.
@@ -504,16 +771,26 @@ Add one row whenever a task or phase is completed or blocked.
 | Date | Task/phase | Status | Summary | Verification / evidence | Follow-up |
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-24 | Planning | Complete | Created modular architecture implementation tracker | Documentation review and `git diff --check` | Begin Phase 0 only after architecture decisions are confirmed |
+| 2026-09-25 | Architecture guidance review | Complete | Added independent-app, shared-platform, customer-extension, data-isolation, and versioned-core principles | Compared attached guidance with the current FastAPI/Next.js/Tauri repository | Resolve app-versus-profile classifications in Phase 0 |
+| 2026-09-25 | Database portability planning | Complete | Added a provider layer and dedicated SQLite/PostgreSQL/MySQL implementation phase | Audited current engine configuration, SQLite-only startup/migrations, and report SQL | Implement only after migration safety foundation |
+| 2026-09-25 | Phase 0 | Awaiting manual verification | Added architecture ADR, business scope, current-system inventory, phase gates, disposable database tests, and API contract snapshot | 9 backend tests pass; Python compile passes; frontend build passes; `git diff --check` passes; existing frontend lint baseline has 131 errors/80 warnings | Owner reviews `phases.md`; do not begin Phase 1 before explicit approval |
+| 2026-09-25 | Phase 0 approval | Complete | Owner approved the architecture and retail baseline for migration | Explicit owner approval in the Codex task | Begin Phase 1 only |
+| 2026-09-25 | Phase 1 | Awaiting manual verification | Added ordered migrations, validated pre-upgrade backups, fail-closed recovery, integrity checks, and isolated disposable migration tests | 13 backend tests pass; Python compile passes; frontend build passes; temporary PyInstaller build includes migration modules; `git diff --check` passes | Owner completes the Phase 1 checklist in `phases.md`; do not begin Phase 1B before approval |
+| 2026-09-25 | Phase 1 approval | Complete | Owner completed the migration backup, idempotence, recovery, and totals checklist | Explicit owner approval in the Codex task | Begin Phase 1B only |
+| 2026-09-25 | Phase 1B | Awaiting manual verification | Added explicit SQLite/PostgreSQL/MySQL providers, portable reporting, migration locks, native backup adapters, guarded verified transfer, model portability fixes, packaging drivers, and CI conformance | SQLite suite passes; 11 PostgreSQL 16 and 11 MySQL 8.4 conformance tests pass; direct startup passes on all providers; provider-aware PyInstaller build passes | Owner completes the Phase 1B checklist in `phases.md`; do not begin Phase 2 before approval |
 
 ## Open questions
 
 Resolve these during Phase 0 rather than making assumptions inside vertical
 implementations:
 
-1. Should one installation enable multiple vertical modules, or exactly one
-   primary business profile?
-2. Should all profiles ship in one universal installer, or should CI produce
-   separately branded installers from the same commit?
+1. Which products are independent applications, which are profiles of the retail
+   app, and which are only reusable capabilities? The starting hypothesis is:
+   clothing retail is a retail profile; simple milk retail is a retail profile;
+   restaurant and rent-a-car are independent apps; workshop requires a deliberate
+   decision based on the desired job-card workflow.
+2. Which capabilities must be shared in the first platform release? Avoid
+   extracting code merely because two applications currently use similar words.
 3. Does clothing mean ready-made garments, fabric by length, tailoring, or all
    three?
 4. Does milk-shop mean counter retail, delivery subscriptions, producer
@@ -522,3 +799,11 @@ implementations:
    modifiers, split bills, delivery, and/or takeaway?
 6. How long should old workshop oil-tracking columns remain readable after their
    data is copied into vehicle records?
+7. Is rent-a-car part of this implementation roadmap now, or was the attachment
+   supplied only as an architectural reference?
+8. Should independent products share one repository release cadence or maintain
+   separate application versions while pinning a shared-platform version?
+9. Which PostgreSQL and MySQL server/driver versions should be supported in the
+   first release, and must every desktop installer bundle both drivers?
+10. Will PostgreSQL/MySQL normally run on the shop's LAN or on a remote server?
+    Remote hosting changes TLS, availability, latency, and offline expectations.

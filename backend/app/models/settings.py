@@ -1,5 +1,7 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String as SQLString
 from app.db.session import Base
+
+String = SQLString(255)
 
 
 class StoreSettings(Base):

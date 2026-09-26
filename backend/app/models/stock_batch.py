@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Date
+from sqlalchemy import Column, Integer, String as SQLString, Float, ForeignKey, DateTime, Date, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db.session import Base
 from app.core.timezone import now_pkt
 import enum
+
+String = SQLString(255)
 
 
 class BatchStatus(str, enum.Enum):
@@ -31,7 +33,7 @@ class StockBatch(Base):
 
     status = Column(String, default=BatchStatus.ACTIVE)
     merged_into_id = Column(Integer, ForeignKey("stock_batches.id"), nullable=True)
-    notes = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=now_pkt)
 

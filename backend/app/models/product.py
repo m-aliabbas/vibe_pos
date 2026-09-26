@@ -1,8 +1,10 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, Integer, String as SQLString, Float, ForeignKey, Boolean, JSON, Text
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 from datetime import datetime
 from app.core.timezone import now_pkt
+
+String = SQLString(255)
 
 class Product(Base):
     __tablename__ = "products"
@@ -11,7 +13,7 @@ class Product(Base):
     name = Column(String, index=True)
     sku = Column(String, index=True, unique=True, nullable=True) # Barcode
     category = Column(String, index=True, default="Uncategorized")
-    description = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     
     selling_price = Column(Float, default=0.0)

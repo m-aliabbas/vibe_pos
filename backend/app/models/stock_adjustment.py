@@ -1,8 +1,10 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, Float, String, ForeignKey
+from sqlalchemy import Column, Integer, Float, String as SQLString, ForeignKey, Text
 from app.core.timezone import now_pkt
 from sqlalchemy.orm import relationship
 from app.db.session import Base
+
+String = SQLString(255)
 
 
 class ProductStockAdjustment(Base):
@@ -15,7 +17,7 @@ class ProductStockAdjustment(Base):
     quantity_before = Column(Float, nullable=False, default=0.0)
     quantity_delta = Column(Float, nullable=False)
     quantity_after = Column(Float, nullable=False, default=0.0)
-    reason = Column(String, nullable=False)
+    reason = Column(Text, nullable=False)
     created_at = Column(String, nullable=False, default=lambda: now_pkt().isoformat())
 
     product = relationship("Product")
