@@ -67,6 +67,10 @@ class MigrationRunnerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_declared_checksums_match_migration_sources(self) -> None:
+        for migration in MIGRATIONS:
+            self.assertEqual(migration.checksum, migration.source_checksum())
+
     def test_old_database_is_backed_up_upgraded_and_idempotent(self) -> None:
         create_legacy_schema(self.database_path)
 
@@ -85,6 +89,10 @@ class MigrationRunnerTests(unittest.TestCase):
             note_columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(customer_notes)")
             }
+            business_configuration = connection.execute(
+                "SELECT application_id, profile_id, enabled_modules_json "
+                "FROM business_configuration WHERE id = 1"
+            ).fetchone()
             history = connection.execute(
                 f"SELECT migration_id, application_version FROM {HISTORY_TABLE} ORDER BY migration_id"
             ).fetchall()
@@ -105,6 +113,7 @@ class MigrationRunnerTests(unittest.TestCase):
         )
         self.assertIn("previous_balance", sale_columns)
         self.assertTrue({"amount", "payment_method"} <= note_columns)
+        self.assertEqual(business_configuration, ("retail", "retail", "[]"))
         self.assertEqual(
             history,
             [(item.migration_id, "test-version") for item in MIGRATIONS],
@@ -146,6 +155,22 @@ class MigrationRunnerTests(unittest.TestCase):
                     (HISTORY_TABLE,),
                 ).fetchone()
             )
+
+    def test_preexisting_foreign_key_violations_do_not_block_upgrade(self) -> None:
+        create_legacy_schema(self.database_path)
+        with sqlite3.connect(self.database_path) as connection:
+            connection.execute(
+                "CREATE TABLE orphaned_notes ("
+                "id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL, "
+                "FOREIGN KEY(customer_id) REFERENCES customers(id))"
+            )
+            connection.execute(
+                "INSERT INTO orphaned_notes (id, customer_id) VALUES (1, 999)"
+            )
+
+        result = upgrade_database(self.database_path)
+
+        self.assertEqual(result.applied, tuple(item.migration_id for item in MIGRATIONS))
 
     def test_new_database_is_initialized_without_pre_migration_backup(self) -> None:
         def initialize() -> None:

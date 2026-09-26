@@ -8,6 +8,8 @@ from app.models.customer import Customer, CustomerNote, CustomerPayment
 from app.models.pos_return import PosReturn, ReturnItem
 from app.models.accounting import Account, JournalEntry, JournalLine
 from app.models.settings import StoreSettings
+from app.models.business_configuration import BusinessConfiguration
 from app.models.hold_purchase import HoldPurchase
+from app.models.hold_sale import HoldSale
 from app.models.stock_adjustment import ProductStockAdjustment
 from app.models.stock_batch import StockBatch

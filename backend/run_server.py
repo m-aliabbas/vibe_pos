@@ -319,8 +319,11 @@ def ensure_schema_ready() -> str:
 
 
 if __name__ == "__main__":
-    if os.name == "nt":
-        multiprocessing.freeze_support()
+    # PyInstaller's multiprocessing argument dispatcher is required on every
+    # supported OS. WhatsApp uses multiprocessing.Manager during FastAPI
+    # startup; delaying this to Windows only recursively relaunched the frozen
+    # macOS server binary for each worker.
+    multiprocessing.freeze_support()
 
     # 1) Load env first
     load_env_from_exe_dir()

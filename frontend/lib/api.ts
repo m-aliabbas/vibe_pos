@@ -26,6 +26,66 @@ api.interceptors.request.use((config) => {
 
 export default api;
 
+export type ApplicationId = 'retail' | 'workshop' | 'restaurant';
+export type ProfileId = 'retail' | 'clothing-retail' | 'milk-counter-retail';
+export type ModuleId = 'workshop' | 'restaurant' | 'clothing' | 'milk';
+export type CapabilityId =
+    | 'platform.authentication'
+    | 'platform.users'
+    | 'platform.store-configuration'
+    | 'shared.customer-identity'
+    | 'shared.payments'
+    | 'shared.invoices'
+    | 'shared.printing'
+    | 'shared.reporting'
+    | 'shared.permissions'
+    | 'shared.audit'
+    | 'retail.catalog'
+    | 'retail.inventory'
+    | 'retail.purchasing'
+    | 'retail.sales'
+    | 'retail.returns'
+    | 'retail.accounting'
+    | 'retail.holds'
+    | 'infrastructure.backup'
+    | 'infrastructure.files'
+    | 'infrastructure.messaging'
+    | 'workshop.jobs'
+    | 'restaurant.orders';
+
+export interface AppBranding {
+    name: string;
+    address: string;
+    phone: string;
+    email: string;
+    city: string;
+    tax_id: string;
+    website: string;
+}
+
+export interface AppConfigResponse {
+    application_id: ApplicationId;
+    application_name: string;
+    application_version: string;
+    schema_version: string;
+    profile_id: ProfileId;
+    enabled_modules: ModuleId[];
+    enabled_capabilities: CapabilityId[];
+    shared_package_versions: Record<string, string>;
+    branding: AppBranding;
+}
+
+export const appConfigApi = {
+    get: async (): Promise<AppConfigResponse> => {
+        const response = await api.get('/app-config');
+        return response.data;
+    },
+    changeProfile: async (profileId: ProfileId): Promise<AppConfigResponse> => {
+        const response = await api.put('/app-config/profile', { profile_id: profileId });
+        return response.data;
+    },
+};
+
 // ============ CUSTOMER API FUNCTIONS ============
 
 export interface CustomerSimple {

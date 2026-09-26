@@ -107,7 +107,7 @@ class ServerProviderTransferConformanceTests(unittest.TestCase):
                         (engine, second_engine),
                     )
                 )
-            self.assertEqual(sum(len(result.applied) for result in results), 2)
+            self.assertEqual(sum(len(result.applied) for result in results), 3)
             with engine.connect() as connection:
                 self.assertEqual(
                     connection.execute(
@@ -118,6 +118,7 @@ class ServerProviderTransferConformanceTests(unittest.TestCase):
                     [
                         ("0001_legacy_schema_baseline",),
                         ("0002_startup_column_additions",),
+                        ("0003_retail_business_configuration",),
                     ],
                 )
         finally:

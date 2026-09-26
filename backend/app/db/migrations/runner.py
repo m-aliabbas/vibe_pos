@@ -11,6 +11,7 @@ from app.db.migrations.registry import MIGRATIONS, Migration, validate_registry
 
 
 HISTORY_TABLE = "schema_migrations"
+NON_BUSINESS_TABLES = {HISTORY_TABLE, "sqlite_sequence", "business_configuration"}
 DEFAULT_APPLICATION_VERSION = "1.0.20"
 
 
@@ -145,7 +146,7 @@ def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
 def _integrity_snapshot(connection: sqlite3.Connection) -> dict[str, float | int]:
     tables = _table_names(connection)
     snapshot: dict[str, float | int] = {}
-    for table in sorted(tables - {HISTORY_TABLE, "sqlite_sequence"}):
+    for table in sorted(tables - NON_BUSINESS_TABLES):
         snapshot[f"rows:{table}"] = int(
             connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
         )
@@ -170,15 +171,22 @@ def _integrity_snapshot(connection: sqlite3.Connection) -> dict[str, float | int
     return snapshot
 
 
+def _foreign_key_violations(connection: sqlite3.Connection) -> set[tuple[object, ...]]:
+    return {tuple(row) for row in connection.execute("PRAGMA foreign_key_check")}
+
+
 def _verify_integrity(
     connection: sqlite3.Connection,
     before: dict[str, float | int],
+    before_foreign_key_violations: set[tuple[object, ...]],
 ) -> None:
     _validate_database(connection, "Migrated database")
-    foreign_key_errors = connection.execute("PRAGMA foreign_key_check").fetchall()
-    if foreign_key_errors:
+    foreign_key_errors = _foreign_key_violations(connection)
+    introduced_foreign_key_errors = foreign_key_errors - before_foreign_key_violations
+    if introduced_foreign_key_errors:
         raise MigrationError(
-            f"Migrated database has {len(foreign_key_errors)} foreign-key violation(s)"
+            "Migration introduced "
+            f"{len(introduced_foreign_key_errors)} foreign-key violation(s)"
         )
 
     after = _integrity_snapshot(connection)
@@ -262,6 +270,7 @@ def upgrade_database(
         connection = _connect(path)
         try:
             before = _integrity_snapshot(connection)
+            before_foreign_key_violations = _foreign_key_violations(connection)
             for migration in pending:
                 if "sqlite" not in migration.supported_providers:
                     raise MigrationError(
@@ -300,7 +309,7 @@ def upgrade_database(
                 except Exception:
                     connection.rollback()
                     raise
-            _verify_integrity(connection, before)
+            _verify_integrity(connection, before, before_foreign_key_violations)
         finally:
             connection.close()
     except Exception as exc:

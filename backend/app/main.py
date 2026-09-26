@@ -3,7 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.api import api_router
 from app.db.session import engine, Base, provider
+import app.db.base  # noqa: F401 - imports every manifest-owned model into metadata
 from app.db.bootstrap import bootstrap_database
+from app.platform.manifests import get_active_manifest, load_manifest_models
 from app.services.license import check_license_or_exit, LicenseError
 
 # Import WhatsApp client initializer
@@ -14,7 +16,14 @@ from app.services import backup_scheduler
 
 # Direct uvicorn development startup and the packaged launcher use the same
 # ordered, fail-closed migration path. The second call is an idempotent no-op.
-bootstrap_database(provider, engine, Base.metadata)
+active_manifest = get_active_manifest()
+load_manifest_models(active_manifest)
+bootstrap_database(
+    provider,
+    engine,
+    Base.metadata,
+    application_version=active_manifest.application_version,
+)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

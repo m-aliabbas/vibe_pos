@@ -87,8 +87,17 @@ def bootstrap_database(
                 raise MigrationError(f"Applied migration was modified: {migration.migration_id}")
             if checksum:
                 continue
-            # A clean server schema is created from current ORM metadata. Historical
-            # SQLite compatibility migrations are stamped, not replayed as raw DDL.
+            if provider.name not in migration.supported_providers:
+                # A clean server schema is created from current ORM metadata. Historical
+                # SQLite compatibility migrations are stamped, not replayed as raw DDL.
+                pass
+            elif migration.apply_sqlalchemy is not None:
+                migration.apply_sqlalchemy(connection)
+            else:
+                raise MigrationError(
+                    f"Migration {migration.migration_id} declares {provider.name} support "
+                    "but has no provider-neutral implementation"
+                )
             connection.execute(
                 schema_migrations.insert().values(
                     migration_id=migration.migration_id,

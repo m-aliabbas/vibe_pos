@@ -373,33 +373,33 @@ experience.
 
 ### Tasks
 
-- [ ] **MOD-001:** Define stable identifiers for applications, profiles, modules,
+- [x] **MOD-001:** Define stable identifiers for applications, profiles, modules,
   shared packages, and reusable capabilities.
-- [ ] **MOD-002:** Add a persistent business-profile configuration with a safe
+- [x] **MOD-002:** Add a persistent business-profile configuration with a safe
   migration that assigns `retail` to every existing database.
-- [ ] **MOD-003:** Add static, per-application backend manifests declaring shared
+- [x] **MOD-003:** Add static, per-application backend manifests declaring shared
   capabilities, app-owned routers, model imports, migrations, and metadata.
-- [ ] **MOD-004:** Ensure all registered models are imported for SQLAlchemy
+- [x] **MOD-004:** Ensure all registered models are imported for SQLAlchemy
   metadata discovery and included in packaged builds.
-- [ ] **MOD-005:** Add a typed `GET /api/v1/app-config` contract returning the app
+- [x] **MOD-005:** Add a typed `GET /api/v1/app-config` contract returning the app
   identity, profile, enabled capabilities, branding, shared-package versions,
   and application/schema versions.
-- [ ] **MOD-006:** Add backend capability dependencies/guards and apply them to
+- [x] **MOD-006:** Add backend capability dependencies/guards and apply them to
   module-only endpoints.
-- [ ] **MOD-007:** Define profile-change rules. Prevent unsafe direct switching
+- [x] **MOD-007:** Define profile-change rules. Prevent unsafe direct switching
   after transactional data exists and provide a future conversion seam.
-- [ ] **MOD-008:** Integrate profile/module entitlements with licensing while
+- [x] **MOD-008:** Integrate profile/module entitlements with licensing while
   preserving offline-safe startup and existing licenses.
-- [ ] **MOD-009:** Add tests proving disabled module endpoints cannot be accessed
+- [x] **MOD-009:** Add tests proving disabled module endpoints cannot be accessed
   directly and existing retail endpoints remain available.
-- [ ] **MOD-010:** Document the source of truth: backend configuration and license
+- [x] **MOD-010:** Document the source of truth: backend configuration and license
   determine capability access; frontend configuration controls presentation only.
-- [ ] **MOD-011:** Define shared service interfaces for customer identity,
+- [x] **MOD-011:** Define shared service interfaces for customer identity,
   payments, invoice rendering, printing, reporting, permissions, and audit
   logging without forcing app-specific tables into one universal schema.
-- [ ] **MOD-012:** Add typed business customer-profile tables only in the owning
+- [x] **MOD-012:** Add typed business customer-profile tables only in the owning
   app/module; do not add their fields to the common customer table.
-- [ ] **MOD-013:** Define shared package compatibility/version metadata and fail
+- [x] **MOD-013:** Define shared package compatibility/version metadata and fail
   startup/build clearly when an application requests an incompatible version.
 
 ### Exit gate
@@ -778,6 +778,9 @@ Add one row whenever a task or phase is completed or blocked.
 | 2026-09-25 | Phase 1 | Awaiting manual verification | Added ordered migrations, validated pre-upgrade backups, fail-closed recovery, integrity checks, and isolated disposable migration tests | 13 backend tests pass; Python compile passes; frontend build passes; temporary PyInstaller build includes migration modules; `git diff --check` passes | Owner completes the Phase 1 checklist in `phases.md`; do not begin Phase 1B before approval |
 | 2026-09-25 | Phase 1 approval | Complete | Owner completed the migration backup, idempotence, recovery, and totals checklist | Explicit owner approval in the Codex task | Begin Phase 1B only |
 | 2026-09-25 | Phase 1B | Awaiting manual verification | Added explicit SQLite/PostgreSQL/MySQL providers, portable reporting, migration locks, native backup adapters, guarded verified transfer, model portability fixes, packaging drivers, and CI conformance | SQLite suite passes; 11 PostgreSQL 16 and 11 MySQL 8.4 conformance tests pass; direct startup passes on all providers; provider-aware PyInstaller build passes | Owner completes the Phase 1B checklist in `phases.md`; do not begin Phase 2 before approval |
+| 2026-09-26 | Phase 1B approval | Complete | Owner completed the database provider, backup/restore, transfer, and packaged connectivity checklist | Explicit owner approval in the Codex task | Begin Phase 2 only |
+| 2026-09-26 | Phase 2 | In progress | Started backend-authoritative app manifests, business profiles, and capability enforcement | Work in progress | Complete the Phase 2 automated gate before manual verification |
+| 2026-09-26 | Phase 2 | Awaiting manual verification | Added the retail manifest, persistent retail profile, typed app-config contract, capability/license enforcement, profile-switch safety, shared service contracts, and compatibility validation | 34 backend tests pass; Python compile passes; frontend build passes; temporary frozen backend starts and serves app-config; lint remains at the recorded 131-error/80-warning baseline | Owner completes the Phase 2 checklist in `phases.md`; do not begin Phase 3 before approval |
 
 ## Open questions
 

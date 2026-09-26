@@ -21,11 +21,11 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 
 | Field | Value |
 | --- | --- |
-| Active phase | Phase 1B — Database connector and provider portability |
+| Active phase | Phase 2 — App manifests, profiles, and capabilities |
 | Status | Awaiting manual verification |
-| Started | 2026-09-25 |
-| Owner approval | Pending Phase 1B manual verification |
-| Production database changes | Provider layer and verified transfer tooling only |
+| Started | 2026-09-26 |
+| Owner approval | Pending Phase 2 manual verification |
+| Production database changes | Additive business configuration and retail-profile default only |
 
 ## Phase sequence
 
@@ -33,8 +33,8 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 | --- | --- | --- | --- |
 | 0 | Architecture decisions, boundary inventory, and retail characterization baseline | Approved | Phase 1 |
 | 1 | Safe ordered migration runner, pre-migration backup, and recovery behavior | Approved | Phase 1B |
-| 1B | SQLite/PostgreSQL/MySQL connector and provider conformance layer | Awaiting manual verification | Phase 2 |
-| 2 | Application manifests, business profiles, and capability enforcement | Not started | Phase 3 |
+| 1B | SQLite/PostgreSQL/MySQL connector and provider conformance layer | Approved | Phase 2 |
+| 2 | Application manifests, business profiles, and capability enforcement | Awaiting manual verification | Phase 3 |
 | 3 | Shared capability boundaries and retail transaction services | Not started | Phase 4 |
 | 4 | Frontend composition, registries, and independent application shells | Not started | Phase 5 |
 | 5 | Auto-workshop application/module | Not started | Phase 6 or release |
@@ -118,11 +118,37 @@ Implementation and automated evidence: [Phase 1B verification record](docs/archi
 
 Owner manual verification:
 
-- [ ] Existing installations open the original SQLite database without new configuration.
-- [ ] Unavailable server databases fail visibly with credentials redacted and no fallback.
-- [ ] Provider-native backup and restore pass in a maintenance window.
-- [ ] A disposable SQLite copy transfers to PostgreSQL and MySQL with matching totals.
-- [ ] Packaged supported-OS/provider combinations connect successfully.
+- [x] Existing installations open the original SQLite database without new configuration.
+- [x] Unavailable server databases fail visibly with credentials redacted and no fallback.
+- [x] Provider-native backup and restore pass in a maintenance window.
+- [x] A disposable SQLite copy transfers to PostgreSQL and MySQL with matching totals.
+- [x] Packaged supported-OS/provider combinations connect successfully.
+
+Approval record:
+
+| Field | Value |
+| --- | --- |
+| Decision | Approved |
+| Approved by | Owner |
+| Approval date | 2026-09-26 |
+| Notes | Phase 1B manually verified; begin Phase 2. |
+
+## Phase 2 — App manifests, profiles, and capabilities
+
+Manual focus: verify existing installations become retail automatically, retail
+screens remain unchanged, and disabled application capabilities are blocked by
+the backend.
+
+Implementation and automated evidence: [Phase 2 verification record](docs/architecture/phase-2-verification.md).
+
+Owner manual verification:
+
+- [ ] An upgraded existing installation opens as `retail` with its original data and branding.
+- [ ] Existing retail navigation and core transaction screens remain unchanged.
+- [ ] `/api/v1/app-config` reports the expected identity, profile, branding, versions, and capabilities.
+- [ ] A capability disabled by a test license returns HTTP 403 on direct endpoint access.
+- [ ] Profile selection works on an empty disposable database and is blocked after transactions exist.
+- [ ] An existing entitlement-free license cache continues to work offline.
 
 Approval record:
 
@@ -132,12 +158,6 @@ Approval record:
 | Approved by | — |
 | Approval date | — |
 | Notes | — |
-
-## Phase 2 — App manifests, profiles, and capabilities
-
-Manual focus: verify existing installations become retail automatically, retail
-screens remain unchanged, and disabled application capabilities are blocked by
-the backend.
 
 ## Phase 3 — Transaction and shared-capability boundaries
 

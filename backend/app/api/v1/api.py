@@ -1,21 +1,8 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, vendors, products, purchases, sales, files, reports, whatsapp, customers, returns, backup, accounting, hold_sales, hold_purchases, settings, stock_audit
+
+from app.api.v1.endpoints import app_config
+from app.platform.manifests import get_active_manifest, register_manifest_routers
 
 api_router = APIRouter()
-api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-api_router.include_router(users.router, prefix="/users", tags=["users"])
-api_router.include_router(customers.router, prefix="/customers", tags=["customers"])
-api_router.include_router(vendors.router, prefix="/vendors", tags=["vendors"])
-api_router.include_router(products.router, prefix="/products", tags=["products"])
-api_router.include_router(purchases.router, prefix="/purchases", tags=["purchases"])
-api_router.include_router(sales.router, prefix="/sales", tags=["sales"])
-api_router.include_router(hold_sales.router, prefix="/hold-sales", tags=["hold-sales"])
-api_router.include_router(hold_purchases.router, prefix="/hold-purchases", tags=["hold-purchases"])
-api_router.include_router(returns.router, prefix="/returns", tags=["returns"])
-api_router.include_router(accounting.router, prefix="/accounting", tags=["accounting"])
-api_router.include_router(files.router, tags=["files"])
-api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
-api_router.include_router(whatsapp.router, tags=["whatsapp"])
-api_router.include_router(backup.router, prefix="/backup", tags=["backup"])
-api_router.include_router(settings.router, prefix="/settings", tags=["settings"])
-api_router.include_router(stock_audit.router, prefix="/stock-audit", tags=["stock-audit"])
+api_router.include_router(app_config.router, prefix="/app-config", tags=["app-config"])
+register_manifest_routers(api_router, get_active_manifest())

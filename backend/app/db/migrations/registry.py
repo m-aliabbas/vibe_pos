@@ -5,10 +5,14 @@ import inspect
 import re
 import sqlite3
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
 
 
 MigrationCallable = Callable[[sqlite3.Connection], None]
+SQLAlchemyMigrationCallable = Callable[["Connection"], None]
 
 
 @dataclass(frozen=True)
@@ -17,10 +21,22 @@ class Migration:
     description: str
     apply: MigrationCallable
     supported_providers: tuple[str, ...] = ("sqlite",)
+    apply_sqlalchemy: SQLAlchemyMigrationCallable | None = None
+    declared_checksum: str | None = None
 
     @property
     def checksum(self) -> str:
+        if self.declared_checksum is not None:
+            return self.declared_checksum
+        return self.source_checksum()
+
+    def source_checksum(self) -> str:
+        """Calculate a development-time checksum; source is absent when frozen."""
         source = inspect.getsource(self.apply).encode("utf-8")
+        if self.apply_sqlalchemy is not None:
+            source += b"\n--sqlalchemy--\n" + inspect.getsource(
+                self.apply_sqlalchemy
+            ).encode("utf-8")
         return hashlib.sha256(source).hexdigest()
 
 
@@ -90,16 +106,62 @@ def migrate_startup_column_additions(connection: sqlite3.Connection) -> None:
             _add_column_if_missing(connection, table, column, definition)
 
 
+def migrate_retail_business_configuration(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS business_configuration (
+            id INTEGER PRIMARY KEY,
+            application_id VARCHAR(255) NOT NULL DEFAULT 'retail',
+            profile_id VARCHAR(255) NOT NULL DEFAULT 'retail',
+            enabled_modules_json TEXT NOT NULL DEFAULT '[]'
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO business_configuration
+            (id, application_id, profile_id, enabled_modules_json)
+        VALUES (1, 'retail', 'retail', '[]')
+        """
+    )
+
+
+def migrate_retail_business_configuration_sqlalchemy(connection) -> None:
+    from sqlalchemy import text
+
+    existing = connection.execute(
+        text("SELECT id FROM business_configuration WHERE id = 1")
+    ).first()
+    if existing is None:
+        connection.execute(
+            text(
+                "INSERT INTO business_configuration "
+                "(id, application_id, profile_id, enabled_modules_json) "
+                "VALUES (1, 'retail', 'retail', '[]')"
+            )
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         migration_id="0001_legacy_schema_baseline",
         description="Baseline legacy product schema additions",
         apply=establish_legacy_baseline,
+        declared_checksum="a2534de63ad44603b27f64ea47c4b7984f510a91e3d1c0a7b532e4fa4412774f",
     ),
     Migration(
         migration_id="0002_startup_column_additions",
         description="Version the schema columns formerly added during import",
         apply=migrate_startup_column_additions,
+        declared_checksum="f76e485a82389fea6c4d833608029fd2948b2a994f0866cfe2834f7df2a1ea59",
+    ),
+    Migration(
+        migration_id="0003_retail_business_configuration",
+        description="Persist the retail application and business-profile default",
+        apply=migrate_retail_business_configuration,
+        supported_providers=("sqlite", "postgresql", "mysql"),
+        apply_sqlalchemy=migrate_retail_business_configuration_sqlalchemy,
+        declared_checksum="11c0a106435d7eabb984e3f526c7830cc20560b16020dbf48ab389f0f616c16b",
     ),
 )
 

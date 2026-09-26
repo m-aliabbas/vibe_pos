@@ -16,6 +16,12 @@ from firebase_admin import credentials, firestore, initialize_app
 from firebase_admin.exceptions import FirebaseError
 
 from app.core.config import settings
+from app.platform.identifiers import ApplicationId
+from app.platform.licensing import (
+    LicenseEntitlements,
+    entitlements_from_payload,
+    set_active_entitlements,
+)
 
 
 class LicenseError(RuntimeError):
@@ -163,7 +169,47 @@ def _load_local_license_cache(expected_fingerprint: str) -> Optional[dict]:
     return payload
 
 
-def _save_local_license_cache(fingerprint: str, expires_at: Optional[datetime]) -> None:
+def _entitlements_payload(entitlements: LicenseEntitlements) -> dict:
+    return {
+        "application_id": (
+            entitlements.application_id.value if entitlements.application_id else None
+        ),
+        "profiles": (
+            sorted(item.value for item in entitlements.profiles)
+            if entitlements.profiles is not None
+            else None
+        ),
+        "modules": (
+            sorted(item.value for item in entitlements.modules)
+            if entitlements.modules is not None
+            else None
+        ),
+        "capabilities": (
+            sorted(item.value for item in entitlements.capabilities)
+            if entitlements.capabilities is not None
+            else None
+        ),
+    }
+
+
+def _activate_entitlements(payload: dict) -> LicenseEntitlements:
+    try:
+        entitlements = entitlements_from_payload(payload.get("entitlements") or payload)
+    except (TypeError, ValueError) as exc:
+        raise LicenseError(f"License contains invalid application entitlements: {exc}") from exc
+    if entitlements.application_id not in (None, ApplicationId.RETAIL):
+        raise LicenseError(
+            f"License is for application {entitlements.application_id.value!r}, not 'retail'"
+        )
+    set_active_entitlements(entitlements)
+    return entitlements
+
+
+def _save_local_license_cache(
+    fingerprint: str,
+    expires_at: Optional[datetime],
+    entitlements: LicenseEntitlements,
+) -> None:
     key = _get_license_cache_key()
     if not key:
         return
@@ -176,6 +222,7 @@ def _save_local_license_cache(fingerprint: str, expires_at: Optional[datetime]) 
         "approved": True,
         "expires_at": expires_at.isoformat() if isinstance(expires_at, datetime) else None,
         "cached_at": datetime.now(timezone.utc).isoformat(),
+        "entitlements": _entitlements_payload(entitlements),
     }
 
     try:
@@ -269,6 +316,7 @@ def _is_expired(expires_at: Optional[datetime]) -> bool:
 
 def check_license_or_exit() -> str:
     if not settings.LICENSE_ENFORCEMENT:
+        set_active_entitlements(LicenseEntitlements())
         return "license-check-skipped"
 
     fingerprint = get_device_fingerprint()
@@ -276,6 +324,7 @@ def check_license_or_exit() -> str:
     print("🔐 Doing local license verification...")
     cached = _load_local_license_cache(fingerprint)
     if cached and cached.get("approved") is True:
+        _activate_entitlements(cached)
         print("✅ Local license verification approved")
         return fingerprint
 
@@ -331,10 +380,12 @@ def check_license_or_exit() -> str:
     if _is_expired(expires_at if isinstance(expires_at, datetime) else None):
         raise LicenseError("License expired for this device")
 
+    entitlements = _activate_entitlements(data)
+
     _save_local_license_cache(
         fingerprint,
         expires_at if isinstance(expires_at, datetime) else None,
+        entitlements,
     )
 
     return fingerprint
-
