@@ -22,7 +22,7 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 | Field | Value |
 | --- | --- |
 | Active phase | Phase 4 — Frontend composition and application shells |
-| Status | Awaiting manual verification |
+| Status | Approved |
 | Started | 2026-09-26 |
 | Owner approval | Phase 3 approved by owner on 2026-09-26 |
 | Production database changes | Additive `products.item_type`; existing rows default to `stock` |
@@ -36,7 +36,7 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 | 1B | SQLite/PostgreSQL/MySQL connector and provider conformance layer | Approved | Phase 2 |
 | 2 | Application manifests, business profiles, and capability enforcement | Approved | Phase 3 |
 | 3 | Shared capability boundaries and retail transaction services | Approved | Phase 4 |
-| 4 | Frontend composition, registries, and independent application shells | In progress | Phase 5 |
+| 4 | Frontend composition, registries, and independent application shells | Approved | Phase 5 |
 | 5 | Auto-workshop application/module | Not started | Phase 6 or release |
 | 6 | Restaurant application/module | Not started | Restaurant release |
 | 7 | Clothing profile/module | Not started | Clothing release |
@@ -214,9 +214,10 @@ imports. Focused lint, boundary tests (2/2), boundary scan, production build
 (27 routes), and `git diff --check` pass. Repository-wide lint still reports
 existing findings in legacy pages.
 
-The owner confirmed on 2026-09-26 that the remaining retail Phase 4 manual checks
-passed, including cart quantity/discount/totals, payment/checkout/hold,
-receipt/report regression, accessibility, and loading/error/empty states.
+The owner confirmed on 2026-09-26 that Phase 4 manual verification is complete,
+including retail cart/payment/checkout/hold, receipt/report regression,
+accessibility/loading/error/empty states, and the independent app target,
+identity, data-isolation, and first-admin checks.
 Independent app isolation is now implemented: workshop/restaurant manifests and
 profiles, app-scoped writable data roots, fail-closed application identity
 migration, separate Tauri identifiers/config overlays/build scripts, shared
@@ -224,16 +225,22 @@ migration, separate Tauri identifiers/config overlays/build scripts, shared
 shells, and one-time independent-app administrator bootstrap.
 
 Automated backend compilation, migration/data-path tests, frontend target and
-boundary tests, focused lint, production build, and `git diff --check` pass.
-Owner verification remains for building/installing each native Tauri target,
-checking reported application IDs/data directories, first-admin bootstrap and
-repeat refusal, and confirming retail still opens its original database. Native
-Cargo compilation could not run because `cargo`/`rustc` are unavailable here;
-full FastAPI integration tests could not run because FastAPI is missing from the
-active Python environment. A retail startup regression found during owner-side
-testing was fixed by exporting the standardized `MANIFEST` alias while retaining
-`RETAIL_MANIFEST`; isolated full-app startup probes now pass for all three app
-IDs with temporary data roots.
+boundary tests, focused lint, production build, and `git diff --check` pass. The
+native Cargo build was not available in this environment because `cargo`/`rustc`
+are absent; the owner confirmed the packaged target checks manually. Full FastAPI
+integration tests were not run here because FastAPI was absent from the default
+Python shell, but the owner-side backend logs confirm retail startup and
+transactions work. The retail manifest export regression was fixed and isolated
+startup probes pass for all three app IDs with temporary data roots.
+
+Approval record:
+
+| Field | Value |
+| --- | --- |
+| Decision | Approved |
+| Approved by | Owner |
+| Approval date | 2026-09-26 |
+| Notes | Owner confirmed all Phase 4 manual and independent-target verification is complete. |
 
 ## Phase 5 — Auto workshop
 

@@ -168,7 +168,7 @@ Working rules:
 | 1B | Database connector and provider portability | Phase 1 | Approved |
 | 2 | Platform capabilities, app manifests, and profiles | Phase 1B | Approved |
 | 3 | Shared capability and business-transaction boundaries | Phase 2 | Approved |
-| 4 | Frontend composition and application shells | Phases 2-3 | Awaiting manual verification |
+| 4 | Frontend composition and application shells | Phases 2-3 | Approved |
 | 5 | Auto workshop proof application/module | Phase 4 | Not started |
 | 6 | Restaurant application/module | Phase 5 lessons applied | Not started |
 | 7 | Clothing profile/module | Phase 4 | Not started |
@@ -511,7 +511,7 @@ UI intact.
 - [x] **UI-010:** Compose customer forms from a shared common-information section
   and an app-owned profile section; do not make the common customer form aware
   of every business type.
-- [?] **UI-011:** Where Phase 0 selects independent products, create separate app
+- [x] **UI-011:** Where Phase 0 selects independent products, create separate app
   shells/entry points with independent navigation, branding, Tauri identifiers,
   data directories, and build targets.
 - [x] **UI-012:** Add import-boundary checks so one business application cannot
@@ -528,11 +528,11 @@ application ID. All targets keep ports 4321/8000 and `pos.local`, as only one is
 expected to run at a time. Each target has its own frontend shell and one-time
 first-admin setup; retail cannot access that bootstrap route.
 
-Owner verification: build/install both targets, confirm app-config identity and
-data paths, bootstrap one admin per independent app and verify subsequent setup
-is rejected, then confirm retail still opens the original database. Native
-Tauri builds and full backend integration tests could not run in this environment
-because Cargo/Rust and FastAPI dependencies are unavailable.
+Owner verification was completed on 2026-09-26: both independent targets,
+application identities and data paths, one-time admin setup/rejection, and the
+retail database upgrade path were confirmed. Native Cargo compilation was not
+available in the agent environment; the owner completed the packaged-target
+manual checks.
 
 ### Exit gate
 
@@ -826,6 +826,7 @@ Add one row whenever a task or phase is completed or blocked.
 | 2026-09-26 | Phase 4 | Blocked | Owner confirmed the remaining Phase 4 manual checks passed, including retail navigation/workflows/receipts/reports, cart/payment/hold, keyboard/accessibility, and empty/loading/error states | Owner confirmation in the current task; automated frontend build, focused lint, boundary tests, boundary scan, and `git diff --check` pass; full repository lint retains legacy findings | UI-011 must be completed before Phase 4 can be approved: backend app manifests and per-app data/sidecar/build isolation are not implemented |
 | 2026-09-26 | Phase 4 | Awaiting manual verification | Implemented independent workshop/restaurant manifests, same-port app targets, per-app writable data roots with retail-only legacy migration/seeding, one-time admin setup, and distinct Tauri configs/build commands | Backend compile; migration tests 8/8; data-path tests 2/2; SQLite identity migration probe; frontend target tests 3/3; boundary tests 2/2 and scan; focused lint; Next build 29 routes all pass. Cargo/Rust and full FastAPI integration tests unavailable | Owner builds/installs both Tauri targets and confirms app identity, data isolation, bootstrap behavior, and unchanged retail database access before Phase 4 approval |
 | 2026-09-26 | Phase 4 | Awaiting manual verification | Fixed retail launcher failure caused by the selector expecting `MANIFEST` while retail exported `RETAIL_MANIFEST`; retained the legacy export and added the standard alias | Platform/migration/data-isolation tests: 28 passed; disposable full-app startup probes pass for retail, workshop, and restaurant with isolated temp data roots; backend compile passes | Owner continues native target installation/data-path verification; Cargo/Rust unavailable in current shell |
+| 2026-09-26 | Phase 4 approval | Complete | Owner confirmed all Phase 4 manual checks, including independent target identity/data/bootstrap isolation, and approved the phase | Explicit owner confirmation in the current task; frontend build and boundary suites pass; backend migration/data-path tests and isolated startup probes pass; native Cargo build unavailable in agent environment | Phase 4 approved; next phase may begin |
 | 2026-09-26 | Phase 2 approval | Complete | Owner confirmed completion of the Phase 2 manual checklist and approved the phase | Explicit owner confirmation in the current task | Begin Phase 3 only |
 | 2026-09-26 | Phase 3 | In progress | Started shared capability and retail transaction-boundary extraction | Work in progress | Complete the Phase 3 automated gate before manual verification |
 
