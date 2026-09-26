@@ -639,6 +639,66 @@ export default function SalesTerminal() {
     [fetchHeldSales]
   );
 
+  const saveQuotation = useCallback(async (sendToCustomer = false) => {
+    if (cart.length === 0) {
+      alert("Cart is empty");
+      return;
+    }
+
+    const { label, payload } = buildHoldRequest({
+      cart,
+      customerId,
+      customerPhone,
+      customerName,
+      selectedCustomer,
+      paymentMethod,
+      discount,
+      tax,
+      deliveryCharges,
+      amountPaid,
+    });
+    const quotationPayload = { ...payload, kind: "quotation" };
+    if (sendToCustomer && !customerPhone.trim()) {
+      alert("Enter the customer's WhatsApp number before sending");
+      return;
+    }
+
+    try {
+      await holdSalesApi.create({ label: `Quotation • ${label}`, payload: quotationPayload });
+      if (sendToCustomer) {
+        await api.post("/sales/send-quotation", {
+          phone_number: customerPhone.trim(),
+          customer_name: customerName.trim() || undefined,
+          items: quotationPayload.cart,
+          discount,
+          tax,
+          delivery_charges: deliveryCharges,
+        });
+      }
+      setEstimateOpen(false);
+      clearCart();
+      fetchHeldSales();
+      alert(sendToCustomer ? "Quotation saved and sent" : "Quotation saved");
+    } catch (error) {
+      console.error("Failed to save quotation:", error);
+      alert(sendToCustomer ? "Failed to save or send quotation" : "Failed to save quotation");
+    }
+  }, [
+    cart,
+    customerId,
+    customerPhone,
+    customerName,
+    selectedCustomer,
+    paymentMethod,
+    discount,
+    tax,
+    deliveryCharges,
+    amountPaid,
+    buildHoldRequest,
+    clearCart,
+    fetchHeldSales,
+  ]);
+
   const resumeHeldSale = useCallback(
     async (hold: HoldSaleResponse) => {
       const payload = hold.payload;
@@ -1957,6 +2017,13 @@ export default function SalesTerminal() {
             grandTotal={calculateTotal() + (selectedCustomer?.outstanding_balance || 0)}
             onCheckout={handleCheckout}
             onHold={() => void holdCurrentSale()}
+            onQuotation={() => {
+              if (cart.length === 0) {
+                alert("Cart is empty!");
+                return;
+              }
+              setEstimateOpen(true);
+            }}
           />
           <ModuleUiContributionSlot slot="retail.pos.cart-summary" />
         </div>
@@ -2692,9 +2759,27 @@ export default function SalesTerminal() {
             </div>
           </div>
 
+          <div className="space-y-1 px-1">
+            <Label htmlFor="quotation-phone" className="text-xs">
+              Customer WhatsApp number (for &quot;Save &amp; Send&quot;)
+            </Label>
+            <Input
+              id="quotation-phone"
+              placeholder="03xxxxxxxxx"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+            />
+          </div>
+
           <DialogFooter className="border-t pt-3 gap-2">
             <Button variant="outline" onClick={() => setEstimateOpen(false)}>
               Close
+            </Button>
+            <Button variant="outline" onClick={() => void saveQuotation(false)}>
+              Save Quotation
+            </Button>
+            <Button onClick={() => void saveQuotation(true)}>
+              Save &amp; Send
             </Button>
             <Button onClick={() => {
               const printArea = document.getElementById('estimate-print-area');

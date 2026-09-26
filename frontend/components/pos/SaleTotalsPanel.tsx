@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { DollarSign } from 'lucide-react';
+import { DollarSign, FileText } from 'lucide-react';
 
 interface SaleTotalsPanelProps {
     totalQuantity: number;
@@ -14,6 +14,7 @@ interface SaleTotalsPanelProps {
     grandTotal: number;
     onCheckout: () => void;
     onHold: () => void;
+    onQuotation?: () => void;
 }
 
 export function SaleTotalsPanel({
@@ -27,6 +28,7 @@ export function SaleTotalsPanel({
     grandTotal,
     onCheckout,
     onHold,
+    onQuotation,
 }: SaleTotalsPanelProps) {
     return (
         <div className="border-t bg-gray-50 overflow-y-auto" style={{ flex: 1, minHeight: 110 }}>
@@ -87,6 +89,16 @@ export function SaleTotalsPanel({
                     >
                         Hold (Ctrl+H)
                     </Button>
+                    {onQuotation && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full text-xs"
+                            onClick={onQuotation}
+                        >
+                            <FileText className="h-3.5 w-3.5 mr-1 shrink-0" />Quotation (Ctrl+E)
+                        </Button>
+                    )}
                 </div>
             </div>
         </div>

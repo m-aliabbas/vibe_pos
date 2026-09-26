@@ -31,6 +31,8 @@ RETAIL_PROFILE_CAPABILITIES = frozenset(
         CapabilityId.RETAIL_RETURNS,
         CapabilityId.RETAIL_ACCOUNTING,
         CapabilityId.RETAIL_HOLDS,
+        CapabilityId.RETAIL_EXPENSES,
+        CapabilityId.RETAIL_CASH_REGISTER,
         CapabilityId.BACKUP,
         CapabilityId.FILES,
         CapabilityId.MESSAGING,

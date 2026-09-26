@@ -26,6 +26,119 @@ api.interceptors.request.use((config) => {
 
 export default api;
 
+export type InvoiceFormat = 'compact' | 'professional' | 'mobile';
+export type InvoiceDesign = 'classic' | 'modern' | 'minimal';
+
+export interface StoreSettings {
+    id: number;
+    store_name: string;
+    store_address: string;
+    store_city: string;
+    store_phone: string;
+    store_email: string;
+    store_tax_id: string;
+    store_website: string;
+    cash_register_enabled: boolean;
+    logo_url: string | null;
+    default_print_format: InvoiceFormat;
+    default_whatsapp_format: InvoiceFormat;
+    default_print_design: InvoiceDesign;
+    default_whatsapp_design: InvoiceDesign;
+    invoice_show_tax_id: boolean;
+    invoice_show_cashier: boolean;
+    invoice_show_sku: boolean;
+    invoice_show_customer_balance: boolean;
+    invoice_footer_message: string;
+    invoice_terms: string;
+}
+
+export type StoreSettingsUpdate = Omit<StoreSettings, 'id' | 'logo_url'>;
+
+export const storeSettingsApi = {
+    get: async (): Promise<StoreSettings> => {
+        const response = await api.get('/settings/store');
+        return response.data;
+    },
+    update: async (payload: StoreSettingsUpdate): Promise<StoreSettings> => {
+        const response = await api.put('/settings/store', payload);
+        return response.data;
+    },
+    uploadLogo: async (file: File): Promise<StoreSettings> => {
+        const body = new FormData();
+        body.append('file', file);
+        const response = await api.put('/settings/logo', body);
+        return response.data;
+    },
+    deleteLogo: async (): Promise<StoreSettings> => {
+        const response = await api.delete('/settings/logo');
+        return response.data;
+    },
+};
+
+export interface WhatsAppReportSettings {
+    owner_number: string;
+    daily_report_enabled: boolean;
+    daily_report_time: string;
+    last_daily_report_date: string | null;
+}
+
+export type WhatsAppReportSettingsUpdate = Omit<WhatsAppReportSettings, 'last_daily_report_date'>;
+
+export const whatsappReportSettingsApi = {
+    get: async (): Promise<WhatsAppReportSettings> => {
+        const response = await api.get('/settings/whatsapp-reports');
+        return response.data;
+    },
+    update: async (payload: WhatsAppReportSettingsUpdate): Promise<WhatsAppReportSettings> => {
+        const response = await api.put('/settings/whatsapp-reports', payload);
+        return response.data;
+    },
+};
+
+// ============ CASH REGISTER (CASH DRAWER) API FUNCTIONS ============
+
+export interface CashRegisterSession {
+    id: number;
+    user_id: number;
+    username?: string | null;
+    opening_cash: number;
+    opened_at: string;
+    closing_cash?: number | null;
+    expected_cash?: number | null;
+    difference?: number | null;
+    closed_at?: string | null;
+    status: 'open' | 'closed';
+    notes?: string | null;
+}
+
+export interface CashRegisterStatus {
+    enabled: boolean;
+    session: CashRegisterSession | null;
+}
+
+export const cashRegisterApi = {
+    getStatus: async (): Promise<CashRegisterStatus> => {
+        const response = await api.get('/cash-register/status');
+        return response.data;
+    },
+    open: async (opening_cash: number): Promise<CashRegisterSession> => {
+        const response = await api.post('/cash-register/open', { opening_cash });
+        return response.data;
+    },
+    close: async (closing_cash: number, notes?: string): Promise<CashRegisterSession> => {
+        const response = await api.post('/cash-register/close', { closing_cash, notes });
+        return response.data;
+    },
+    getOpenSessions: async (): Promise<CashRegisterSession[]> => {
+        const response = await api.get('/cash-register/open-sessions');
+        return response.data;
+    },
+    getSessions: async (params?: { user_id?: number; start_date?: string; end_date?: string; limit?: number }): Promise<CashRegisterSession[]> => {
+        const response = await api.get('/cash-register/sessions', { params });
+        return response.data;
+    },
+};
+
 export type ApplicationId = 'retail' | 'workshop' | 'restaurant';
 export type ProfileId = 'retail' | 'clothing-retail' | 'milk-counter-retail' | 'workshop' | 'restaurant';
 export type ModuleId = 'workshop' | 'restaurant' | 'clothing' | 'milk';
@@ -598,6 +711,18 @@ export interface AnalyticsCustomer {
     outstanding_amount: number;
 }
 
+export interface AnalyticsUserSale {
+    user_id: number;
+    username: string;
+    role: string;
+    transaction_count: number;
+    total_revenue: number;
+    items_sold: number;
+    average_transaction: number;
+    cash_register_status?: string | null;
+    cash_on_hand?: number | null;
+}
+
 export interface AnalyticsOverviewReport {
     period_start: string;
     period_end: string;
@@ -636,6 +761,7 @@ export interface AnalyticsOverviewReport {
     }>;
     outstanding_customers: AnalyticsCustomer[];
     top_customers: AnalyticsCustomer[];
+    staff_sales: AnalyticsUserSale[];
 }
 
 export const reportsApi = {

@@ -24,12 +24,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from '@/components/ui/badge';
+import { CashDrawerWidget } from '@/components/CashDrawerWidget';
 import {
   Store,
   User,
   LogOut,
   Menu,
   X,
+  Lock,
   Settings,
   Download,
 } from 'lucide-react';
@@ -44,6 +46,8 @@ export function Navbar() {
   const { config, hasCapability } = useAppConfig();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [cashDrawerRequestId, setCashDrawerRequestId] = useState(0);
+  const [cashDrawerEnabled, setCashDrawerEnabled] = useState(false);
 
   // Don't show navbar on login page
   if (pathname === '/login') return null;
@@ -109,6 +113,11 @@ export function Navbar() {
 
           {/* User Menu */}
           <div className="flex items-center space-x-4">
+            <CashDrawerWidget
+              requestId={cashDrawerRequestId}
+              hideTrigger
+              onEnabledChange={setCashDrawerEnabled}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2">
@@ -135,6 +144,12 @@ export function Navbar() {
                   <User className="mr-2 h-4 w-4" />
                   Profile
                 </DropdownMenuItem>
+                {cashDrawerEnabled && (
+                  <DropdownMenuItem onSelect={() => setCashDrawerRequestId((requestId) => requestId + 1)}>
+                    <Lock className="mr-2 h-4 w-4" />
+                    Cash Drawer
+                  </DropdownMenuItem>
+                )}
                 {user?.role === 'admin' && (
                   <>
                     <DropdownMenuItem onClick={() => router.push('/settings')}>

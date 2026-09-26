@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import AdminLayout from '@/components/AdminLayout';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -20,9 +22,21 @@ import {
     Clock,
     Store,
     Save,
+    MessageCircle,
+    Wallet,
+    FileText,
+    ImagePlus,
+    Trash2,
 } from 'lucide-react';
-import api from '@/lib/api';
-import { invoke } from '@tauri-apps/api/core';
+import api, { WhatsAppReportSettings, whatsappReportSettingsApi, cashRegisterApi, CashRegisterSession, InvoiceDesign, InvoiceFormat, storeSettingsApi } from '@/lib/api';
+import axios from 'axios';
+
+const getErrorMessage = (error: unknown, fallback: string): string => {
+    if (axios.isAxiosError(error)) {
+        return error.response?.data?.detail || error.message || fallback;
+    }
+    return error instanceof Error ? error.message : fallback;
+};
 
 interface DatabaseFile {
     path: string;
@@ -45,12 +59,37 @@ interface StoreSettingsForm {
     store_email: string;
     store_tax_id: string;
     store_website: string;
+    cash_register_enabled: boolean;
+    default_print_format: InvoiceFormat;
+    default_whatsapp_format: InvoiceFormat;
+    default_print_design: InvoiceDesign;
+    default_whatsapp_design: InvoiceDesign;
+    invoice_show_tax_id: boolean;
+    invoice_show_cashier: boolean;
+    invoice_show_sku: boolean;
+    invoice_show_customer_balance: boolean;
+    invoice_footer_message: string;
+    invoice_terms: string;
 }
+
+const invoiceFormats: Array<{ id: InvoiceFormat; title: string; description: string }> = [
+    { id: 'compact', title: 'Compact Receipt', description: 'Optimized for 80 mm thermal printers.' },
+    { id: 'professional', title: 'Professional Invoice', description: 'A4 document for formal billing and PDF sharing.' },
+    { id: 'mobile', title: 'Mobile Invoice', description: 'Easy-to-read layout for WhatsApp and phones.' },
+];
+
+const invoiceDesigns: Array<{ id: InvoiceDesign; title: string; description: string }> = [
+    { id: 'classic', title: 'Ledger', description: 'Refined monochrome typography for traditional retail billing.' },
+    { id: 'modern', title: 'Commerce', description: 'Brand-forward header, metadata cards, and clear payment states.' },
+    { id: 'minimal', title: 'Essential', description: 'Spacious hierarchy, subtle dividers, and low-ink printing.' },
+];
 
 const BackupRestorePage: React.FC = () => {
     const [dbFiles, setDbFiles] = useState<DatabaseFile[]>([]);
     const [backups, setBackups] = useState<BackupFile[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [backupLoading, setBackupLoading] = useState(false);
+    const [restoreLoading, setRestoreLoading] = useState(false);
+    const [restoreStatus, setRestoreStatus] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
     // Store settings state
@@ -62,9 +101,32 @@ const BackupRestorePage: React.FC = () => {
         store_email: '',
         store_tax_id: '',
         store_website: '',
+        cash_register_enabled: false,
+        default_print_format: 'compact',
+        default_whatsapp_format: 'mobile',
+        default_print_design: 'classic',
+        default_whatsapp_design: 'modern',
+        invoice_show_tax_id: true,
+        invoice_show_cashier: true,
+        invoice_show_sku: false,
+        invoice_show_customer_balance: true,
+        invoice_footer_message: 'Thank you for your business!',
+        invoice_terms: 'Return and exchange accepted with invoice.',
     });
     const [storeLoading, setStoreLoading] = useState(false);
+    const [openCashSessions, setOpenCashSessions] = useState<CashRegisterSession[]>([]);
+    const [cashSessionsLoading, setCashSessionsLoading] = useState(false);
     const [storeMessage, setStoreMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [logoUrl, setLogoUrl] = useState<string | null>(null);
+    const [logoLoading, setLogoLoading] = useState(false);
+    const [whatsAppForm, setWhatsAppForm] = useState<WhatsAppReportSettings>({
+        owner_number: '',
+        daily_report_enabled: false,
+        daily_report_time: '09:00',
+        last_daily_report_date: null,
+    });
+    const [whatsAppLoading, setWhatsAppLoading] = useState(false);
+    const [whatsAppMessage, setWhatsAppMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const fetchStoreSettings = async () => {
         try {
@@ -78,9 +140,50 @@ const BackupRestorePage: React.FC = () => {
                 store_email: d.store_email || '',
                 store_tax_id: d.store_tax_id || '',
                 store_website: d.store_website || '',
+                cash_register_enabled: Boolean(d.cash_register_enabled),
+                default_print_format: d.default_print_format || 'compact',
+                default_whatsapp_format: d.default_whatsapp_format || 'mobile',
+                default_print_design: d.default_print_design || 'classic',
+                default_whatsapp_design: d.default_whatsapp_design || 'modern',
+                invoice_show_tax_id: d.invoice_show_tax_id !== false,
+                invoice_show_cashier: d.invoice_show_cashier !== false,
+                invoice_show_sku: Boolean(d.invoice_show_sku),
+                invoice_show_customer_balance: d.invoice_show_customer_balance !== false,
+                invoice_footer_message: d.invoice_footer_message || '',
+                invoice_terms: d.invoice_terms ?? '',
             });
+            setLogoUrl(d.logo_url ? `/api/v1${d.logo_url}?v=${Date.now()}` : null);
         } catch {
             // not critical
+        }
+    };
+
+    const handleLogoUpload = async (file?: File) => {
+        if (!file) return;
+        setLogoLoading(true);
+        setStoreMessage(null);
+        try {
+            const updated = await storeSettingsApi.uploadLogo(file);
+            setLogoUrl(updated.logo_url ? `/api/v1${updated.logo_url}?v=${Date.now()}` : null);
+            setStoreMessage({ type: 'success', text: 'Business logo uploaded successfully.' });
+        } catch (error: unknown) {
+            setStoreMessage({ type: 'error', text: getErrorMessage(error, 'Failed to upload logo.') });
+        } finally {
+            setLogoLoading(false);
+        }
+    };
+
+    const handleLogoDelete = async () => {
+        setLogoLoading(true);
+        setStoreMessage(null);
+        try {
+            await storeSettingsApi.deleteLogo();
+            setLogoUrl(null);
+            setStoreMessage({ type: 'success', text: 'Business logo removed.' });
+        } catch (error: unknown) {
+            setStoreMessage({ type: 'error', text: getErrorMessage(error, 'Failed to remove logo.') });
+        } finally {
+            setLogoLoading(false);
         }
     };
 
@@ -90,10 +193,47 @@ const BackupRestorePage: React.FC = () => {
         try {
             await api.put('/settings/store', storeForm);
             setStoreMessage({ type: 'success', text: 'Store information saved successfully!' });
-        } catch (err: any) {
-            setStoreMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to save.' });
+        } catch (error: unknown) {
+            setStoreMessage({ type: 'error', text: getErrorMessage(error, 'Failed to save.') });
         } finally {
             setStoreLoading(false);
+        }
+    };
+
+    const fetchWhatsAppReportSettings = async () => {
+        try {
+            const data = await whatsappReportSettingsApi.get();
+            setWhatsAppForm({
+                owner_number: data.owner_number || '',
+                daily_report_enabled: Boolean(data.daily_report_enabled),
+                daily_report_time: data.daily_report_time || '09:00',
+                last_daily_report_date: data.last_daily_report_date || null,
+            });
+        } catch {
+            // The main settings screen remains usable if WhatsApp is unavailable.
+        }
+    };
+
+    const handleWhatsAppSave = async () => {
+        setWhatsAppLoading(true);
+        setWhatsAppMessage(null);
+        try {
+            const data = await whatsappReportSettingsApi.update({
+                owner_number: whatsAppForm.owner_number,
+                daily_report_enabled: whatsAppForm.daily_report_enabled,
+                daily_report_time: whatsAppForm.daily_report_time,
+            });
+            setWhatsAppForm({
+                owner_number: data.owner_number || '',
+                daily_report_enabled: Boolean(data.daily_report_enabled),
+                daily_report_time: data.daily_report_time || '09:00',
+                last_daily_report_date: data.last_daily_report_date || null,
+            });
+            setWhatsAppMessage({ type: 'success', text: 'WhatsApp owner and report schedule saved.' });
+        } catch (error: unknown) {
+            setWhatsAppMessage({ type: 'error', text: getErrorMessage(error, 'Failed to save WhatsApp settings.') });
+        } finally {
+            setWhatsAppLoading(false);
         }
     };
 
@@ -119,127 +259,124 @@ const BackupRestorePage: React.FC = () => {
         fetchDatabaseFiles();
         fetchBackups();
         fetchStoreSettings();
+        fetchWhatsAppReportSettings();
+        fetchOpenCashSessions();
     }, []);
 
-    const handleCreateBackup = async () => {
+    const fetchOpenCashSessions = async () => {
+        setCashSessionsLoading(true);
         try {
-            setLoading(true);
+            const sessions = await cashRegisterApi.getOpenSessions();
+            setOpenCashSessions(sessions);
+        } catch {
+            // Cash register endpoints may be unavailable on older backends.
+        } finally {
+            setCashSessionsLoading(false);
+        }
+    };
+
+    const handleCreateBackup = async () => {
+        let backupCreated = false;
+
+        try {
+            setBackupLoading(true);
             setMessage(null);
 
-            // Open save dialog
-            const savePath = await invoke<string | null>('save_backup_dialog');
-
-            if (!savePath) {
-                setLoading(false);
-                return; // User cancelled
-            }
-
-            // Create backup on backend
             const response = await api.post('/backup/create');
 
             if (response.data.success) {
-                // Download the backup file
+                backupCreated = true;
+                const filename = response.data.backup_filename;
                 const downloadResponse = await api.get(
-                    `/backup/download/${response.data.backup_filename}`,
+                    `/backup/download/${filename}`,
                     { responseType: 'blob' }
                 );
 
-                // Save to user-selected location
                 const blob = new Blob([downloadResponse.data], { type: 'application/zip' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = response.data.backup_filename;
+                a.download = filename;
                 document.body.appendChild(a);
                 a.click();
-                window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
+                window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 
                 setMessage({
                     type: 'success',
-                    text: `Backup created successfully! Saved to: ${savePath}`
+                    text: `Backup created and downloaded successfully: ${filename}`
                 });
-
-                fetchBackups();
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             setMessage({
                 type: 'error',
-                text: `Backup failed: ${error.response?.data?.detail || error.message}`
+                text: backupCreated
+                    ? `Backup was created on this POS, but the download failed: ${getErrorMessage(error, 'Unknown error')}`
+                    : `Backup failed: ${getErrorMessage(error, 'Unknown error')}`
             });
         } finally {
-            setLoading(false);
+            if (backupCreated) {
+                fetchBackups();
+            }
+            setBackupLoading(false);
         }
     };
 
-    const handleRestoreBackup = async () => {
-        try {
-            setLoading(true);
-            setMessage(null);
+    const handleRestoreBackup = () => {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.zip,application/zip';
 
-            // Open file dialog
-            const backupPath = await invoke<string | null>('open_backup_dialog');
+        fileInput.onchange = async (event: Event) => {
+            const file = (event.target as HTMLInputElement).files?.[0];
+            if (!file) return;
 
-            if (!backupPath) {
-                setLoading(false);
-                return; // User cancelled
-            }
-
-            // Confirm restoration
             const confirmed = window.confirm(
                 'Are you sure you want to restore from this backup?\n\n' +
                 'This will replace all current database files and the application will need to be restarted.\n\n' +
                 'Click OK to continue.'
             );
 
-            if (!confirmed) {
-                setLoading(false);
-                return;
-            }
+            if (!confirmed) return;
 
-            // Read the file
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = '.zip';
+            setRestoreLoading(true);
+            setRestoreStatus('Uploading backup...');
+            setMessage(null);
+            const formData = new FormData();
+            formData.append('file', file);
 
-            fileInput.onchange = async (e: any) => {
-                const file = e.target.files[0];
-                if (!file) return;
+            try {
+                const response = await api.post('/backup/restore', formData, {
+                    timeout: 60_000,
+                    onUploadProgress: (progressEvent) => {
+                        if (progressEvent.total) {
+                            const percent = Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100));
+                            setRestoreStatus(percent < 100 ? `Uploading backup... ${percent}%` : 'Applying backup...');
+                        }
+                    },
+                });
 
-                const formData = new FormData();
-                formData.append('file', file);
-
-                try {
-                    const response = await api.post('/backup/restore', formData, {
-                        headers: {
-                            'Content-Type': 'multipart/form-data',
-                        },
-                    });
-
-                    if (response.data.success) {
-                        setMessage({
-                            type: 'success',
-                            text: 'Backup restored successfully! Please restart the application for changes to take effect.'
-                        });
-                    }
-                } catch (error: any) {
+                if (response.data.success) {
                     setMessage({
-                        type: 'error',
-                        text: `Restore failed: ${error.response?.data?.detail || error.message}`
+                        type: 'success',
+                        text: 'Backup restored successfully! Please restart the application for changes to take effect.'
                     });
-                } finally {
-                    setLoading(false);
                 }
-            };
+            } catch (error: unknown) {
+                const timedOut = axios.isAxiosError(error) && error.code === 'ECONNABORTED';
+                setMessage({
+                    type: 'error',
+                    text: timedOut
+                        ? 'The POS did not confirm the restore within 60 seconds. Restart the application and verify the data before trying again.'
+                        : `Restore failed: ${getErrorMessage(error, 'Unknown error')}`
+                });
+            } finally {
+                setRestoreLoading(false);
+                setRestoreStatus('');
+            }
+        };
 
-            fileInput.click();
-        } catch (error: any) {
-            setMessage({
-                type: 'error',
-                text: `Restore failed: ${error.message}`
-            });
-            setLoading(false);
-        }
+        fileInput.click();
     };
 
     const formatDate = (dateString: string) => {
@@ -253,7 +390,7 @@ const BackupRestorePage: React.FC = () => {
                     {/* Header */}
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-                        <p className="text-gray-600 mt-1">Manage store information and database backups</p>
+                        <p className="text-gray-600 mt-1">Manage store information, WhatsApp reports, and database backups</p>
                     </div>
 
                     {/* Store Information */}
@@ -344,6 +481,175 @@ const BackupRestorePage: React.FC = () => {
                                     />
                                 </div>
                             </div>
+                            <div className="rounded-lg border p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                    <ImagePlus className="h-5 w-5" />
+                                    <div>
+                                        <p className="font-medium">Business Logo</p>
+                                        <p className="text-sm text-muted-foreground">Optional. PNG, JPEG, or WebP up to 2 MB.</p>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-4">
+                                    {logoUrl && (
+                                        <div className="flex h-24 w-40 items-center justify-center rounded-md border bg-white p-2">
+                                            <Image src={logoUrl} alt="Business logo" width={144} height={80} unoptimized className="max-h-20 w-auto object-contain" />
+                                        </div>
+                                    )}
+                                    <label className="inline-flex cursor-pointer items-center rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted">
+                                        {logoLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                                        {logoUrl ? 'Replace Logo' : 'Upload Logo'}
+                                        <input
+                                            type="file"
+                                            accept="image/png,image/jpeg,image/webp"
+                                            className="sr-only"
+                                            disabled={logoLoading}
+                                            onChange={event => {
+                                                void handleLogoUpload(event.target.files?.[0]);
+                                                event.currentTarget.value = '';
+                                            }}
+                                        />
+                                    </label>
+                                    {logoUrl && (
+                                        <Button type="button" variant="outline" disabled={logoLoading} onClick={() => void handleLogoDelete()}>
+                                            <Trash2 className="mr-2 h-4 w-4" />Remove Logo
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="rounded-lg border p-4 space-y-5">
+                                <div className="flex items-center gap-2">
+                                    <FileText className="h-5 w-5" />
+                                    <div>
+                                        <p className="font-medium">Invoice Design</p>
+                                        <p className="text-sm text-muted-foreground">Choose defaults. Staff can override the format on each invoice.</p>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Default print format</Label>
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                        {invoiceFormats.map(format => (
+                                            <button
+                                                key={`print-${format.id}`}
+                                                type="button"
+                                                onClick={() => setStoreForm(form => ({ ...form, default_print_format: format.id }))}
+                                                className={`rounded-lg border p-3 text-left transition ${storeForm.default_print_format === format.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/60'}`}
+                                            >
+                                                <span className="block font-medium">{format.title}</span>
+                                                <span className="mt-1 block text-xs text-muted-foreground">{format.description}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Default print design</Label>
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                        {invoiceDesigns.map(design => (
+                                            <button
+                                                key={`print-design-${design.id}`}
+                                                type="button"
+                                                onClick={() => setStoreForm(form => ({ ...form, default_print_design: design.id }))}
+                                                className={`rounded-lg border p-3 text-left transition ${storeForm.default_print_design === design.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/60'}`}
+                                            >
+                                                <span className={`mb-3 block overflow-hidden rounded border bg-white p-2 ${design.id === 'minimal' ? 'border-slate-200' : design.id === 'modern' ? 'border-sky-200' : 'border-slate-400'}`}>
+                                                    <span className={`block h-2 rounded-sm ${design.id === 'modern' ? 'bg-sky-800' : design.id === 'minimal' ? 'w-1/2 bg-slate-300' : 'bg-black'}`} />
+                                                    <span className="mt-2 block h-1 w-3/4 bg-slate-200" />
+                                                    <span className="mt-1 block h-1 w-full bg-slate-100" />
+                                                    <span className={`mt-2 block h-3 ${design.id === 'modern' ? 'rounded bg-sky-50' : design.id === 'minimal' ? 'border-t border-slate-200' : 'border-y border-black'}`} />
+                                                </span>
+                                                <span className="block font-medium">{design.title}</span>
+                                                <span className="mt-1 block text-xs text-muted-foreground">{design.description}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Default WhatsApp format</Label>
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                        {invoiceFormats.map(format => (
+                                            <button
+                                                key={`whatsapp-${format.id}`}
+                                                type="button"
+                                                onClick={() => setStoreForm(form => ({ ...form, default_whatsapp_format: format.id }))}
+                                                className={`rounded-lg border p-3 text-left transition ${storeForm.default_whatsapp_format === format.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/60'}`}
+                                            >
+                                                <span className="block font-medium">{format.title}</span>
+                                                <span className="mt-1 block text-xs text-muted-foreground">{format.id === 'professional' ? 'Sent as a PDF document.' : 'Sent as an image.'}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Default WhatsApp design</Label>
+                                    <div className="grid gap-3 md:grid-cols-3">
+                                        {invoiceDesigns.map(design => (
+                                            <button
+                                                key={`whatsapp-design-${design.id}`}
+                                                type="button"
+                                                onClick={() => setStoreForm(form => ({ ...form, default_whatsapp_design: design.id }))}
+                                                className={`rounded-lg border p-3 text-left transition ${storeForm.default_whatsapp_design === design.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/60'}`}
+                                            >
+                                                <span className={`mb-3 block overflow-hidden rounded border bg-white p-2 ${design.id === 'minimal' ? 'border-slate-200' : design.id === 'modern' ? 'border-sky-200' : 'border-slate-400'}`}>
+                                                    <span className={`block h-2 rounded-sm ${design.id === 'modern' ? 'bg-sky-800' : design.id === 'minimal' ? 'w-1/2 bg-slate-300' : 'bg-black'}`} />
+                                                    <span className="mt-2 block h-1 w-3/4 bg-slate-200" />
+                                                    <span className="mt-1 block h-1 w-full bg-slate-100" />
+                                                    <span className={`mt-2 block h-3 ${design.id === 'modern' ? 'rounded bg-sky-50' : design.id === 'minimal' ? 'border-t border-slate-200' : 'border-y border-black'}`} />
+                                                </span>
+                                                <span className="block font-medium">{design.title}</span>
+                                                <span className="mt-1 block text-xs text-muted-foreground">{design.description}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {[
+                                        ['invoice_show_tax_id', 'Show Tax ID / NTN'],
+                                        ['invoice_show_cashier', 'Show cashier'],
+                                        ['invoice_show_sku', 'Show item SKU'],
+                                        ['invoice_show_customer_balance', 'Show customer balance'],
+                                    ].map(([field, label]) => (
+                                        <div key={field} className="flex items-center gap-3 rounded-md border p-3">
+                                            <Checkbox
+                                                id={field}
+                                                checked={Boolean(storeForm[field as keyof StoreSettingsForm])}
+                                                onCheckedChange={checked => setStoreForm(form => ({ ...form, [field]: checked === true }))}
+                                            />
+                                            <Label htmlFor={field}>{label}</Label>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="invoice_footer_message">Thank-you message</Label>
+                                        <Input id="invoice_footer_message" value={storeForm.invoice_footer_message} onChange={event => setStoreForm(form => ({ ...form, invoice_footer_message: event.target.value }))} />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label htmlFor="invoice_terms">Terms / return policy</Label>
+                                        <textarea
+                                            id="invoice_terms"
+                                            rows={3}
+                                            value={storeForm.invoice_terms}
+                                            onChange={event => setStoreForm(form => ({ ...form, invoice_terms: event.target.value }))}
+                                            placeholder="One condition per line"
+                                            className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-start gap-3 rounded-md border p-3">
+                                <Checkbox
+                                    id="cash_register_enabled"
+                                    checked={storeForm.cash_register_enabled}
+                                    onCheckedChange={checked => setStoreForm(f => ({ ...f, cash_register_enabled: checked === true }))}
+                                />
+                                <div className="space-y-1">
+                                    <Label htmlFor="cash_register_enabled">Enable cash drawer tracking</Label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Users must declare opening cash after login and closing cash before ending their shift.
+                                        A summary comparing expected vs. counted cash is generated automatically.
+                                    </p>
+                                </div>
+                            </div>
                             <Button onClick={handleStoreSave} disabled={storeLoading} className="mt-2">
                                 {storeLoading ? (
                                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</>
@@ -351,6 +657,124 @@ const BackupRestorePage: React.FC = () => {
                                     <><Save className="h-4 w-4 mr-2" />Save Store Info</>
                                 )}
                             </Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <MessageCircle className="h-5 w-5" />
+                                WhatsApp Owner Reports
+                            </CardTitle>
+                            <CardDescription>
+                                Only this number can request private reports. Use the international format, for example 923001234567.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {whatsAppMessage && (
+                                <Alert variant={whatsAppMessage.type === 'error' ? 'destructive' : 'default'}>
+                                    {whatsAppMessage.type === 'success' ? (
+                                        <CheckCircle2 className="h-4 w-4" />
+                                    ) : (
+                                        <AlertCircle className="h-4 w-4" />
+                                    )}
+                                    <AlertDescription>{whatsAppMessage.text}</AlertDescription>
+                                </Alert>
+                            )}
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                <div className="space-y-1">
+                                    <Label htmlFor="whatsapp_owner_number">Owner WhatsApp Number</Label>
+                                    <Input
+                                        id="whatsapp_owner_number"
+                                        inputMode="tel"
+                                        placeholder="e.g. 923001234567"
+                                        value={whatsAppForm.owner_number}
+                                        onChange={event => setWhatsAppForm(form => ({ ...form, owner_number: event.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label htmlFor="whatsapp_daily_report_time">Daily Send Time (Pakistan time)</Label>
+                                    <Input
+                                        id="whatsapp_daily_report_time"
+                                        type="time"
+                                        value={whatsAppForm.daily_report_time}
+                                        onChange={event => setWhatsAppForm(form => ({ ...form, daily_report_time: event.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex items-start gap-3 rounded-md border p-3">
+                                <Checkbox
+                                    id="whatsapp_daily_report_enabled"
+                                    checked={whatsAppForm.daily_report_enabled}
+                                    onCheckedChange={checked => setWhatsAppForm(form => ({ ...form, daily_report_enabled: checked === true }))}
+                                />
+                                <div className="space-y-1">
+                                    <Label htmlFor="whatsapp_daily_report_enabled">Send automatic previous-day PDF</Label>
+                                    <p className="text-sm text-muted-foreground">
+                                        If the system was off, the next PDF includes all completed days not yet delivered.
+                                    </p>
+                                </div>
+                            </div>
+                            {whatsAppForm.last_daily_report_date && (
+                                <p className="text-sm text-muted-foreground">
+                                    Last automatic report delivered through {whatsAppForm.last_daily_report_date}.
+                                </p>
+                            )}
+                            <div className="rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+                                <p className="font-medium">Owner commands</p>
+                                <p className="mt-1 font-mono text-xs leading-5">
+                                    /previous-day-report<br />
+                                    /previous-week-report<br />
+                                    /low-stock-item<br />
+                                    /balance &lt;customer phone&gt;<br />
+                                    /VendorOutstanding<br />
+                                    /help
+                                </p>
+                            </div>
+                            <Button onClick={handleWhatsAppSave} disabled={whatsAppLoading}>
+                                {whatsAppLoading ? (
+                                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
+                                ) : (
+                                    <><Save className="mr-2 h-4 w-4" />Save WhatsApp Settings</>
+                                )}
+                            </Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Wallet className="h-5 w-5" />
+                                Open Cash Drawers
+                            </CardTitle>
+                            <CardDescription>
+                                See which users currently have an open cash drawer session and how much cash they started with.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="flex justify-end">
+                                <Button variant="outline" size="sm" onClick={fetchOpenCashSessions} disabled={cashSessionsLoading}>
+                                    {cashSessionsLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                                    Refresh
+                                </Button>
+                            </div>
+                            {openCashSessions.length === 0 ? (
+                                <p className="text-sm text-gray-500">No cash drawers are currently open.</p>
+                            ) : (
+                                <div className="space-y-2">
+                                    {openCashSessions.map(session => (
+                                        <div key={session.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
+                                            <div>
+                                                <p className="font-medium">{session.username}</p>
+                                                <p className="text-xs text-gray-500">
+                                                    Opened {new Date(session.opened_at).toLocaleString()}
+                                                </p>
+                                            </div>
+                                            <Badge variant="secondary">Rs {session.opening_cash.toFixed(2)}</Badge>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -433,10 +857,10 @@ const BackupRestorePage: React.FC = () => {
                                 </p>
                                 <Button
                                     onClick={handleCreateBackup}
-                                    disabled={loading || dbFiles.length === 0}
+                                    disabled={backupLoading || restoreLoading || dbFiles.length === 0}
                                     className="w-full"
                                 >
-                                    {loading ? (
+                                    {backupLoading ? (
                                         <>
                                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                             Creating Backup...
@@ -472,14 +896,14 @@ const BackupRestorePage: React.FC = () => {
                                 </Alert>
                                 <Button
                                     onClick={handleRestoreBackup}
-                                    disabled={loading}
+                                    disabled={backupLoading || restoreLoading}
                                     variant="outline"
                                     className="w-full"
                                 >
-                                    {loading ? (
+                                    {restoreLoading ? (
                                         <>
                                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                            Restoring...
+                                            {restoreStatus || 'Restoring...'}
                                         </>
                                     ) : (
                                         <>

@@ -154,7 +154,8 @@
   }
 
   /* Thermal receipt specific styles */
-  .thermal-receipt {
+  .thermal-receipt,
+  .invoice-format-compact {
     width: 80mm !important;
     max-width: 80mm !important;
     margin: 0 auto !important;
@@ -180,7 +181,8 @@
   }
 
   /* Prevent page breaks inside important elements */
-  .thermal-receipt > div {
+  .thermal-receipt > div,
+  .invoice-document > div {
     page-break-inside: avoid;
   }
 
@@ -199,6 +201,373 @@
   .border-dashed {
     border-style: dashed !important;
     border-color: #000 !important;
+  }
+}
+
+/* Selectable invoice document formats. */
+.invoice-format-professional .invoice-document-inner {
+  padding: 14mm;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.invoice-format-professional .invoice-header {
+  padding-bottom: 6mm;
+}
+
+.invoice-format-professional table {
+  margin-top: 5mm;
+}
+
+.invoice-format-professional th,
+.invoice-format-professional td {
+  padding: 2.5mm 2mm;
+}
+
+.invoice-format-mobile .invoice-document-inner {
+  padding: 7mm;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Design themes can be combined with any paper/output format. */
+.invoice-document {
+  --invoice-ink: #111827;
+  --invoice-muted: #64748b;
+  --invoice-line: #d7dee7;
+  --invoice-accent: #111827;
+  color: var(--invoice-ink);
+}
+
+.invoice-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.invoice-eyebrow {
+  display: none;
+  color: var(--invoice-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.invoice-format-professional .invoice-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12mm;
+}
+
+.invoice-format-professional .invoice-brand {
+  text-align: left;
+}
+
+.invoice-format-professional .invoice-logo {
+  margin-left: 0;
+  margin-right: 0;
+  max-width: 42mm;
+}
+
+.invoice-format-professional .invoice-heading {
+  min-width: 48mm;
+  text-align: right;
+}
+
+.invoice-format-professional .invoice-eyebrow {
+  display: block;
+}
+
+.invoice-format-professional .invoice-title {
+  margin-top: 2mm;
+  font-size: 26px;
+  letter-spacing: 0.1em;
+}
+
+.invoice-format-professional .invoice-meta {
+  margin-top: 7mm;
+  padding: 4mm;
+}
+
+.invoice-format-professional .invoice-counts {
+  margin-top: 2mm;
+  padding: 2.5mm 4mm;
+}
+
+.invoice-format-professional .invoice-subtotal,
+.invoice-format-professional .invoice-totals,
+.invoice-format-professional .invoice-status {
+  width: 48%;
+  margin-left: auto;
+  padding: 2.5mm 4mm;
+}
+
+/* Ledger: a polished monochrome style for traditional billing. */
+.invoice-design-classic {
+  --invoice-line: #111827;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.invoice-design-classic .invoice-title {
+  border: 2px solid #111827;
+  background: #111827 !important;
+}
+
+.invoice-design-classic .invoice-meta {
+  border-top: 3px double #111827 !important;
+  border-bottom: 3px double #111827 !important;
+}
+
+.invoice-design-classic table thead tr {
+  background: #ececec;
+  border-color: #111827;
+}
+
+.invoice-design-classic .invoice-status {
+  letter-spacing: 0.08em;
+}
+
+/* Commerce: contemporary brand-forward invoices used by modern retail systems. */
+.invoice-design-modern {
+  --invoice-ink: #0f172a;
+  --invoice-muted: #64748b;
+  --invoice-line: #cbd5e1;
+  --invoice-accent: #0f5f78;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.invoice-design-modern .invoice-title {
+  border-radius: 999px;
+  background: var(--invoice-accent) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.invoice-design-modern .invoice-number {
+  color: var(--invoice-accent);
+}
+
+.invoice-design-modern .invoice-meta {
+  border: 0 !important;
+  border-radius: 0.65rem;
+  background: #f1f5f9;
+  padding: 0.6rem;
+}
+
+.invoice-design-modern .invoice-meta-label {
+  color: var(--invoice-muted);
+}
+
+.invoice-design-modern .invoice-counts {
+  border-color: var(--invoice-line);
+  color: var(--invoice-muted);
+}
+
+.invoice-design-modern table {
+  border-collapse: separate !important;
+  border-spacing: 0;
+}
+
+.invoice-design-modern table thead tr {
+  border: 0;
+  background: var(--invoice-accent);
+  color: #fff;
+}
+
+.invoice-design-modern table thead th:first-child {
+  border-radius: 0.4rem 0 0 0.4rem;
+}
+
+.invoice-design-modern table thead th:last-child {
+  border-radius: 0 0.4rem 0.4rem 0;
+}
+
+.invoice-design-modern table tbody tr {
+  border-color: #e2e8f0;
+}
+
+.invoice-design-modern .invoice-subtotal {
+  border-color: var(--invoice-line);
+}
+
+.invoice-design-modern .invoice-current-total,
+.invoice-design-modern .invoice-grand-total {
+  border-color: var(--invoice-accent);
+  color: var(--invoice-accent);
+}
+
+.invoice-design-modern .invoice-status {
+  border: 0 !important;
+  border-radius: 0.55rem;
+  background: #e6f6f2;
+  color: #08765f;
+  padding: 0.55rem 0.75rem;
+}
+
+.invoice-design-modern .invoice-status-due {
+  background: #fff4e5;
+  color: #a24b05;
+}
+
+.invoice-design-modern .invoice-footer {
+  margin-top: 0.6rem;
+  border-top: 1px solid var(--invoice-line);
+  color: var(--invoice-muted);
+}
+
+.invoice-design-modern.invoice-format-professional .invoice-header {
+  margin: -14mm -14mm 0;
+  padding: 12mm 14mm 10mm;
+  border-radius: 0.75rem;
+  background: #0f172a;
+  color: #fff;
+}
+
+.invoice-design-modern.invoice-format-professional .invoice-brand h1,
+.invoice-design-modern.invoice-format-professional .invoice-eyebrow,
+.invoice-design-modern.invoice-format-professional .invoice-number {
+  color: #fff;
+}
+
+.invoice-design-modern.invoice-format-professional .invoice-title {
+  background: #17a589 !important;
+}
+
+/* Essential: spacious, neutral, and optimized for clarity and low ink. */
+.invoice-design-minimal {
+  --invoice-ink: #1f2937;
+  --invoice-muted: #6b7280;
+  --invoice-line: #e5e7eb;
+  --invoice-accent: #1f2937;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.invoice-design-minimal .invoice-title {
+  border: 0;
+  border-bottom: 2px solid var(--invoice-ink);
+  background: transparent !important;
+  color: var(--invoice-ink) !important;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.invoice-design-minimal .invoice-meta,
+.invoice-design-minimal .invoice-counts,
+.invoice-design-minimal .invoice-subtotal,
+.invoice-design-minimal .invoice-status {
+  border-color: var(--invoice-line) !important;
+}
+
+.invoice-design-minimal .invoice-meta {
+  border-width: 1px 0 !important;
+}
+
+.invoice-design-minimal table thead tr {
+  border-color: var(--invoice-line);
+  background: transparent;
+  color: var(--invoice-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.invoice-design-minimal table tbody tr,
+.invoice-design-minimal .invoice-footer {
+  border-color: var(--invoice-line);
+}
+
+.invoice-design-minimal .invoice-status {
+  border-width: 1px 0 0 !important;
+  color: var(--invoice-ink);
+  letter-spacing: 0.12em;
+}
+
+.invoice-design-minimal .invoice-footer {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--invoice-line);
+  color: var(--invoice-muted);
+}
+
+@page invoice-compact {
+  size: 80mm auto;
+  margin: 2mm;
+}
+
+@page invoice-mobile {
+  size: 108mm auto;
+  margin: 4mm;
+}
+
+@page invoice-professional {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
+@media print {
+  .invoice-format-compact {
+    page: invoice-compact;
+  }
+
+  .invoice-format-mobile {
+    page: invoice-mobile;
+    width: 108mm !important;
+    max-width: 108mm !important;
+    margin: 0 auto !important;
+    border: none !important;
+  }
+
+  .invoice-format-professional {
+    page: invoice-professional;
+    width: 190mm !important;
+    max-width: 190mm !important;
+    margin: 0 auto !important;
+    border: none !important;
+  }
+
+  .invoice-format-professional .invoice-document-inner {
+    padding: 8mm !important;
+  }
+
+  .invoice-logo {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .invoice-design-modern .invoice-title,
+  .invoice-design-modern table thead tr {
+    background: #0f5f78 !important;
+    color: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .invoice-design-modern table thead th {
+    color: #fff !important;
+  }
+
+  .invoice-design-modern.invoice-format-professional .invoice-header {
+    margin: -8mm -8mm 0 !important;
+    background: #0f172a !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .invoice-design-modern.invoice-format-professional .invoice-title {
+    background: #17a589 !important;
+  }
+
+  .invoice-design-modern .invoice-meta {
+    background: #f1f5f9 !important;
+  }
+
+  .invoice-design-modern .invoice-status-paid {
+    background: #e6f6f2 !important;
+    color: #08765f !important;
+  }
+
+  .invoice-design-modern .invoice-status-due {
+    background: #fff4e5 !important;
+    color: #a24b05 !important;
   }
 }
 

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import api from "@/lib/api";
+import type { InvoiceDesign, InvoiceFormat } from "@/lib/api";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Printer, ArrowLeft, Send } from "lucide-react";
+import { Printer, ArrowLeft, Send, FileText } from "lucide-react";
 
 interface Product {
   id: number;
@@ -82,6 +84,7 @@ interface Sale {
   user_id: number;
   customer_id?: number;
   customer_name?: string;
+  customer_phone?: string;
   payment_method: string;
   subtotal: number;
   discount: number;
@@ -128,6 +131,10 @@ export default function InvoicePage() {
   const [returnedBySaleItem, setReturnedBySaleItem] = useState<{ [key: number]: number }>({});
   const [returnRefundTotal, setReturnRefundTotal] = useState(0);
   const [storeInfo, setStoreInfo] = useState<StoreInfo>(storeConfig);
+  const [printFormat, setPrintFormat] = useState<InvoiceFormat>("compact");
+  const [whatsAppFormat, setWhatsAppFormat] = useState<InvoiceFormat>("mobile");
+  const [printDesign, setPrintDesign] = useState<InvoiceDesign>("classic");
+  const [whatsAppDesign, setWhatsAppDesign] = useState<InvoiceDesign>("modern");
 
   const fetchSaleDetails = useCallback(async () => {
     try {
@@ -199,7 +206,13 @@ export default function InvoicePage() {
 
   useEffect(() => {
     void fetchSaleDetails();
-    void fetchStoreConfig().then(setStoreInfo);
+    void fetchStoreConfig().then(config => {
+      setStoreInfo(config);
+      setPrintFormat(config.defaultPrintFormat);
+      setWhatsAppFormat(config.defaultWhatsAppFormat);
+      setPrintDesign(config.defaultPrintDesign);
+      setWhatsAppDesign(config.defaultWhatsAppDesign);
+    });
   }, [fetchSaleDetails]);
 
   const formatInvoiceNumber = (saleId: number): string => {
@@ -207,6 +220,10 @@ export default function InvoicePage() {
   };
 
   const handlePrint = () => {
+    document.body.dataset.invoiceFormat = printFormat;
+    window.addEventListener("afterprint", () => {
+      delete document.body.dataset.invoiceFormat;
+    }, { once: true });
     window.print();
   };
 
@@ -221,7 +238,9 @@ export default function InvoicePage() {
       console.log('Sending invoice via backend...');
 
       // Call backend endpoint to generate and send invoice
-      const response = await api.post(`/sales/${params.id}/send-invoice?phone_number=${phoneNumber}`);
+      const response = await api.post(`/sales/${params.id}/send-invoice`, null, {
+        params: { phone_number: phoneNumber, invoice_format: whatsAppFormat, invoice_design: whatsAppDesign },
+      });
 
       console.log('Backend response:', response.data);
 
@@ -278,7 +297,7 @@ export default function InvoicePage() {
     hour12: true,
   });
   const accountBalance = sale.previous_balance + sale.amount_due;
-  const paymentStatus = accountBalance > 0 ? "Cash Unpaid" : "Cash Paid";
+  const paymentStatus = accountBalance > 0 ? "BALANCE DUE" : "PAID";
   const customerDisplayName = sale.customer_name || sale.customer?.name || "Walk-in";
   const customerDisplayPhone = sale.customer?.phone || sale.customer?.id || "";
   const whatsappNumber = getWhatsAppNumber(storeInfo.phone);
@@ -293,7 +312,30 @@ export default function InvoicePage() {
             Back
           </Button>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setSendDialogOpen(true)}>
+            <select
+              aria-label="Print invoice format"
+              value={printFormat}
+              onChange={event => setPrintFormat(event.target.value as InvoiceFormat)}
+              className="rounded-md border bg-white px-3 text-sm"
+            >
+              <option value="compact">Compact Receipt</option>
+              <option value="professional">Professional A4</option>
+              <option value="mobile">Mobile Invoice</option>
+            </select>
+            <select
+              aria-label="Print invoice design"
+              value={printDesign}
+              onChange={event => setPrintDesign(event.target.value as InvoiceDesign)}
+              className="rounded-md border bg-white px-3 text-sm"
+            >
+              <option value="classic">Ledger Design</option>
+              <option value="modern">Commerce Design</option>
+              <option value="minimal">Essential Design</option>
+            </select>
+            <Button variant="outline" onClick={() => {
+              setPhoneNumber(sale.customer?.phone || sale.customer_phone || "");
+              setSendDialogOpen(true);
+            }}>
               <Send className="mr-2 h-4 w-4" />
               Send Invoice
             </Button>
@@ -309,43 +351,66 @@ export default function InvoicePage() {
       <div className="invoice-container container mx-auto p-4 flex justify-center">
         <Card
           ref={invoiceRef}
-          className="thermal-receipt bg-white shadow-lg w-full max-w-[80mm] mx-auto"
+          className={`invoice-document invoice-format-${printFormat} invoice-design-${printDesign} bg-white shadow-lg w-full mx-auto ${printFormat === "compact" ? "max-w-[80mm]" : printFormat === "mobile" ? "max-w-[108mm]" : "max-w-[210mm]"}`}
         >
-          <div className="p-2 text-[11px] leading-tight">
-            <div className="text-center pb-1">
-              <div className="inline-block bg-black text-white px-5 py-1 text-lg font-bold tracking-wide">
-                INVOICE
+          <div className="invoice-document-inner p-2 text-[11px] leading-tight">
+            <div className="invoice-header pb-1">
+              <div className="invoice-brand text-center">
+                {storeInfo.logoUrl && (
+                  <Image
+                    src={storeInfo.logoUrl}
+                    alt={`${storeInfo.name} logo`}
+                    width={180}
+                    height={90}
+                    unoptimized
+                    className="invoice-logo mx-auto mb-2 h-auto max-h-16 w-auto max-w-[55%] object-contain"
+                  />
+                )}
+                <h1 className="mt-1 text-xl font-black uppercase tracking-tight">{storeInfo.name}</h1>
+                {(storeInfo.address || storeInfo.city) && (
+                  <p className="text-[12px] mt-0.5">{[storeInfo.address, storeInfo.city].filter(Boolean).join(" ")}</p>
+                )}
+                <p className="text-[12px] mt-0.5">
+                  {storeInfo.phone ? storeInfo.phone : ""}
+                  {storeInfo.email && storeInfo.phone ? " · " : ""}
+                  {storeInfo.email}
+                </p>
+                {storeInfo.showTaxId && storeInfo.taxId && <p className="text-[12px]">Tax ID / NTN: {storeInfo.taxId}</p>}
               </div>
-              <h1 className="mt-1 text-xl font-black uppercase tracking-tight">{storeInfo.name}</h1>
-              {(storeInfo.address || storeInfo.city) && (
-                <p className="text-[12px] mt-0.5">{[storeInfo.address, storeInfo.city].filter(Boolean).join(" ")}</p>
-              )}
-              <p className="text-[12px] mt-0.5">
-                {storeInfo.phone ? `Cell:${storeInfo.phone}` : "Cell: —"}
-              </p>
-              {storeInfo.email && <p className="text-[12px]">{storeInfo.email}</p>}
+              <div className="invoice-heading text-center">
+                <p className="invoice-eyebrow">Sales document</p>
+                <div className="invoice-title inline-block bg-black text-white px-5 py-1 text-lg font-bold tracking-wide">
+                  INVOICE
+                </div>
+                <p className="invoice-number mt-1 font-semibold">{formatInvoiceNumber(sale.id)}</p>
+              </div>
             </div>
 
-            <div className="border-y-2 border-black py-1 mt-1">
+            <div className="invoice-meta border-y-2 border-black py-1 mt-1">
               <div className="flex justify-between">
-                <span className="font-semibold">BillNo.</span>
+                <span className="invoice-meta-label font-semibold">Bill No.</span>
                 <span className="font-bold">{sale.id}</span>
-                <span className="font-semibold">Order #</span>
-                <span className="font-bold">{formatInvoiceNumber(sale.id)}</span>
+                <span className="invoice-meta-label font-semibold">Issued</span>
+                <span className="font-bold">{dateOnly}</span>
               </div>
               <div className="flex justify-between mt-0.5">
-                <span className="font-semibold">Contact#</span>
+                <span className="invoice-meta-label font-semibold">Contact</span>
                 <span className="truncate max-w-[42%]">{customerDisplayPhone || "Walk-in"}</span>
                 <span>{timeOnly}</span>
-                <span>{dateOnly}</span>
               </div>
               <div className="flex justify-between mt-0.5">
-                <span className="font-semibold">Name :</span>
+                <span className="invoice-meta-label font-semibold">Customer</span>
                 <span className="font-semibold text-right max-w-[70%] truncate">{customerDisplayName}</span>
               </div>
+              {storeInfo.showCashier && (
+                <div className="flex justify-between mt-0.5">
+                  <span className="font-semibold">Cashier:</span>
+                  <span>{sale.user?.full_name || sale.user?.username || `#${sale.user_id}`}</span>
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-between py-1 border-b border-black">
+            <div className="invoice-counts flex justify-between py-1 border-b border-black">
               <div>
                 <span className="font-semibold">Items:</span> {sale.items.length.toFixed(2)}
               </div>
@@ -380,6 +445,9 @@ export default function InvoicePage() {
                         <td className="px-0.5 py-0.5 font-semibold">
                           {item.product_name || item.product?.name || `#${item.product_id}`}
                           {varLabel && <span className="block font-normal text-[10px]">{varLabel}</span>}
+                          {storeInfo.showSku && (item.product?.sku || item.variation?.sku) && (
+                            <span className="block font-normal text-[9px]">SKU: {item.variation?.sku || item.product?.sku}</span>
+                          )}
                           <span className="block font-normal text-[10px] uppercase">{item.unit}</span>
                         </td>
                         <td className="px-0.5 py-0.5 text-center">{item.quantity}</td>
@@ -403,14 +471,14 @@ export default function InvoicePage() {
               </tbody>
             </table>
 
-            <div className="mt-1 border-y border-black py-1">
+            <div className="invoice-subtotal mt-1 border-y border-black py-1">
               <div className="flex justify-between font-semibold">
                 <span>Total Amount</span>
                 <span>{grossSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
             </div>
 
-            <div className="py-1 space-y-0.5">
+            <div className="invoice-totals py-1 space-y-0.5">
               <div className="flex justify-between">
                 <span>Other Charges</span>
                 <span>{sale.tax > 0 ? sale.tax.toFixed(0) : 0}</span>
@@ -423,7 +491,7 @@ export default function InvoicePage() {
                 <span>Delivery</span>
                 <span>{sale.delivery_charges > 0 ? sale.delivery_charges.toFixed(0) : 0}</span>
               </div>
-              <div className="flex justify-between font-bold text-[15px] border-t border-black pt-0.5 mt-0.5">
+              <div className="invoice-current-total flex justify-between font-bold text-[15px] border-t border-black pt-0.5 mt-0.5">
                 <span>Current Bill</span>
                 <span>{sale.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
               </div>
@@ -433,7 +501,7 @@ export default function InvoicePage() {
                     <span>Previous Balance</span>
                     <span>{sale.previous_balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
-                  <div className="flex justify-between font-black text-[16px] border-t border-black pt-0.5">
+                  <div className="invoice-grand-total flex justify-between font-black text-[16px] border-t border-black pt-0.5">
                     <span>Grand Total</span>
                     <span>{(sale.total + sale.previous_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
@@ -449,10 +517,12 @@ export default function InvoicePage() {
                   <span>{sale.change_amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               )}
-              <div className="flex justify-between font-semibold">
-                <span>Total Balance</span>
-                <span>{(sale.previous_balance + sale.amount_due).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
+              {storeInfo.showCustomerBalance && (
+                <div className="flex justify-between font-semibold">
+                  <span>Total Balance</span>
+                  <span>{(sale.previous_balance + sale.amount_due).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              )}
               {returnRefundTotal > 0 && (
                 <div className="flex justify-between text-red-700 font-semibold">
                   <span>Refunded</span>
@@ -461,15 +531,14 @@ export default function InvoicePage() {
               )}
             </div>
 
-            <div className="border-y-2 border-black py-1 text-right font-bold text-[20px]">
+            <div className={`invoice-status border-y-2 border-black py-1 text-right font-bold text-[20px] ${accountBalance > 0 ? "invoice-status-due" : "invoice-status-paid"}`}>
               {paymentStatus}
             </div>
 
-            <div className="pt-2 text-[10px] leading-snug">
-              <p>1. Return and Exchange acceptable with invoice.</p>
-              <p>2. Frozen and cosmetic items cannot be returned.</p>
-              <p>3. Home delivery available.</p>
-              <p>4. Complaint &amp; suggestion Wapp: {whatsappNumber}</p>
+            <div className="invoice-footer pt-2 text-[10px] leading-snug">
+              {storeInfo.footerMessage && <p className="text-center font-semibold mb-1">{storeInfo.footerMessage}</p>}
+              {storeInfo.terms.split("\n").filter(Boolean).map((term, index) => <p key={`${index}-${term}`}>{index + 1}. {term}</p>)}
+              <p>Complaint &amp; suggestion WhatsApp: {whatsappNumber}</p>
               <p className="text-center mt-1">VibePOS (by vibeexe.com)</p>
             </div>
           </div>
@@ -497,6 +566,45 @@ export default function InvoicePage() {
               <p className="text-xs text-gray-500">
                 Format: 03XX, +92XXX, or 92XXX
               </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="whatsapp-format">Invoice Format</Label>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  ["mobile", "Mobile image"],
+                  ["compact", "Compact image"],
+                  ["professional", "A4 PDF"],
+                ] as Array<[InvoiceFormat, string]>).map(([format, label]) => (
+                  <button
+                    key={format}
+                    type="button"
+                    onClick={() => setWhatsAppFormat(format)}
+                    className={`rounded-md border p-2 text-left text-sm ${whatsAppFormat === format ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-muted"}`}
+                  >
+                    <FileText className="mb-1 h-4 w-4" />{label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Invoice Design</Label>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {([
+                  ["classic", "Ledger"],
+                  ["modern", "Commerce"],
+                  ["minimal", "Essential"],
+                ] as Array<[InvoiceDesign, string]>).map(([design, label]) => (
+                  <button
+                    key={design}
+                    type="button"
+                    onClick={() => setWhatsAppDesign(design)}
+                    className={`rounded-md border p-2 text-left text-sm ${whatsAppDesign === design ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-muted"}`}
+                  >
+                    <span className={`mb-2 block h-2 rounded-sm ${design === "modern" ? "bg-sky-800" : design === "minimal" ? "w-1/2 bg-slate-300" : "bg-black"}`} />
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="bg-blue-50 p-3 rounded-md">
               <p className="text-sm text-gray-700">

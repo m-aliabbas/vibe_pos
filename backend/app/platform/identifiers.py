@@ -59,6 +59,8 @@ class CapabilityId(StableIdentifier):
     RETAIL_RETURNS = "retail.returns"
     RETAIL_ACCOUNTING = "retail.accounting"
     RETAIL_HOLDS = "retail.holds"
+    RETAIL_EXPENSES = "retail.expenses"
+    RETAIL_CASH_REGISTER = "retail.cash-register"
     BACKUP = "infrastructure.backup"
     FILES = "infrastructure.files"
     MESSAGING = "infrastructure.messaging"

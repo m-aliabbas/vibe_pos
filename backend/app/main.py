@@ -10,6 +10,7 @@ from app.services.license import check_license_or_exit, LicenseError
 
 # Import backup scheduler
 from app.services import backup_scheduler
+from app.services import whatsapp_report_scheduler
 
 # Direct uvicorn development startup and the packaged launcher use the same
 # ordered, fail-closed migration path. The second call is an idempotent no-op.
@@ -63,9 +64,17 @@ async def startup_event():
     backup_scheduler.start_scheduler()
     print("✅ Backup scheduler started")
 
+    print("🚀 Starting WhatsApp report scheduler...")
+    whatsapp_report_scheduler.start_scheduler()
+    print("✅ WhatsApp report scheduler started")
+
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Stop backup scheduler on application shutdown"""
+    """Stop background schedulers on application shutdown."""
+    print("🛑 Stopping WhatsApp report scheduler...")
+    whatsapp_report_scheduler.stop_scheduler()
+    print("✅ WhatsApp report scheduler stopped")
+
     print("🛑 Stopping backup scheduler...")
     backup_scheduler.stop_scheduler()
     print("✅ Backup scheduler stopped")

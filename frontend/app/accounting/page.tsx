@@ -67,6 +67,16 @@ interface EntryLineDraft {
   memo: string;
 }
 
+interface Expense {
+  id: number;
+  expense_date: string;
+  account_id: number;
+  account_name: string;
+  amount: number;
+  description: string;
+  payment_method: string;
+}
+
 const ACCOUNT_TYPES = [
   { value: 'asset', label: 'Asset' },
   { value: 'liability', label: 'Liability' },
@@ -74,6 +84,14 @@ const ACCOUNT_TYPES = [
   { value: 'income', label: 'Income' },
   { value: 'expense', label: 'Expense' },
 ];
+
+const apiErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object' && 'response' in error) {
+    const response = (error as { response?: { data?: { detail?: string } } }).response;
+    return response?.data?.detail || fallback;
+  }
+  return fallback;
+};
 
 export default function AccountingPage() {
   const { user } = useAuthStore();
@@ -140,6 +158,16 @@ export default function AccountingPage() {
   ]);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entrySaving, setEntrySaving] = useState(false);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseForm, setExpenseForm] = useState({
+    expense_date: new Date().toISOString().slice(0, 10),
+    account_id: '',
+    amount: '',
+    description: '',
+    payment_method: 'cash',
+  });
+  const [expenseError, setExpenseError] = useState<string | null>(null);
+  const [expenseSaving, setExpenseSaving] = useState(false);
 
   const fetchAccounts = async () => {
     const response = await api.get('/accounting/accounts');
@@ -161,15 +189,44 @@ export default function AccountingPage() {
     setTrialBalance(response.data || null);
   };
 
+  const fetchExpenses = async () => {
+    const response = await api.get('/expenses');
+    setExpenses(response.data || []);
+  };
+
   const fetchAll = async () => {
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([fetchAccounts(), fetchJournal(), fetchTrialBalance()]);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to load accounting data');
+      await Promise.all([fetchAccounts(), fetchJournal(), fetchTrialBalance(), fetchExpenses()]);
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to load accounting data'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateExpense = async () => {
+    setExpenseError(null);
+    const amount = Number(expenseForm.amount);
+    if (!expenseForm.account_id || !expenseForm.description.trim() || !Number.isFinite(amount) || amount <= 0) {
+      setExpenseError('Expense account, description, and a positive amount are required');
+      return;
+    }
+    setExpenseSaving(true);
+    try {
+      await api.post('/expenses', {
+        ...expenseForm,
+        account_id: Number(expenseForm.account_id),
+        amount,
+        expense_date: new Date(`${expenseForm.expense_date}T00:00:00`).toISOString(),
+      });
+      setExpenseForm((prev) => ({ ...prev, amount: '', description: '' }));
+      await Promise.all([fetchExpenses(), fetchJournal(), fetchTrialBalance()]);
+    } catch (err: unknown) {
+      setExpenseError(apiErrorMessage(err, 'Failed to record expense'));
+    } finally {
+      setExpenseSaving(false);
     }
   };
 
@@ -211,8 +268,8 @@ export default function AccountingPage() {
       await api.post('/accounting/accounts', accountForm);
       setAccountForm({ code: '', name: '', type: 'asset', is_active: true });
       await fetchAccounts();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to create account');
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, 'Failed to create account'));
     }
   };
 
@@ -277,8 +334,8 @@ export default function AccountingPage() {
       ]);
 
       await Promise.all([fetchJournal(), fetchTrialBalance()]);
-    } catch (err: any) {
-      setEntryError(err?.response?.data?.detail || 'Failed to create journal entry');
+    } catch (err: unknown) {
+      setEntryError(apiErrorMessage(err, 'Failed to create journal entry'));
     } finally {
       setEntrySaving(false);
     }
@@ -317,6 +374,7 @@ export default function AccountingPage() {
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="journal">Journal</TabsTrigger>
           <TabsTrigger value="trial">Trial Balance</TabsTrigger>
+          <TabsTrigger value="expenses">Expenses</TabsTrigger>
           <TabsTrigger value="manual">Manual Entry</TabsTrigger>
         </TabsList>
 
@@ -559,6 +617,60 @@ export default function AccountingPage() {
                         </TableCell>
                       </TableRow>
                     )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="expenses" className="flex-1 min-h-0 overflow-y-auto space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Record Expense</CardTitle>
+              <CardDescription>Post an operating expense to the shop ledger and P&amp;L.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="expense-date">Date</Label>
+                  <Input id="expense-date" type="date" value={expenseForm.expense_date} onChange={(e) => setExpenseForm((prev) => ({ ...prev, expense_date: e.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Expense account</Label>
+                  <Select value={expenseForm.account_id} onValueChange={(value) => setExpenseForm((prev) => ({ ...prev, account_id: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+                    <SelectContent>
+                      {accounts.filter((account) => account.type === 'expense' && account.is_active).map((account) => (
+                        <SelectItem key={account.id} value={String(account.id)}>{account.code} - {account.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expense-amount">Amount</Label>
+                  <Input id="expense-amount" type="number" min="0.01" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Paid from</Label>
+                  <Select value={expenseForm.payment_method} onValueChange={(value) => setExpenseForm((prev) => ({ ...prev, payment_method: value }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="cash">Cash</SelectItem><SelectItem value="bank">Bank</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="expense-description">Description</Label>
+                  <Input id="expense-description" value={expenseForm.description} onChange={(e) => setExpenseForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="Shop rent" />
+                </div>
+              </div>
+              {expenseError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{expenseError}</div>}
+              <Button onClick={handleCreateExpense} disabled={expenseSaving}>{expenseSaving ? 'Posting...' : 'Record Expense'}</Button>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader><TableRow><TableHead>Date</TableHead><TableHead>Account</TableHead><TableHead>Description</TableHead><TableHead>Paid from</TableHead><TableHead className="text-right">Amount</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {expenses.map((expense) => <TableRow key={expense.id}><TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell><TableCell>{expense.account_name}</TableCell><TableCell>{expense.description}</TableCell><TableCell className="capitalize">{expense.payment_method}</TableCell><TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell></TableRow>)}
+                    {!expenses.length && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No expenses recorded.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>

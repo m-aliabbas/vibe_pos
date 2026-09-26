@@ -164,6 +164,64 @@ def migrate_catalog_item_types_sqlalchemy(connection) -> None:
         )
 
 
+def migrate_store_settings_extensions(connection: sqlite3.Connection) -> None:
+    """Add expense/cash-register/invoice-design/WhatsApp-report columns to store_settings."""
+    if "store_settings" not in _table_names(connection):
+        return
+    additions = (
+        ("store_logo_filename", "TEXT"),
+        ("default_print_format", "VARCHAR DEFAULT 'compact'"),
+        ("default_whatsapp_format", "VARCHAR DEFAULT 'mobile'"),
+        ("default_print_design", "VARCHAR DEFAULT 'classic'"),
+        ("default_whatsapp_design", "VARCHAR DEFAULT 'modern'"),
+        ("invoice_show_tax_id", "BOOLEAN DEFAULT 1"),
+        ("invoice_show_cashier", "BOOLEAN DEFAULT 1"),
+        ("invoice_show_sku", "BOOLEAN DEFAULT 0"),
+        ("invoice_show_customer_balance", "BOOLEAN DEFAULT 1"),
+        ("invoice_footer_message", "TEXT DEFAULT 'Thank you for your business!'"),
+        ("invoice_terms", "TEXT DEFAULT 'Return and exchange accepted with invoice.'"),
+        ("whatsapp_owner_number", "VARCHAR DEFAULT ''"),
+        ("whatsapp_daily_report_enabled", "BOOLEAN DEFAULT 0"),
+        ("whatsapp_daily_report_time", "VARCHAR DEFAULT '09:00'"),
+        ("whatsapp_last_daily_report_date", "DATE"),
+        ("cash_register_enabled", "BOOLEAN DEFAULT 0"),
+    )
+    for column, definition in additions:
+        _add_column_if_missing(connection, "store_settings", column, definition)
+
+
+def migrate_store_settings_extensions_sqlalchemy(connection) -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if not inspector.has_table("store_settings"):
+        return
+    existing = {column["name"] for column in inspector.get_columns("store_settings")}
+    additions = (
+        ("store_logo_filename", "VARCHAR(255)"),
+        ("default_print_format", "VARCHAR(255) DEFAULT 'compact'"),
+        ("default_whatsapp_format", "VARCHAR(255) DEFAULT 'mobile'"),
+        ("default_print_design", "VARCHAR(255) DEFAULT 'classic'"),
+        ("default_whatsapp_design", "VARCHAR(255) DEFAULT 'modern'"),
+        ("invoice_show_tax_id", "BOOLEAN DEFAULT TRUE"),
+        ("invoice_show_cashier", "BOOLEAN DEFAULT TRUE"),
+        ("invoice_show_sku", "BOOLEAN DEFAULT FALSE"),
+        ("invoice_show_customer_balance", "BOOLEAN DEFAULT TRUE"),
+        ("invoice_footer_message", "TEXT"),
+        ("invoice_terms", "TEXT"),
+        ("whatsapp_owner_number", "VARCHAR(255) DEFAULT ''"),
+        ("whatsapp_daily_report_enabled", "BOOLEAN DEFAULT FALSE"),
+        ("whatsapp_daily_report_time", "VARCHAR(255) DEFAULT '09:00'"),
+        ("whatsapp_last_daily_report_date", "DATE"),
+        ("cash_register_enabled", "BOOLEAN DEFAULT FALSE"),
+    )
+    for column, definition in additions:
+        if column not in existing:
+            connection.execute(
+                text(f'ALTER TABLE store_settings ADD COLUMN "{column}" {definition}')
+            )
+
+
 def _selected_application_identity() -> tuple[str, str]:
     import os
 
@@ -288,6 +346,13 @@ MIGRATIONS: tuple[Migration, ...] = (
         supported_providers=("sqlite", "postgresql", "mysql"),
         apply_sqlalchemy=migrate_application_identity_sqlalchemy,
         declared_checksum="de7aaf8f1eeaa00d01920ff0cc7a9f2352a19ac9b9b5027e680463672c3e70c8",
+    ),
+    Migration(
+        migration_id="0006_store_settings_extensions",
+        description="Add invoice-design, WhatsApp-report, and cash-register columns to store_settings",
+        apply=migrate_store_settings_extensions,
+        supported_providers=("sqlite", "postgresql", "mysql"),
+        apply_sqlalchemy=migrate_store_settings_extensions_sqlalchemy,
     ),
 )
 
