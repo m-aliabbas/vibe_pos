@@ -21,11 +21,11 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 
 | Field | Value |
 | --- | --- |
-| Active phase | Phase 2 — App manifests, profiles, and capabilities |
+| Active phase | Phase 3 — Shared capability boundaries and retail transaction services |
 | Status | Awaiting manual verification |
 | Started | 2026-09-26 |
-| Owner approval | Pending Phase 2 manual verification |
-| Production database changes | Additive business configuration and retail-profile default only |
+| Owner approval | Phase 2 approved by owner on 2026-09-26 |
+| Production database changes | Additive `products.item_type`; existing rows default to `stock` |
 
 ## Phase sequence
 
@@ -34,8 +34,8 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 | 0 | Architecture decisions, boundary inventory, and retail characterization baseline | Approved | Phase 1 |
 | 1 | Safe ordered migration runner, pre-migration backup, and recovery behavior | Approved | Phase 1B |
 | 1B | SQLite/PostgreSQL/MySQL connector and provider conformance layer | Approved | Phase 2 |
-| 2 | Application manifests, business profiles, and capability enforcement | Awaiting manual verification | Phase 3 |
-| 3 | Shared capability boundaries and retail transaction services | Not started | Phase 4 |
+| 2 | Application manifests, business profiles, and capability enforcement | Approved | Phase 3 |
+| 3 | Shared capability boundaries and retail transaction services | Awaiting manual verification | Phase 4 |
 | 4 | Frontend composition, registries, and independent application shells | Not started | Phase 5 |
 | 5 | Auto-workshop application/module | Not started | Phase 6 or release |
 | 6 | Restaurant application/module | Not started | Restaurant release |
@@ -143,12 +143,38 @@ Implementation and automated evidence: [Phase 2 verification record](docs/archit
 
 Owner manual verification:
 
-- [ ] An upgraded existing installation opens as `retail` with its original data and branding.
-- [ ] Existing retail navigation and core transaction screens remain unchanged.
-- [ ] `/api/v1/app-config` reports the expected identity, profile, branding, versions, and capabilities.
-- [ ] A capability disabled by a test license returns HTTP 403 on direct endpoint access.
-- [ ] Profile selection works on an empty disposable database and is blocked after transactions exist.
-- [ ] An existing entitlement-free license cache continues to work offline.
+- [x] An upgraded existing installation opens as `retail` with its original data and branding.
+- [x] Existing retail navigation and core transaction screens remain unchanged.
+- [x] `/api/v1/app-config` reports the expected identity, profile, branding, versions, and capabilities.
+- [x] A capability disabled by a test license returns HTTP 403 on direct endpoint access.
+- [x] Profile selection works on an empty disposable database and is blocked after transactions exist.
+- [x] An existing entitlement-free license cache continues to work offline.
+
+Approval record:
+
+| Field | Value |
+| --- | --- |
+| Decision | Approved |
+| Approved by | Owner |
+| Approval date | 2026-09-26 |
+| Notes | Owner confirmed completion of the Phase 2 manual checklist; begin Phase 3. |
+
+## Phase 3 — Transaction and shared-capability boundaries
+
+Manual focus: repeat cash/credit/unit/variation/purchase/return workflows and
+confirm stock, balances, and journals remain consistent after the refactor.
+
+Implementation and automated evidence: [Phase 3 verification record](docs/architecture/phase-3-verification.md).
+
+Owner manual verification:
+
+- [ ] Existing catalog rows upgrade as `stock`; service and non-stock items do not mutate inventory.
+- [ ] Cash, credit, partial payment, price override, discount, tax, and delivery totals match expected rounded amounts.
+- [ ] Fractional/base-unit conversions and variation stock remain accurate.
+- [ ] Purchase receiving, FIFO sale issue, purchase return, and sale return update stock once.
+- [ ] Customer/vendor balances and every resulting journal remain consistent and balanced.
+- [ ] Held sales and purchases do not change stock or journals before completion.
+- [ ] A deliberately failed accounting post rolls back transaction, stock, and customer balance changes.
 
 Approval record:
 
@@ -157,12 +183,7 @@ Approval record:
 | Decision | Pending |
 | Approved by | — |
 | Approval date | — |
-| Notes | — |
-
-## Phase 3 — Transaction and shared-capability boundaries
-
-Manual focus: repeat cash/credit/unit/variation/purchase/return workflows and
-confirm stock, balances, and journals remain consistent after the refactor.
+| Notes | Owner completes the Phase 3 manual checklist before Phase 4. |
 
 ## Phase 4 — Frontend composition and application shells
 

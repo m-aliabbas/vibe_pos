@@ -1,6 +1,7 @@
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, field_validator
 import json
+from app.applications.retail.catalog import CatalogItemType
 
 # Product Variation Schemas
 class SellingUnit(BaseModel):
@@ -57,6 +58,7 @@ class ProductVariation(ProductVariationBase):
 # Product Schemas
 class ProductBase(BaseModel):
     name: str
+    item_type: CatalogItemType = CatalogItemType.STOCK
     sku: Optional[str] = None
     category: Optional[str] = "Uncategorized"
     description: Optional[str] = None
@@ -99,6 +101,7 @@ class ProductCreate(ProductBase):
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
+    item_type: Optional[CatalogItemType] = None
     sku: Optional[str] = None
     category: Optional[str] = None
     description: Optional[str] = None

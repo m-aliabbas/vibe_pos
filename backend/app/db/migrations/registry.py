@@ -142,6 +142,28 @@ def migrate_retail_business_configuration_sqlalchemy(connection) -> None:
         )
 
 
+def migrate_catalog_item_types(connection: sqlite3.Connection) -> None:
+    if "products" not in _table_names(connection):
+        return
+    if "item_type" not in _columns(connection, "products"):
+        connection.execute(
+            "ALTER TABLE products ADD COLUMN item_type VARCHAR(32) NOT NULL DEFAULT 'stock'"
+        )
+
+
+def migrate_catalog_item_types_sqlalchemy(connection) -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if not inspector.has_table("products"):
+        return
+    columns = {column["name"] for column in inspector.get_columns("products")}
+    if "item_type" not in columns:
+        connection.execute(
+            text("ALTER TABLE products ADD COLUMN item_type VARCHAR(32) NOT NULL DEFAULT 'stock'")
+        )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         migration_id="0001_legacy_schema_baseline",
@@ -162,6 +184,14 @@ MIGRATIONS: tuple[Migration, ...] = (
         supported_providers=("sqlite", "postgresql", "mysql"),
         apply_sqlalchemy=migrate_retail_business_configuration_sqlalchemy,
         declared_checksum="11c0a106435d7eabb984e3f526c7830cc20560b16020dbf48ab389f0f616c16b",
+    ),
+    Migration(
+        migration_id="0004_catalog_item_types",
+        description="Add typed catalog item classification with stock compatibility default",
+        apply=migrate_catalog_item_types,
+        supported_providers=("sqlite", "postgresql", "mysql"),
+        apply_sqlalchemy=migrate_catalog_item_types_sqlalchemy,
+        declared_checksum="f4c738c6b175539576ab4e6b43032b32ca53bb478a8f821c4aea5629f6e6a7a7",
     ),
 )
 

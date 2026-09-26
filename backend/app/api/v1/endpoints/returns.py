@@ -20,6 +20,8 @@ import json
 import re
 from app.models.purchase import Purchase
 from app.models.vendor import Vendor
+from app.applications.retail.calculations import convert_to_base_quantity
+from app.applications.retail.inventory import InventoryService
 
 RETURN_DIR = Path.home() / "Downloads" / "pos_invoices"
 RETURN_DIR.mkdir(parents=True, exist_ok=True)
@@ -301,6 +303,7 @@ def create_return(
     2. Direct return: Simply adds products back to inventory without sale reference
     """
     
+    inventory = InventoryService(db)
     requested_return_type = (return_in.return_type or "sale").strip().lower()
     is_purchase_return = requested_return_type == "purchase" or return_in.purchase_id is not None
     if return_in.sale_id and return_in.purchase_id:
@@ -555,50 +558,38 @@ def create_return(
         db.add(db_return_item)
         
         if inventory_action == "add":
-            # Convert to base units
-            quantity_in_base_units = quantity_returned
-            
             unit_used = sale_item.unit if sale_item else product.base_unit
-            
-            if unit_used != product.base_unit:
-                # Find conversion rate
-                selling_units = parse_json_field(product.selling_units)
-                for su in selling_units:
-                    if su.get('unit') == unit_used:
-                        quantity_in_base_units = quantity_returned * float(su['conversion'])
-                        break
-            
-            # Add back to inventory
+            try:
+                quantity_in_base_units = convert_to_base_quantity(
+                    quantity_returned,
+                    unit=unit_used,
+                    base_unit=product.base_unit,
+                    selling_units=parse_json_field(product.selling_units),
+                    product_name=product.name,
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
             variation_id = sale_item.variation_id if sale_item else None
-            if variation_id:
-                variation = db.query(ProductVariation).filter(
-                    ProductVariation.id == variation_id
-                ).first()
-                if variation:
-                    variation.quantity += quantity_in_base_units
-            else:
-                product.quantity += quantity_in_base_units
+            inventory.return_stock(product, quantity_in_base_units, variation_id=variation_id)
         elif inventory_action == "subtract":
             quantity_in_base_units = quantity_returned
             variation_id = sale_item.variation_id if sale_item else (purchase_item.variation_id if purchase_item else None)
-
-            if variation_id:
-                variation = db.query(ProductVariation).filter(ProductVariation.id == variation_id).first()
-                if not variation:
-                    raise HTTPException(status_code=404, detail=f"Variation {variation_id} not found")
-                if (variation.quantity or 0) < quantity_in_base_units:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Insufficient stock for variation {variation_id}: available {variation.quantity}, requested {quantity_in_base_units}",
-                    )
-                variation.quantity -= quantity_in_base_units
+            if variation_id is None:
+                available_quantity = float(product.quantity or 0.0)
             else:
-                if (product.quantity or 0) < quantity_in_base_units:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Insufficient stock for product {product.id}: available {product.quantity}, requested {quantity_in_base_units}",
-                    )
-                product.quantity -= quantity_in_base_units
+                variation = db.query(ProductVariation).filter(
+                    ProductVariation.id == variation_id,
+                    ProductVariation.product_id == product.id,
+                ).first()
+                if variation is None:
+                    raise HTTPException(status_code=404, detail=f"Variation {variation_id} not found")
+                available_quantity = float(variation.quantity or 0.0)
+            if inventory.policy.tracks_inventory(product) and available_quantity < quantity_in_base_units:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient stock for product {product.id}: available {available_quantity}, requested {quantity_in_base_units}",
+                )
+            inventory.issue(product, quantity_in_base_units, variation_id=variation_id)
     
     ar_reduction = 0.0
     payable_reduction = 0.0

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import api from '@/lib/api';
+import type { CatalogItemType } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Grid3x3, Save } from "lucide-react";
@@ -37,6 +38,7 @@ interface ProductVariation {
 interface Product {
     id: number;
     name: string;
+    item_type?: CatalogItemType;
     sku: string | null;
     category: string;
     selling_price: number;

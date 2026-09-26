@@ -29,6 +29,7 @@ export default api;
 export type ApplicationId = 'retail' | 'workshop' | 'restaurant';
 export type ProfileId = 'retail' | 'clothing-retail' | 'milk-counter-retail';
 export type ModuleId = 'workshop' | 'restaurant' | 'clothing' | 'milk';
+export type CatalogItemType = 'stock' | 'service' | 'prepared' | 'non_stock';
 export type CapabilityId =
     | 'platform.authentication'
     | 'platform.users'

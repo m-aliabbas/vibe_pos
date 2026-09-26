@@ -11,6 +11,7 @@ from app.models.vendor import Vendor
 from app.models.stock_batch import StockBatch, BatchStatus
 from app.schemas import purchase as purchase_schema
 from app.services import accounting as accounting_service
+from app.applications.retail.inventory import InventoryService
 
 
 def _generate_batch_number(db: Session, product_id: int) -> str:
@@ -23,6 +24,10 @@ def _generate_batch_number(db: Session, product_id: int) -> str:
     return f"BATCH-{today}-P{product_id}-{count + 1:03d}"
 
 router = APIRouter()
+
+
+def _inventory(db: Session) -> InventoryService:
+    return InventoryService(db)
 
 @router.post("/", response_model=purchase_schema.Purchase)
 def create_purchase(
@@ -97,10 +102,9 @@ def create_purchase(
 
         # 3. Update Stock & Cost
         if item.variation_id:
-            variation.quantity += item.quantity
-            db.add(variation)
+            _inventory(db).receive(product, item.quantity, variation_id=item.variation_id)
         else:
-            product.quantity += item.quantity
+            _inventory(db).receive(product, item.quantity)
             product.cost_price = item.unit_cost
             if item.update_selling_price and item.selling_price is not None:
                 if item.selling_price < 0:
@@ -145,17 +149,23 @@ def create_purchase(
     
     db.add(purchase)
     db.flush()
-    accounting_service.post_purchase_entry(
-        db=db,
-        purchase=purchase,
-        amount_paid=cash_paid,
-        prepaid_used=prepaid_used,
-        created_by=current_user.id,
-    )
+    try:
+        accounting_service.post_purchase_entry(
+            db=db,
+            purchase=purchase,
+            amount_paid=cash_paid,
+            prepaid_used=prepaid_used,
+            created_by=current_user.id,
+        )
+    except Exception as error:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create purchase: {error}") from error
 
     # Create a StockBatch for each purchase item
     for db_item in purchase.items:
         product = db.query(Product).filter(Product.id == db_item.product_id).first()
+        if product is None or not _inventory(db).policy.tracks_inventory(product):
+            continue
         batch_num = _generate_batch_number(db, db_item.product_id)
         selling_price = product.selling_price if product else 0.0
         batch = StockBatch(
@@ -176,7 +186,11 @@ def create_purchase(
         db_item.batch_id = batch.id
         db.add(db_item)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception as error:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create purchase: {error}") from error
     db.refresh(purchase)
 
     result = purchase_schema.Purchase.model_validate(purchase)
@@ -208,13 +222,9 @@ def update_purchase(
             continue
 
         if existing_item.variation_id:
-            variation = db.query(ProductVariation).filter(ProductVariation.id == existing_item.variation_id).first()
-            if variation:
-                variation.quantity -= existing_item.quantity
-                db.add(variation)
+            _inventory(db).adjust_variation(product, existing_item.variation_id, -existing_item.quantity)
         else:
-            product.quantity -= existing_item.quantity
-            db.add(product)
+            _inventory(db).adjust_product(product, -existing_item.quantity)
 
     # Retire old batches linked to this purchase's items
     for existing_item in existing_items:
@@ -274,10 +284,9 @@ def update_purchase(
         db_items.append(db_item)
 
         if item.variation_id:
-            variation.quantity += item.quantity
-            db.add(variation)
+            _inventory(db).receive(product, item.quantity, variation_id=item.variation_id)
         else:
-            product.quantity += item.quantity
+            _inventory(db).receive(product, item.quantity)
             product.cost_price = item.unit_cost
             if item.update_selling_price and item.selling_price is not None:
                 if item.selling_price < 0:
@@ -320,6 +329,8 @@ def update_purchase(
     # Create new batches for updated purchase items
     for db_item in purchase.items:
         product = db.query(Product).filter(Product.id == db_item.product_id).first()
+        if product is None or not _inventory(db).policy.tracks_inventory(product):
+            continue
         batch_num = _generate_batch_number(db, db_item.product_id)
         selling_price = product.selling_price if product else 0.0
         batch = StockBatch(

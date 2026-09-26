@@ -19,6 +19,7 @@ class Product(Base):
     selling_price = Column(Float, default=0.0)
     cost_price = Column(Float, default=0.0) # Updated via purchase
     quantity = Column(Float, default=0.0)
+    item_type = Column(String, nullable=False, default="stock", server_default="stock")
     low_stock_threshold = Column(Integer, default=10)
     allow_decimal_qty = Column(Boolean, default=False)
     

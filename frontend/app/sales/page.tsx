@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import api, {
   customerApi,
+  CatalogItemType,
   CustomerSimple,
   holdSalesApi,
   HoldSaleResponse,
@@ -71,6 +72,7 @@ interface SellingUnit {
 interface Product {
   id: number;
   name: string;
+  item_type?: CatalogItemType;
   sku: string | null;
   category: string;
   selling_price: number;

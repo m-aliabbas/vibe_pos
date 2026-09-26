@@ -71,7 +71,7 @@ class PlatformConfigurationTests(unittest.TestCase):
         payload = _response(self.db)
         self.assertEqual(payload.application_id, ApplicationId.RETAIL)
         self.assertEqual(payload.profile_id, ProfileId.RETAIL)
-        self.assertEqual(payload.schema_version, "3")
+        self.assertEqual(payload.schema_version, "4")
         self.assertIn("customer-identity", payload.shared_package_versions)
         self.assertIn(CapabilityId.RETAIL_SALES, payload.enabled_capabilities)
         self.assertEqual(payload.branding.name, "My Store")

@@ -16,6 +16,7 @@ from app.models.purchase import PurchaseItem
 from app.models.stock_adjustment import ProductStockAdjustment
 from app.core import security
 from app.schemas import product as product_schema
+from app.applications.retail.inventory import InventoryService
 
 router = APIRouter()
 
@@ -296,9 +297,10 @@ def adjust_product_stock(
             detail="This product only allows whole-number quantities",
         )
 
-    quantity_before = float(product.quantity or 0.0)
-    quantity_after = quantity_before + float(stock_in.quantity_delta)
-    product.quantity = quantity_after
+    quantity_before, quantity_after = InventoryService(db).adjust_product(
+        product,
+        float(stock_in.quantity_delta),
+    )
 
     log_entry = ProductStockAdjustment(
         product_id=product.id,

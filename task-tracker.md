@@ -165,9 +165,9 @@ Working rules:
 | --- | --- | --- | --- |
 | 0 | Decisions, baseline, and characterization | None | Approved |
 | 1 | Upgrade and migration safety | Phase 0 | Approved |
-| 1B | Database connector and provider portability | Phase 1 | Awaiting manual verification |
-| 2 | Platform capabilities, app manifests, and profiles | Phase 1B | Not started |
-| 3 | Shared capability and business-transaction boundaries | Phase 2 | Not started |
+| 1B | Database connector and provider portability | Phase 1 | Approved |
+| 2 | Platform capabilities, app manifests, and profiles | Phase 1B | Approved |
+| 3 | Shared capability and business-transaction boundaries | Phase 2 | Awaiting manual verification |
 | 4 | Frontend composition and application shells | Phases 2-3 | Not started |
 | 5 | Auto workshop proof application/module | Phase 4 | Not started |
 | 6 | Restaurant application/module | Phase 5 lessons applied | Not started |
@@ -421,39 +421,53 @@ avoiding a universal transaction model for unrelated businesses.
 
 ### Tasks
 
-- [ ] **CORE-001:** Define core catalog item types such as stock item, service,
+- [x] **CORE-001:** Define core catalog item types such as stock item, service,
   prepared item, and non-stock item without changing existing products by
   default.
-- [ ] **CORE-002:** Extract pure unit-conversion and sale-total calculations from
+- [x] **CORE-002:** Extract pure unit-conversion and sale-total calculations from
   HTTP endpoints and cover rounding, discounts, tax, and price overrides.
-- [ ] **CORE-003:** Introduce an inventory service for receiving, issuing,
+- [x] **CORE-003:** Introduce an inventory service for receiving, issuing,
   returning, and adjusting stock, including variations and FIFO batches.
-- [ ] **CORE-004:** Introduce an application-level retail sale service that validates,
+- [x] **CORE-004:** Introduce an application-level retail sale service that validates,
   prices, persists, applies inventory, updates customer balances, posts
   accounting, and commits atomically.
-- [ ] **CORE-005:** Define an inventory-consumption policy for stock, service, and
+- [x] **CORE-005:** Define an inventory-consumption policy for stock, service, and
   prepared items; restaurant recipe consumption will implement this seam later.
-- [ ] **CORE-006:** Refactor purchase and return workflows to use the same
+- [x] **CORE-006:** Refactor purchase and return workflows to use the same
   inventory boundary without changing their external contracts.
-- [ ] **CORE-007:** Preserve held-transaction behavior and prove that holds do not
+- [x] **CORE-007:** Preserve held-transaction behavior and prove that holds do not
   prematurely mutate final stock or journals.
-- [ ] **CORE-008:** Define how domain-owned transactions produce or reference
+- [x] **CORE-008:** Define how domain-owned transactions produce or reference
   shared invoice/payment records. Use a unique `sale_id` only for a workflow that
   is genuinely a retail sale; do not store workshop, restaurant, or rental state
   on the retail `sales` table.
-- [ ] **CORE-009:** Add failure-injection tests proving rollback across stock,
+- [x] **CORE-009:** Add failure-injection tests proving rollback across stock,
   balances, sale records, and accounting.
-- [ ] **CORE-010:** Decide and document the staged precision strategy for currency
+- [x] **CORE-010:** Decide and document the staged precision strategy for currency
   and quantities. Do not combine a full Float-to-Decimal migration with an
   unrelated module change.
-- [ ] **CORE-011:** Define application-layer commands for each domain workflow so
+- [x] **CORE-011:** Define application-layer commands for each domain workflow so
   React pages call business operations rather than SQL/repository details.
-- [ ] **CORE-012:** Place storage behind focused repository/service boundaries
+- [x] **CORE-012:** Place storage behind focused repository/service boundaries
   where it materially improves testability or future database replacement; do
   not create a generic repository abstraction with no domain value.
-- [ ] **CORE-013:** Separate shared invoice rendering/payment capabilities from
+- [x] **CORE-013:** Separate shared invoice rendering/payment capabilities from
   retail sale orchestration so other apps can consume them without importing
   the retail sales domain.
+
+### Phase 3 precision decision
+
+- Currency calculations use `Decimal` intermediates and round each persisted
+  sale-line amount and the resulting subtotal/total to two decimal places using
+  `ROUND_HALF_UP`.
+- Quantity conversion retains configured fractional precision and does not round
+  converted stock quantities.
+- Existing ORM storage remains `Float`; a repository-wide Float-to-Decimal
+  migration is deferred to a separately tested phase.
+- Sale-specific invoice and accounting orchestration remains retail-owned.
+  Shared payment/invoice requests identify their source with an
+  `(application_id, transaction_type, transaction_id)` reference rather than a
+  universal retail `sale_id`.
 
 ### Exit gate
 
@@ -781,6 +795,10 @@ Add one row whenever a task or phase is completed or blocked.
 | 2026-09-26 | Phase 1B approval | Complete | Owner completed the database provider, backup/restore, transfer, and packaged connectivity checklist | Explicit owner approval in the Codex task | Begin Phase 2 only |
 | 2026-09-26 | Phase 2 | In progress | Started backend-authoritative app manifests, business profiles, and capability enforcement | Work in progress | Complete the Phase 2 automated gate before manual verification |
 | 2026-09-26 | Phase 2 | Awaiting manual verification | Added the retail manifest, persistent retail profile, typed app-config contract, capability/license enforcement, profile-switch safety, shared service contracts, and compatibility validation | 34 backend tests pass; Python compile passes; frontend build passes; temporary frozen backend starts and serves app-config; lint remains at the recorded 131-error/80-warning baseline | Owner completes the Phase 2 checklist in `phases.md`; do not begin Phase 3 before approval |
+| 2026-09-26 | Phase 2 approval | Complete | Owner confirmed completion of the Phase 2 manual checklist and approved the phase | Explicit owner confirmation in the current task | Begin Phase 3 only |
+| 2026-09-26 | Phase 3 | Awaiting manual verification | Added typed catalog items, pure rounded sale calculations, inventory consumption policies, retail sale commands, shared inventory mutation, and application-neutral invoice/payment references | Backend suite: 43 passed, 19 provider-service tests skipped; migration and Python compilation pass; frontend build passes; see Phase 3 verification record | Owner completes `phases.md` Phase 3 checklist before Phase 4 |
+| 2026-09-26 | Phase 2 approval | Complete | Owner confirmed completion of the Phase 2 manual checklist and approved the phase | Explicit owner confirmation in the current task | Begin Phase 3 only |
+| 2026-09-26 | Phase 3 | In progress | Started shared capability and retail transaction-boundary extraction | Work in progress | Complete the Phase 3 automated gate before manual verification |
 
 ## Open questions
 

@@ -2,7 +2,7 @@
 
 Date: 2026-09-26
 
-Status: Awaiting owner manual verification
+Status: Approved by owner after manual verification on 2026-09-26
 
 ## Delivered
 
@@ -52,14 +52,23 @@ environment, so that CI matrix remains an external verification item.
 
 ## Owner manual checklist
 
-- An upgraded existing installation opens as the `retail` profile with its
+- [x] An upgraded existing installation opens as the `retail` profile with its
   original store branding and data.
-- Existing retail navigation and core sale, purchase, return, customer, report,
+- [x] Existing retail navigation and core sale, purchase, return, customer, report,
   and settings screens behave as before.
-- `GET /api/v1/app-config` reports the expected application, retail profile,
+- [x] `GET /api/v1/app-config` reports the expected application, retail profile,
   branding, versions, and capabilities.
-- A capability explicitly removed by a test license produces HTTP 403 even when
+- [x] A capability explicitly removed by a test license produces HTTP 403 even when
   its endpoint is called directly.
-- A compatible profile can be selected on an empty disposable database, while
+- [x] A compatible profile can be selected on an empty disposable database, while
   direct switching is rejected after transactional data exists.
-- An existing license/cache without entitlement fields remains usable offline.
+- [x] An existing license/cache without entitlement fields remains usable offline.
+
+Approval record:
+
+| Field | Value |
+| --- | --- |
+| Decision | Approved |
+| Approved by | Owner |
+| Approval date | 2026-09-26 |
+| Notes | Owner confirmed completion of the manual checklist and authorized Phase 3. |

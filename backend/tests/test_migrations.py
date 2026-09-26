@@ -85,6 +85,9 @@ class MigrationRunnerTests(unittest.TestCase):
             product_columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(products)")
             }
+            item_type = connection.execute(
+                "SELECT item_type FROM products WHERE id = 1"
+            ).fetchone()[0]
             sale_columns = {row[1] for row in connection.execute("PRAGMA table_info(sales)")}
             note_columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(customer_notes)")
@@ -108,9 +111,10 @@ class MigrationRunnerTests(unittest.TestCase):
             )
 
         self.assertTrue(
-            {"has_variations", "variation_attributes", "base_unit", "selling_units", "allow_decimal_qty"}
+            {"has_variations", "variation_attributes", "base_unit", "selling_units", "allow_decimal_qty", "item_type"}
             <= product_columns
         )
+        self.assertEqual(item_type, "stock")
         self.assertIn("previous_balance", sale_columns)
         self.assertTrue({"amount", "payment_method"} <= note_columns)
         self.assertEqual(business_configuration, ("retail", "retail", "[]"))

@@ -44,7 +44,7 @@ RETAIL_MANIFEST = ApplicationManifest(
     application_id=ApplicationId.RETAIL,
     application_name="VibePOS Retail",
     application_version="1.0.20",
-    schema_version="3",
+    schema_version="4",
     default_profile=ProfileId.RETAIL,
     compatible_profiles=frozenset(
         {ProfileId.RETAIL, ProfileId.CLOTHING_RETAIL, ProfileId.MILK_COUNTER_RETAIL}
@@ -91,6 +91,7 @@ RETAIL_MANIFEST = ApplicationManifest(
         "0001_legacy_schema_baseline",
         "0002_startup_column_additions",
         "0003_retail_business_configuration",
+        "0004_catalog_item_types",
     ),
     shared_package_requirements={
         package_id: PackageRequirement("1.0.0", "2.0.0")

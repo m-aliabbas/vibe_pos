@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
+import type { CatalogItemType } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import JsBarcode from 'jsbarcode';
 import { ToWords } from 'to-words';
@@ -66,6 +67,7 @@ interface ProductVariation {
 interface Product {
     id: number;
     name: string;
+    item_type?: CatalogItemType;
     sku: string | null;
     category: string;
     selling_price: number;

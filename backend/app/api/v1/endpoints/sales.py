@@ -23,38 +23,16 @@ from app.models.user import User, UserRole
 from app.models.customer import Customer
 from app.models.pos_return import PosReturn
 from app.models.accounting import JournalEntry
-from app.models.stock_batch import StockBatch, BatchStatus
 from app.schemas.sale import SaleCreate, SaleUpdate, Sale as SaleSchema, SaleStats
 from app.services import accounting as accounting_service
+from app.applications.retail.calculations import (
+    convert_to_base_quantity,
+)
+from app.applications.retail.inventory import InventoryService
+from app.applications.retail.sales import RetailSaleCommand, RetailSaleLineCommand, RetailSaleService
 
 router = APIRouter()
 
-
-def _deduct_from_batches_fifo(db: Session, product_id: int, variation_id, qty_needed: float) -> int | None:
-    """Deducts qty_needed from ACTIVE batches in FIFO order. Returns last batch_id used."""
-    batches = db.query(StockBatch).filter(
-        StockBatch.product_id == product_id,
-        StockBatch.variation_id == variation_id,
-        StockBatch.status == BatchStatus.ACTIVE,
-        StockBatch.quantity_remaining > 0,
-    ).order_by(StockBatch.purchase_date.asc()).all()
-
-    if not batches:
-        return None
-
-    batch_used_id = None
-    remaining = qty_needed
-    for batch in batches:
-        take = min(batch.quantity_remaining, remaining)
-        batch.quantity_remaining -= take
-        if batch.quantity_remaining <= 0:
-            batch.status = BatchStatus.DEPLETED
-        remaining -= take
-        batch_used_id = batch.id
-        db.add(batch)
-        if remaining <= 0:
-            break
-    return batch_used_id
 
 # Invoice folder
 INVOICE_DIR = Path.home() / "Downloads" / "pos_invoices"
@@ -492,24 +470,38 @@ def validate_item_quantity_rules(product: Product, quantity: float) -> None:
 
 
 def get_quantity_in_base_units(product: Product, unit: str, quantity: float) -> float:
-    quantity_in_base_units = float(quantity)
-    if unit != product.base_unit:
-        selling_units = parse_json_field(product.selling_units)
-        selling_unit = None
-        for su in selling_units:
-            if su.get('unit') == unit:
-                selling_unit = su
-                break
+    try:
+        return convert_to_base_quantity(
+            quantity,
+            unit=unit,
+            base_unit=product.base_unit,
+            selling_units=parse_json_field(product.selling_units),
+            product_name=product.name,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
-        if not selling_unit:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unit '{unit}' not configured for product {product.name}"
+
+def _retail_sale_command(sale_in: SaleCreate | SaleUpdate, user_id: int) -> RetailSaleCommand:
+    return RetailSaleCommand(
+        user_id=user_id,
+        lines=tuple(
+            RetailSaleLineCommand(
+                product_id=item.product_id,
+                quantity=item.quantity,
+                unit=item.unit,
+                variation_id=item.variation_id,
+                item_discount=item.item_discount or 0.0,
+                unit_price=item.unit_price,
             )
-
-        quantity_in_base_units = quantity * float(selling_unit['conversion'])
-
-    return quantity_in_base_units
+            for item in sale_in.items
+        ),
+        payment_method=str(getattr(sale_in.payment_method, "value", sale_in.payment_method)),
+        discount=sale_in.discount or 0.0,
+        tax=sale_in.tax or 0.0,
+        delivery_charges=sale_in.delivery_charges or 0.0,
+        amount_paid=sale_in.amount_paid,
+    )
 
 
 def resolve_sale_customer(db: Session, sale_in: SaleCreate):
@@ -696,72 +688,8 @@ def create_sale(
             variations_dict[item.variation_id] = variation
         
         # Validate unit and calculate quantity in base units
-        unit = item.unit
-        unit_price = product.selling_price
-        quantity_in_base_units = item.quantity
-        
-        if unit != product.base_unit:
-            # Find the selling unit configuration
-            selling_units = parse_json_field(product.selling_units)
-            selling_unit = None
-            for su in selling_units:
-                if su.get('unit') == unit:
-                    selling_unit = su
-                    break
-            
-            if not selling_unit:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Unit '{unit}' not configured for product {product.name}"
-                )
-            
-            # Convert to base units for stock check
-            quantity_in_base_units = item.quantity * float(selling_unit['conversion'])
-            unit_price = selling_unit['price']
-        
-        # # Check stock availability
-        # if item.variation_id:
-        #     variation = variations_dict[item.variation_id]
-        #     if variation.quantity < quantity_in_base_units:
-        #         raise HTTPException(
-        #             status_code=400,
-        #             detail=f"Insufficient stock for {product.name} (variation). Available: {variation.quantity}, Requested: {quantity_in_base_units} {product.base_unit}"
-        #         )
-        # else:
-        #     if product.quantity < quantity_in_base_units:
-        #         raise HTTPException(
-        #             status_code=400,
-        #             detail=f"Insufficient stock for {product.name}. Available: {product.quantity}, Requested: {quantity_in_base_units} {product.base_unit}"
-        #         )
-    
-    # Calculate totals
-    subtotal = 0.0
-    for item in sale_in.items:
-        product = products_dict[item.product_id]
-        
-        # Determine price
-        if item.variation_id:
-            variation = variations_dict[item.variation_id]
-            base_price = product.selling_price + variation.price_adjustment
-        else:
-            base_price = product.selling_price
-        
-        # Get unit price (allow override)
-        if item.unit_price is not None:
-            unit_price = item.unit_price
-        else:
-            unit_price = base_price
-            if item.unit != product.base_unit:
-                selling_units = parse_json_field(product.selling_units)
-                for su in selling_units:
-                    if su.get('unit') == item.unit:
-                        unit_price = su['price']
-                        break
-        
-        item_discount = item.item_discount if item.item_discount is not None else 0.0
-        item_total = (unit_price * item.quantity) - item_discount
-        subtotal += item_total
-    
+        get_quantity_in_base_units(product, item.unit, item.quantity)
+
     # Apply discount if provided
     discount = sale_in.discount if sale_in.discount is not None else 0.0
     
@@ -771,8 +699,17 @@ def create_sale(
     # Calculate delivery charges if provided
     delivery_charges = sale_in.delivery_charges if sale_in.delivery_charges is not None else 0.0
     
-    # Calculate final total
-    total = subtotal - discount + tax + delivery_charges
+    sale_service = RetailSaleService(db)
+    sale_command = _retail_sale_command(sale_in, current_user.id)
+    try:
+        sale_lines, subtotal, total = sale_service.calculate_lines(
+            sale_command,
+            products_dict,
+            variations_dict,
+            lambda product: parse_json_field(product.selling_units),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     
     # Calculate payment tracking
     amount_paid = sale_in.amount_paid if sale_in.amount_paid is not None else total
@@ -820,79 +757,22 @@ def create_sale(
     db.add(db_sale)
     db.flush()  # Get the sale ID
     
-    # Create sale items and deduct inventory
-    for item in sale_in.items:
-        product = products_dict[item.product_id]
-        
-        # Determine price
-        if item.variation_id:
-            variation = variations_dict[item.variation_id]
-            base_price = product.selling_price + variation.price_adjustment
-        else:
-            base_price = product.selling_price
-        
-        # Get unit price (allow override)
-        unit_price = item.unit_price if item.unit_price is not None else base_price
-        quantity_in_base_units = item.quantity
+    sale_service.apply_lines(db_sale, sale_command, products_dict, sale_lines)
 
-        if item.unit != product.base_unit:
-            selling_units = parse_json_field(product.selling_units)
-            for su in selling_units:
-                if su.get('unit') == item.unit:
-                    if item.unit_price is None:
-                        unit_price = su['price']
-                    quantity_in_base_units = item.quantity * su['conversion']
-                    break
-        
-        # Create sale item
-        item_discount = item.item_discount if item.item_discount is not None else 0.0
-        db_sale_item = SaleItem(
-            sale_id=db_sale.id,
-            product_id=item.product_id,
-            variation_id=item.variation_id,
-            quantity=item.quantity,
-            unit=item.unit,
-            unit_price=unit_price,
-            item_discount=item_discount,
-            total_price=(unit_price * item.quantity) - item_discount
-        )
-        db.add(db_sale_item)
-
-        # Deduct from inventory (always in base units) — FIFO batch deduction
-        if item.variation_id:
-            variation = variations_dict[item.variation_id]
-            variation.quantity -= quantity_in_base_units
-            batch_id = _deduct_from_batches_fifo(db, item.product_id, item.variation_id, quantity_in_base_units)
-        else:
-            product.quantity -= quantity_in_base_units
-            batch_id = _deduct_from_batches_fifo(db, item.product_id, None, quantity_in_base_units)
-
-        if batch_id:
-            db_sale_item.batch_id = batch_id
-            db.add(db_sale_item)
-    
-    # Update customer statistics if linked
     if customer and customer_ref_id:
-        customer.total_purchases += 1
-        customer.total_spent += total
-
-        # Add remaining amount due to outstanding balance (udhar)
-        if db_sale.amount_due > 0:
-            customer.outstanding_balance += db_sale.amount_due
-            
-        customer.updated_at = now_pkt()
-        db.add(customer)
+        sale_service.update_customer_balance(
+            customer,
+            total=total,
+            amount_due=db_sale.amount_due,
+        )
     
     # Commit transaction
     try:
-        accounting_service.post_sale_entry(
-            db=db,
-            sale=db_sale,
+        sale_service.post_and_commit(
+            db_sale,
             payment_method=sale_in.payment_method,
-            created_by=current_user.id,
+            user_id=current_user.id,
         )
-        db.commit()
-        db.refresh(db_sale)
         
         # Auto-send invoice in background if phone number provided
         if normalized_phone:
@@ -933,14 +813,11 @@ def update_sale(
         if not product:
             continue
         qty_base = get_quantity_in_base_units(product, old_item.unit, old_item.quantity)
-        if old_item.variation_id:
-            variation = db.query(ProductVariation).filter(ProductVariation.id == old_item.variation_id).first()
-            if variation:
-                variation.quantity += qty_base
-                db.add(variation)
-        else:
-            product.quantity += qty_base
-            db.add(product)
+        InventoryService(db).return_stock(
+            product,
+            qty_base,
+            variation_id=old_item.variation_id,
+        )
 
     for old_item in old_items:
         db.delete(old_item)
@@ -994,33 +871,20 @@ def update_sale(
 
         get_quantity_in_base_units(product, item.unit, item.quantity)
 
-    subtotal = 0.0
-    for item in sale_in.items:
-        product = products_dict[item.product_id]
-        if item.variation_id:
-            variation = variations_dict[item.variation_id]
-            base_price = product.selling_price + variation.price_adjustment
-        else:
-            base_price = product.selling_price
-
-        if item.unit_price is not None:
-            unit_price = item.unit_price
-        else:
-            unit_price = base_price
-            if item.unit != product.base_unit:
-                selling_units = parse_json_field(product.selling_units)
-                for su in selling_units:
-                    if su.get('unit') == item.unit:
-                        unit_price = su['price']
-                        break
-
-        item_discount = item.item_discount if item.item_discount is not None else 0.0
-        subtotal += (unit_price * item.quantity) - item_discount
-
     discount = sale_in.discount if sale_in.discount is not None else 0.0
     tax = sale_in.tax if sale_in.tax is not None else 0.0
     delivery_charges = sale_in.delivery_charges if sale_in.delivery_charges is not None else 0.0
-    total = subtotal - discount + tax + delivery_charges
+    sale_service = RetailSaleService(db)
+    sale_command = _retail_sale_command(sale_in, current_user.id)
+    try:
+        sale_lines, subtotal, total = sale_service.calculate_lines(
+            sale_command,
+            products_dict,
+            variations_dict,
+            lambda product: parse_json_field(product.selling_units),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     amount_paid = sale_in.amount_paid if sale_in.amount_paid is not None else total
     amount_due = max(0, total - amount_paid)
     change_amount = max(0, amount_paid - total)
@@ -1063,59 +927,14 @@ def update_sale(
     sale.amount_due = amount_due
     sale.change_amount = change_amount
 
-    for item in sale_in.items:
-        product = products_dict[item.product_id]
-
-        if item.variation_id:
-            variation = variations_dict[item.variation_id]
-            base_price = product.selling_price + variation.price_adjustment
-        else:
-            base_price = product.selling_price
-
-        unit_price = item.unit_price if item.unit_price is not None else base_price
-        quantity_in_base_units = get_quantity_in_base_units(product, item.unit, item.quantity)
-
-        if item.unit != product.base_unit and item.unit_price is None:
-            selling_units = parse_json_field(product.selling_units)
-            for su in selling_units:
-                if su.get('unit') == item.unit:
-                    unit_price = su['price']
-                    break
-
-        item_discount = item.item_discount if item.item_discount is not None else 0.0
-        db_sale_item = SaleItem(
-            sale_id=sale.id,
-            product_id=item.product_id,
-            variation_id=item.variation_id,
-            quantity=item.quantity,
-            unit=item.unit,
-            unit_price=unit_price,
-            item_discount=item_discount,
-            total_price=(unit_price * item.quantity) - item_discount,
-        )
-        db.add(db_sale_item)
-
-        if item.variation_id:
-            variation = variations_dict[item.variation_id]
-            variation.quantity -= quantity_in_base_units
-            db.add(variation)
-            batch_id = _deduct_from_batches_fifo(db, item.product_id, item.variation_id, quantity_in_base_units)
-        else:
-            product.quantity -= quantity_in_base_units
-            db.add(product)
-            batch_id = _deduct_from_batches_fifo(db, item.product_id, None, quantity_in_base_units)
-
-        if batch_id:
-            db_sale_item.batch_id = batch_id
-            db.add(db_sale_item)
+    sale_service.apply_lines(sale, sale_command, products_dict, sale_lines)
 
     if customer and customer_ref_id:
-        customer.total_purchases += 1
-        customer.total_spent += total
-        if amount_due > 0:
-            customer.outstanding_balance += amount_due
-        customer.updated_at = now_pkt()
-        db.add(customer)
+        sale_service.update_customer_balance(
+            customer,
+            total=total,
+            amount_due=amount_due,
+        )
 
     try:
         accounting_service.post_sale_entry(
