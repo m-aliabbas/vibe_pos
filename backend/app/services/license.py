@@ -6,7 +6,7 @@ import platform
 import sys
 import uuid
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple, List
 
@@ -30,6 +30,8 @@ class LicenseError(RuntimeError):
 
 DEFAULT_ENC_FILENAME = "k1.json.enc"
 DEFAULT_LICENSE_CACHE_FILENAME = "license_cache.enc"
+LOCAL_LICENSE_CACHE_DAYS = 30
+DEFAULT_LICENSE_TERM_DAYS = 30
 
 
 def _normalize_fingerprint_payload() -> dict:
@@ -156,14 +158,12 @@ def _load_local_license_cache(expected_fingerprint: str) -> Optional[dict]:
     if payload.get("fingerprint") != expected_fingerprint:
         return None
 
-    expires_at = payload.get("expires_at")
-    if isinstance(expires_at, str):
-        try:
-            expires_at = datetime.fromisoformat(expires_at)
-        except ValueError:
-            expires_at = None
+    local_expires_at = _parse_expiry(payload.get("local_expires_at"))
+    if local_expires_at is None or _is_expired(local_expires_at):
+        return None
 
-    if _is_expired(expires_at if isinstance(expires_at, datetime) else None):
+    remote_expires_at = _parse_expiry(payload.get("expire_date"))
+    if remote_expires_at is None or _is_expired(remote_expires_at):
         return None
 
     return payload
@@ -214,7 +214,7 @@ def _activate_entitlements(payload: dict) -> LicenseEntitlements:
 
 def _save_local_license_cache(
     fingerprint: str,
-    expires_at: Optional[datetime],
+    expire_date: Optional[datetime],
     entitlements: LicenseEntitlements,
 ) -> None:
     key = _get_license_cache_key()
@@ -224,11 +224,15 @@ def _save_local_license_cache(
     cache_path = _get_license_cache_path()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
+    cached_at = datetime.now(timezone.utc)
     payload = {
         "fingerprint": fingerprint,
         "approved": True,
-        "expires_at": expires_at.isoformat() if isinstance(expires_at, datetime) else None,
-        "cached_at": datetime.now(timezone.utc).isoformat(),
+        "expire_date": expire_date.isoformat() if isinstance(expire_date, datetime) else None,
+        "cached_at": cached_at.isoformat(),
+        "local_expires_at": (
+            cached_at + timedelta(days=LOCAL_LICENSE_CACHE_DAYS)
+        ).isoformat(),
         "entitlements": _entitlements_payload(entitlements),
     }
 
@@ -318,7 +322,23 @@ def _is_expired(expires_at: Optional[datetime]) -> bool:
         return False
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) > expires_at
+    return datetime.now(timezone.utc) >= expires_at
+
+
+def _parse_expiry(value: object) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        expires_at = value
+    elif isinstance(value, str):
+        try:
+            expires_at = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at
 
 
 def check_license_or_exit() -> str:
@@ -353,6 +373,8 @@ def check_license_or_exit() -> str:
                         "approved": False,
                         "disabled": False,
                         "created_at": firestore.SERVER_TIMESTAMP,
+                        "expire_date": datetime.now(timezone.utc)
+                        + timedelta(days=DEFAULT_LICENSE_TERM_DAYS),
                         "fingerprint_payload": payload,
                     },
                     merge=True,
@@ -370,28 +392,24 @@ def check_license_or_exit() -> str:
         )
 
     data = doc.to_dict() or {}
-    approved = bool(data.get("approved"))
+    approved = data.get("approved") is True
     disabled = bool(data.get("disabled"))
-    expires_at = data.get("expires_at")
-
-    if isinstance(expires_at, str):
-        try:
-            expires_at = datetime.fromisoformat(expires_at)
-        except ValueError:
-            expires_at = None
+    expire_date = _parse_expiry(data.get("expire_date"))
 
     if disabled:
         raise LicenseError("License disabled for this device")
     if not approved:
         raise LicenseError("License not approved for this device")
-    if _is_expired(expires_at if isinstance(expires_at, datetime) else None):
+    if expire_date is None:
+        raise LicenseError("License expire_date is missing or invalid for this device")
+    if _is_expired(expire_date):
         raise LicenseError("License expired for this device")
 
     entitlements = _activate_entitlements(data)
 
     _save_local_license_cache(
         fingerprint,
-        expires_at if isinstance(expires_at, datetime) else None,
+        expire_date,
         entitlements,
     )
 
