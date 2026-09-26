@@ -4,7 +4,16 @@ This file is the source-of-truth summary for application releases. Add user-visi
 
 ## Unreleased
 
-No changes recorded yet.
+## v1.0.24 - 2026-09-26
+
+### Security and licensing
+
+- Enforced explicit license expiration dates and limited local license-cache validity to 30 days.
+- No database schema changes.
+
+## v1.0.23 - 2026-09-24
+
+- stable realease
 
 ## v1.0.22 - 2026-09-24
 
@@ -42,6 +51,8 @@ No changes recorded yet.
 
 | Version | Release date | Notes |
 |---|---|---|
+| `v1.0.24` | 2026-09-26 | License expiration and local-cache validation updates. |
+| `v1.0.23` | 2026-09-24 | Version synchronization and release checkpoint. |
 | `v1.0.22` | 2026-09-24 | Version synchronization and release checkpoint. |
 | `v1.0.21` | 2026-09-24 | Version synchronization and release checkpoint. |
 | `v1.0.20` | 2026-09-24 | Fixed in-app update checks and hardened public release contents. |
