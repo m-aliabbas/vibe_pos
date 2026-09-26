@@ -3,13 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.api import api_router
 from app.db.session import engine, Base, provider
-import app.db.base  # noqa: F401 - imports every manifest-owned model into metadata
 from app.db.bootstrap import bootstrap_database
 from app.platform.manifests import get_active_manifest, load_manifest_models
+from app.platform.identifiers import CapabilityId
 from app.services.license import check_license_or_exit, LicenseError
-
-# Import WhatsApp client initializer
-from app.api.v1.endpoints.whatsapp import init_whatsapp
 
 # Import backup scheduler
 from app.services import backup_scheduler
@@ -26,7 +23,7 @@ bootstrap_database(
 )
 
 app = FastAPI(
-    title=settings.PROJECT_NAME,
+    title=active_manifest.application_name,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
@@ -55,9 +52,12 @@ async def startup_event():
         print(f"❌ License check failed: {exc}")
         raise RuntimeError("License check failed") from exc
 
-    print("🚀 Initializing WhatsApp client...")
-    init_whatsapp()
-    print("✅ WhatsApp client initialized")
+    if CapabilityId.MESSAGING in active_manifest.capabilities:
+        from app.api.v1.endpoints.whatsapp import init_whatsapp
+
+        print("Initializing WhatsApp client...")
+        init_whatsapp()
+        print("WhatsApp client initialized")
     
     print("🚀 Starting automatic backup scheduler...")
     backup_scheduler.start_scheduler()

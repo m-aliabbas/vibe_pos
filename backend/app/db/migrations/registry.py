@@ -164,6 +164,94 @@ def migrate_catalog_item_types_sqlalchemy(connection) -> None:
         )
 
 
+def _selected_application_identity() -> tuple[str, str]:
+    import os
+
+    from app.platform.identifiers import ApplicationId
+
+    application_id = ApplicationId(os.environ.get("APPLICATION_ID", "retail"))
+    return application_id.value, application_id.value
+
+
+def migrate_application_identity(connection: sqlite3.Connection) -> None:
+    application_id, profile_id = _selected_application_identity()
+    row = connection.execute(
+        "SELECT application_id FROM business_configuration WHERE id = 1"
+    ).fetchone()
+    if row is None:
+        connection.execute(
+            "INSERT INTO business_configuration "
+            "(id, application_id, profile_id, enabled_modules_json) VALUES (1, ?, ?, '[]')",
+            (application_id, profile_id),
+        )
+        return
+    if row[0] == application_id:
+        return
+
+    tables = {
+        str(item[0])
+        for item in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        )
+    }
+    protected_tables = tables - {"business_configuration", "schema_migrations"}
+    for table in sorted(protected_tables):
+        escaped_name = table.replace('"', '""')
+        if connection.execute(f'SELECT 1 FROM "{escaped_name}" LIMIT 1').fetchone():
+            raise RuntimeError(
+                f"Database belongs to {row[0]!r} and contains data; "
+                f"refusing to assign it to {application_id!r}"
+            )
+
+    connection.execute(
+        "UPDATE business_configuration SET application_id = ?, profile_id = ?, "
+        "enabled_modules_json = '[]' WHERE id = 1",
+        (application_id, profile_id),
+    )
+
+
+def migrate_application_identity_sqlalchemy(connection) -> None:
+    from sqlalchemy import MetaData, Table, inspect, select, text
+
+    application_id, profile_id = _selected_application_identity()
+    existing = connection.execute(
+        text("SELECT application_id FROM business_configuration WHERE id = 1")
+    ).first()
+    if existing is None:
+        connection.execute(
+            text(
+                "INSERT INTO business_configuration "
+                "(id, application_id, profile_id, enabled_modules_json) "
+                "VALUES (1, :application_id, :profile_id, '[]')"
+            ),
+            {"application_id": application_id, "profile_id": profile_id},
+        )
+        return
+    if existing.application_id == application_id:
+        return
+
+    metadata = MetaData()
+    tables = set(inspect(connection).get_table_names()) - {
+        "business_configuration",
+        "schema_migrations",
+    }
+    for table_name in sorted(tables):
+        table = Table(table_name, metadata, autoload_with=connection)
+        if connection.execute(select(table).limit(1)).first() is not None:
+            raise RuntimeError(
+                f"Database belongs to {existing.application_id!r} and contains data; "
+                f"refusing to assign it to {application_id!r}"
+            )
+
+    connection.execute(
+        text(
+            "UPDATE business_configuration SET application_id = :application_id, "
+            "profile_id = :profile_id, enabled_modules_json = '[]' WHERE id = 1"
+        ),
+        {"application_id": application_id, "profile_id": profile_id},
+    )
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         migration_id="0001_legacy_schema_baseline",
@@ -192,6 +280,14 @@ MIGRATIONS: tuple[Migration, ...] = (
         supported_providers=("sqlite", "postgresql", "mysql"),
         apply_sqlalchemy=migrate_catalog_item_types_sqlalchemy,
         declared_checksum="f4c738c6b175539576ab4e6b43032b32ca53bb478a8f821c4aea5629f6e6a7a7",
+    ),
+    Migration(
+        migration_id="0005_application_identity",
+        description="Bind fresh empty databases to their selected application target",
+        apply=migrate_application_identity,
+        supported_providers=("sqlite", "postgresql", "mysql"),
+        apply_sqlalchemy=migrate_application_identity_sqlalchemy,
+        declared_checksum="de7aaf8f1eeaa00d01920ff0cc7a9f2352a19ac9b9b5027e680463672c3e70c8",
     ),
 )
 

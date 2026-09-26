@@ -1,3 +1,4 @@
 # Keep release-integrity lock files stable across macOS and Windows runners.
 frontend/package-lock.json text eol=lf
 frontend/src-tauri/Cargo.lock text eol=lf
+frontend/src-tauri/src/main.rs whitespace=cr-at-eol

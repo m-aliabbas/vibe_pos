@@ -1,0 +1,1 @@
+"""Auto-workshop application manifest and future domain modules."""

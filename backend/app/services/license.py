@@ -197,9 +197,16 @@ def _activate_entitlements(payload: dict) -> LicenseEntitlements:
         entitlements = entitlements_from_payload(payload.get("entitlements") or payload)
     except (TypeError, ValueError) as exc:
         raise LicenseError(f"License contains invalid application entitlements: {exc}") from exc
-    if entitlements.application_id not in (None, ApplicationId.RETAIL):
+    expected_application = ApplicationId(settings.APPLICATION_ID)
+    if entitlements.application_id is None and expected_application != ApplicationId.RETAIL:
         raise LicenseError(
-            f"License is for application {entitlements.application_id.value!r}, not 'retail'"
+            f"License does not declare the required application "
+            f"{expected_application.value!r}"
+        )
+    if entitlements.application_id not in (None, expected_application):
+        raise LicenseError(
+            f"License is for application {entitlements.application_id.value!r}, "
+            f"not {expected_application.value!r}"
         )
     set_active_entitlements(entitlements)
     return entitlements

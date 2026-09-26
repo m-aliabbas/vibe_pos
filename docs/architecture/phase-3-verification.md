@@ -2,7 +2,7 @@
 
 Date: 2026-09-26
 
-Status: Awaiting owner manual verification
+Status: Approved by owner on 2026-09-26
 
 ## Delivered
 
@@ -57,6 +57,7 @@ Status: Awaiting owner manual verification
 
 ## Owner manual checklist
 
-Use the Phase 3 checklist in `phases.md` to verify existing installations and
-visible retail workflows against a disposable database before approving Phase 4.
-No production database was modified during automated tests.
+The owner confirmed that all Phase 3 manual checks in `phases.md` passed on
+2026-09-26, including retail workflows, inventory, balances, journals, held
+transactions, and rollback behavior. Phase 4 may begin. No production database
+was modified during automated tests.

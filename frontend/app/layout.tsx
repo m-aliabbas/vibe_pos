@@ -21,6 +21,9 @@ import { AutoBreadcrumb } from "@/components/AutoBreadcrumb";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ConfirmCloseGuard } from "@/components/ConfirmCloseGuard";
+import { AppConfigProvider } from "@/components/AppConfigProvider";
+import { CapabilityRouteGuard } from "@/components/CapabilityRouteGuard";
+import { ModuleUiContributionProvider } from "@/components/ModuleUiContributions";
 
 export default function RootLayout({
   children,
@@ -33,16 +36,20 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased h-screen flex flex-col overflow-hidden`}
       >
         <AuthProvider>
-          <ConfirmCloseGuard />
-          <div className="no-print shrink-0">
-            <Navbar />
-          </div>
-          <div className="no-print shrink-0">
-            <AutoBreadcrumb />
-          </div>
-          <main className="flex-1 min-h-0 overflow-hidden">
-            {children}
-          </main>
+          <AppConfigProvider>
+            <ModuleUiContributionProvider contributions={{}}>
+              <ConfirmCloseGuard />
+              <div className="no-print shrink-0">
+                <Navbar />
+              </div>
+              <div className="no-print shrink-0">
+                <AutoBreadcrumb />
+              </div>
+              <main className="flex-1 min-h-0 overflow-hidden">
+                <CapabilityRouteGuard>{children}</CapabilityRouteGuard>
+              </main>
+            </ModuleUiContributionProvider>
+          </AppConfigProvider>
         </AuthProvider>
       </body>
     </html>

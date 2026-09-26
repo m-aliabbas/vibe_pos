@@ -7,11 +7,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:frontend-boundaries": "node scripts/check-frontend-boundaries.mjs",
+    "test:frontend-boundaries": "node --test scripts/check-frontend-boundaries.test.mjs",
+    "test:application-targets": "node --test scripts/application-targets.test.mjs",
     "check:version": "node scripts/check-release-version.mjs",
     "set:version": "node scripts/set-release-version.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "tauri:build:workshop": "node scripts/build-application.mjs workshop",
+    "tauri:build:restaurant": "node scripts/build-application.mjs restaurant",
     "bin-server": "node scripts/package-server.js"
   },
   "dependencies": {

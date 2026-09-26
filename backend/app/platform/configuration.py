@@ -5,11 +5,7 @@ from collections.abc import Callable
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.accounting import JournalEntry
 from app.models.business_configuration import BusinessConfiguration
-from app.models.pos_return import PosReturn
-from app.models.purchase import Purchase
-from app.models.sale import Sale
 from app.platform.identifiers import ApplicationId, ProfileId
 from app.platform.licensing import get_active_entitlements
 from app.platform.manifests import ApplicationManifest, get_active_manifest
@@ -48,6 +44,11 @@ def get_business_configuration(
 
 
 def has_transactional_data(db: Session) -> bool:
+    from app.models.accounting import JournalEntry
+    from app.models.pos_return import PosReturn
+    from app.models.purchase import Purchase
+    from app.models.sale import Sale
+
     transaction_models = (Sale, Purchase, PosReturn, JournalEntry)
     return any(
         (db.query(func.count(model.id)).scalar() or 0) > 0

@@ -26,28 +26,22 @@ import {
 import { Badge } from '@/components/ui/badge';
 import {
   Store,
-  BarChart3,
-  Package,
-  Users,
-  Truck,
-  Receipt,
   User,
   LogOut,
   Menu,
   X,
-  Home,
-  UserCheck,
-  RotateCcw,
-  Database,
   Settings,
   Download,
 } from 'lucide-react';
 import { useState } from 'react';
+import { getNavigationItems } from '@/lib/navigation';
+import { useAppConfig } from '@/components/AppConfigProvider';
 
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuthStore();
+  const { config, hasCapability } = useAppConfig();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
@@ -67,21 +61,10 @@ export function Navbar() {
     router.push('/login');
   };
 
-  const navItems = [
-    { href: user?.role === 'admin' ? '/admin' : '/sales', label: 'Home', icon: Home, show: true },
-    { href: '/sales', label: 'Sales', icon: Store, show: true },
-    { href: '/inventory', label: 'Inventory', icon: Package, show: true },
-    { href: '/customers', label: 'Customers', icon: UserCheck, show: true },
-    { href: '/vendors', label: 'Vendors', icon: Truck, show: true },
-    { href: '/returns', label: 'Returns', icon: RotateCcw, show: true },
-    { href: '/sales/history', label: 'History', icon: Receipt, show: true },
-    { href: '/accounting', label: 'Accounting', icon: BarChart3, show: user?.role === 'admin' },
-    { href: '/reports', label: 'Reports', icon: BarChart3, show: user?.role === 'admin' },
-    { href: '/users', label: 'Users', icon: Users, show: user?.role === 'admin' },
-    { href: '/backup', label: 'Backup', icon: Database, show: user?.role === 'admin' },
-  ];
-
-  const visibleNavItems = navItems.filter(item => item.show);
+  const visibleNavItems = getNavigationItems('navbar', user.role, hasCapability, config.application_id);
+  const homeHref = config.application_id === 'retail'
+    ? user.role === 'admin' ? '/admin' : '/sales'
+    : `/${config.application_id}`;
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
@@ -89,13 +72,13 @@ export function Navbar() {
         <div className="flex justify-between items-center h-20">
           {/* Logo & Brand */}
           <div className="flex items-center min-w-[200px]">
-            <Link href={user?.role === 'admin' ? '/admin' : '/sales'} className="flex items-center space-x-3 group">
+            <Link href={homeHref} className="flex items-center space-x-3 group">
               <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2.5 rounded-lg group-hover:from-blue-700 group-hover:to-indigo-700 transition-all">
                 <Store className="h-7 w-7 text-white" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                  VibePOS
+                  {config.branding.name || config.application_name}
                 </h1>
                 <p className="text-xs text-gray-500">by vibe.exe</p>
               </div>

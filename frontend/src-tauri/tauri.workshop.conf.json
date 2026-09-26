@@ -1,0 +1,23 @@
+{
+  "productName": "Vibe Workshop",
+  "identifier": "com.vibeexe.workshop",
+  "bundle": {
+    "resources": [
+      "../.next/standalone/**/*",
+      "bin/.env"
+    ]
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Vibe Workshop",
+        "width": 1280,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false
+      }
+    ]
+  }
+}

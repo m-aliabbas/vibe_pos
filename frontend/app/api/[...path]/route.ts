@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 
-const BACKEND_ORIGIN = "http://127.0.0.1:8000";
+const BACKEND_ORIGIN = `http://127.0.0.1:${process.env.BACKEND_PORT || "8000"}`;
 const BODYLESS_METHODS = new Set(["GET", "HEAD"]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;

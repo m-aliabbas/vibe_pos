@@ -47,6 +47,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import BatchModal from "@/components/BatchModal";
+import { CatalogCapabilityFields } from "@/components/inventory/CatalogCapabilityFields";
+import { ModuleUiContributionSlot } from "@/components/ModuleUiContributions";
 
 interface SellingUnit {
     unit: string;
@@ -196,6 +198,7 @@ export default function InventoryPage() {
     const [sku, setSku] = useState('');
     const [category, setCategory] = useState('');
     const [sellingPrice, setSellingPrice] = useState('');
+    const [itemType, setItemType] = useState<CatalogItemType>('stock');
     const [hasVariations, setHasVariations] = useState(false);
     const [allowDecimalQty, setAllowDecimalQty] = useState(false);
     const [variationAttributes, setVariationAttributes] = useState<string[]>([]);
@@ -275,6 +278,7 @@ export default function InventoryPage() {
                 sku: sku.trim() || null,
                 category: category || "Uncategorized",
                 selling_price: parseFloat(sellingPrice),
+                item_type: itemType,
                 has_variations: hasVariations,
                 allow_decimal_qty: allowDecimalQty,
                 variation_attributes: variationAttributes,
@@ -296,6 +300,7 @@ export default function InventoryPage() {
         setSku('');
         setCategory('');
         setSellingPrice('');
+        setItemType('stock');
         setHasVariations(false);
         setAllowDecimalQty(false);
         setVariationAttributes([]);
@@ -338,6 +343,7 @@ export default function InventoryPage() {
         setSku(product.sku || '');
         setCategory(product.category);
         setSellingPrice(product.selling_price.toString());
+        setItemType(product.item_type || 'stock');
         setHasVariations(product.has_variations);
         setAllowDecimalQty(product.allow_decimal_qty);
         setVariationAttributes(product.variation_attributes || []);
@@ -357,6 +363,7 @@ export default function InventoryPage() {
                 sku: sku.trim() || null,
                 category: category || "Uncategorized",
                 selling_price: parseFloat(sellingPrice),
+                item_type: itemType,
                 has_variations: hasVariations,
                 allow_decimal_qty: allowDecimalQty,
                 variation_attributes: variationAttributes,
@@ -715,125 +722,38 @@ export default function InventoryPage() {
                                         </p>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="allow-decimal-qty"
-                                        checked={allowDecimalQty}
-                                        onChange={e => setAllowDecimalQty(e.target.checked)}
-                                    />
-                                    <Label htmlFor="allow-decimal-qty">Allow decimal quantity (points, e.g. 0.5)</Label>
-                                </div>
-
-                                {/* Unit of Measure */}
-                                <div className="grid gap-2">
-                                    <Label htmlFor="base-unit">Base Unit</Label>
-                                    <Input id="base-unit" value={baseUnit} onChange={e => setBaseUnit(e.target.value)} placeholder="piece, kg, liter" />
-                                    <p className="text-xs text-gray-500">Unit for inventory tracking</p>
-                                </div>
-
-                                {/* Selling Units */}
-                                <div className="border-t pt-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <input
-                                            type="checkbox"
-                                            id="has-selling-units"
-                                            checked={hasSellingUnits}
-                                            onChange={e => {
-                                                const next = e.target.checked;
-                                                setHasSellingUnits(next);
-                                                if (!next) {
-                                                    setSellingUnits([]);
-                                                    setNewUnit({ unit: '', conversion: '1', price: '' });
-                                                }
-                                            }}
-                                        />
-                                        <Label htmlFor="has-selling-units">Additional selling units (dozen, pack, etc.)</Label>
-                                    </div>
-
-                                    {hasSellingUnits && (
-                                        <div className="grid gap-2">
-                                            <Label>Additional Selling Units</Label>
-                                            <div className="flex gap-2">
-                                                <Input
-                                                    placeholder="Unit (dozen)"
-                                                    value={newUnit.unit}
-                                                    onChange={e => setNewUnit({ ...newUnit, unit: e.target.value })}
-                                                    className="flex-1"
-                                                />
-                                                <Input
-                                                    placeholder="Conv (12)"
-                                                    type="number"
-                                                    step="any"
-                                                    value={newUnit.conversion}
-                                                    onChange={e => setNewUnit({ ...newUnit, conversion: e.target.value })}
-                                                    className="w-24"
-                                                />
-                                                <Input
-                                                    placeholder="Price"
-                                                    type="number"
-                                                    step="0.01"
-                                                    value={newUnit.price}
-                                                    onChange={e => setNewUnit({ ...newUnit, price: e.target.value })}
-                                                    className="w-24"
-                                                />
-                                                <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
-                                            </div>
-                                            {newUnit.price && (
-                                                <p className="text-xs text-blue-600 font-medium">
-                                                    {convertToWords(newUnit.price)}
-                                                </p>
-                                            )}
-                                            <div className="flex flex-wrap gap-2">
-                                                {sellingUnits.map((unit, idx) => (
-                                                    <Badge key={idx} variant="secondary" className="gap-2">
-                                                        {unit.unit} (×{unit.conversion}) rs {unit.price}
-                                                        <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Variations */}
-                                <div className="border-t pt-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <input
-                                            type="checkbox"
-                                            id="has-variations"
-                                            checked={hasVariations}
-                                            onChange={e => setHasVariations(e.target.checked)}
-                                        />
-                                        <Label htmlFor="has-variations">This product has variations (Size, Color, etc.)</Label>
-                                    </div>
-
-                                    {hasVariations && (
-                                        <div className="grid gap-2 mt-2">
-                                            <Label>Variation Attributes</Label>
-                                            <div className="flex gap-2">
-                                                <Input
-                                                    placeholder="e.g. Size, Color, Material"
-                                                    value={newAttribute}
-                                                    onChange={e => setNewAttribute(e.target.value)}
-                                                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addAttribute())}
-                                                />
-                                                <Button type="button" size="sm" onClick={addAttribute}>Add</Button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {variationAttributes.map(attr => (
-                                                    <Badge key={attr} variant="secondary" className="gap-2">
-                                                        {attr}
-                                                        <button type="button" onClick={() => removeAttribute(attr)} className="ml-1">×</button>
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                            <p className="text-xs text-gray-500">
-                                                After creating the product, use "Manage Variations" to define specific options
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
+                                <CatalogCapabilityFields
+                                    idPrefix="create-product"
+                                    itemType={itemType}
+                                    onItemTypeChange={setItemType}
+                                    allowDecimalQty={allowDecimalQty}
+                                    onAllowDecimalQtyChange={setAllowDecimalQty}
+                                    baseUnit={baseUnit}
+                                    onBaseUnitChange={setBaseUnit}
+                                    hasSellingUnits={hasSellingUnits}
+                                    onHasSellingUnitsChange={(enabled) => {
+                                        setHasSellingUnits(enabled);
+                                        if (!enabled) {
+                                            setSellingUnits([]);
+                                            setNewUnit({ unit: '', conversion: '1', price: '' });
+                                        }
+                                    }}
+                                    sellingUnits={sellingUnits}
+                                    newUnit={newUnit}
+                                    onNewUnitChange={setNewUnit}
+                                    onAddSellingUnit={addSellingUnit}
+                                    onRemoveSellingUnit={removeSellingUnit}
+                                    newUnitPriceWords={newUnit.price ? convertToWords(newUnit.price) : undefined}
+                                    hasVariations={hasVariations}
+                                    onHasVariationsChange={setHasVariations}
+                                    variationAttributes={variationAttributes}
+                                    newAttribute={newAttribute}
+                                    onNewAttributeChange={setNewAttribute}
+                                    onAddAttribute={addAttribute}
+                                    onRemoveAttribute={removeAttribute}
+                                    variationHelpText={'After creating the product, use "Manage Variations" to define specific options'}
+                                />
+                                <ModuleUiContributionSlot slot="retail.inventory.catalog-fields" />
 
                                 <div className="bg-yellow-50 p-3 rounded-md text-xs text-yellow-700 border border-yellow-200">
                                     Note: Initial quantity will be 0. Use <strong>Purchases</strong> or the <strong>Add Stock</strong> action in inventory.
@@ -1071,123 +991,37 @@ export default function InventoryPage() {
                             <Label htmlFor="edit-price">Selling Price (rs)</Label>
                             <Input id="edit-price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required />
                         </div>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                id="edit-allow-decimal-qty"
-                                checked={allowDecimalQty}
-                                onChange={e => setAllowDecimalQty(e.target.checked)}
-                            />
-                            <Label htmlFor="edit-allow-decimal-qty">Allow decimal quantity (points, e.g. 0.5)</Label>
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="edit-base-unit">Base Unit</Label>
-                            <Input
-                                id="edit-base-unit"
-                                value={baseUnit}
-                                onChange={e => setBaseUnit(e.target.value)}
-                                placeholder="piece, kg, liter"
-                            />
-                            <p className="text-xs text-gray-500">Unit for inventory tracking</p>
-                        </div>
-
-                        {/* Selling Units */}
-                        <div className="border-t pt-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <input
-                                    type="checkbox"
-                                    id="edit-has-selling-units"
-                                    checked={hasSellingUnits}
-                                    onChange={e => {
-                                        const next = e.target.checked;
-                                        setHasSellingUnits(next);
-                                        if (!next) {
-                                            setSellingUnits([]);
-                                            setNewUnit({ unit: '', conversion: '1', price: '' });
-                                        }
-                                    }}
-                                />
-                                <Label htmlFor="edit-has-selling-units">Additional selling units (dozen, pack, etc.)</Label>
-                            </div>
-
-                            {hasSellingUnits && (
-                                <div className="grid gap-2">
-                                    <Label>Additional Selling Units</Label>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            placeholder="Unit (dozen)"
-                                            value={newUnit.unit}
-                                            onChange={e => setNewUnit({ ...newUnit, unit: e.target.value })}
-                                            className="flex-1"
-                                        />
-                                        <Input
-                                            placeholder="Conv (12)"
-                                            type="number"
-                                            step="any"
-                                            value={newUnit.conversion}
-                                            onChange={e => setNewUnit({ ...newUnit, conversion: e.target.value })}
-                                            className="w-24"
-                                        />
-                                        <Input
-                                            placeholder="Price"
-                                            type="number"
-                                            step="0.01"
-                                            value={newUnit.price}
-                                            onChange={e => setNewUnit({ ...newUnit, price: e.target.value })}
-                                            className="w-24"
-                                        />
-                                        <Button type="button" size="sm" onClick={addSellingUnit}>+</Button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {sellingUnits.map((unit, idx) => (
-                                            <Badge key={idx} variant="secondary" className="gap-2">
-                                                {unit.unit} (×{unit.conversion}) rs {unit.price}
-                                                <button type="button" onClick={() => removeSellingUnit(idx)} className="ml-1">×</button>
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="border-t pt-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <input
-                                    type="checkbox"
-                                    id="edit-has-variations"
-                                    checked={hasVariations}
-                                    onChange={e => setHasVariations(e.target.checked)}
-                                />
-                                <Label htmlFor="edit-has-variations">This product has variations (Size, Color, etc.)</Label>
-                            </div>
-
-                            {hasVariations && (
-                                <div className="grid gap-2 mt-2">
-                                    <Label>Variation Attributes</Label>
-                                    <div className="flex gap-2">
-                                        <Input
-                                            placeholder="e.g. Size, Color, Material"
-                                            value={newAttribute}
-                                            onChange={e => setNewAttribute(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addAttribute())}
-                                        />
-                                        <Button type="button" size="sm" onClick={addAttribute}>Add</Button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {variationAttributes.map(attr => (
-                                            <Badge key={attr} variant="secondary" className="gap-2">
-                                                {attr}
-                                                <button type="button" onClick={() => removeAttribute(attr)} className="ml-1">×</button>
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                    <p className="text-xs text-gray-500">
-                                        If this product already has variation records, disabling variations will be blocked.
-                                    </p>
-                                </div>
-                            )}
-                        </div>
+                        <CatalogCapabilityFields
+                            idPrefix="edit-product"
+                            itemType={itemType}
+                            onItemTypeChange={setItemType}
+                            allowDecimalQty={allowDecimalQty}
+                            onAllowDecimalQtyChange={setAllowDecimalQty}
+                            baseUnit={baseUnit}
+                            onBaseUnitChange={setBaseUnit}
+                            hasSellingUnits={hasSellingUnits}
+                            onHasSellingUnitsChange={(enabled) => {
+                                setHasSellingUnits(enabled);
+                                if (!enabled) {
+                                    setSellingUnits([]);
+                                    setNewUnit({ unit: '', conversion: '1', price: '' });
+                                }
+                            }}
+                            sellingUnits={sellingUnits}
+                            newUnit={newUnit}
+                            onNewUnitChange={setNewUnit}
+                            onAddSellingUnit={addSellingUnit}
+                            onRemoveSellingUnit={removeSellingUnit}
+                            hasVariations={hasVariations}
+                            onHasVariationsChange={setHasVariations}
+                            variationAttributes={variationAttributes}
+                            newAttribute={newAttribute}
+                            onNewAttributeChange={setNewAttribute}
+                            onAddAttribute={addAttribute}
+                            onRemoveAttribute={removeAttribute}
+                            variationHelpText="If this product already has variation records, disabling variations will be blocked."
+                        />
+                        <ModuleUiContributionSlot slot="retail.inventory.catalog-fields" />
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
                                 Cancel

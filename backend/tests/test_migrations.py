@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.db.migrations.registry import MIGRATIONS, Migration
 from app.db.migrations.runner import HISTORY_TABLE, MigrationError, upgrade_database
@@ -186,11 +187,43 @@ class MigrationRunnerTests(unittest.TestCase):
         result = upgrade_database(self.database_path, schema_initializer=initialize)
         self.assertEqual(result.applied, tuple(item.migration_id for item in MIGRATIONS))
         self.assertIsNone(result.backup_path)
+
+    def test_new_application_database_is_stamped_for_selected_application(self) -> None:
+        with patch.dict("os.environ", {"APPLICATION_ID": "workshop"}):
+            result = upgrade_database(self.database_path, application_version="test-version")
+
+        self.assertEqual(result.applied, tuple(item.migration_id for item in MIGRATIONS))
         with sqlite3.connect(self.database_path) as connection:
-            self.assertEqual(
-                connection.execute(f"SELECT COUNT(*) FROM {HISTORY_TABLE}").fetchone()[0],
-                len(MIGRATIONS),
-            )
+            identity = connection.execute(
+                "SELECT application_id, profile_id FROM business_configuration WHERE id = 1"
+            ).fetchone()
+        self.assertEqual(identity, ("workshop", "workshop"))
+
+    def test_application_migration_refuses_populated_retail_database(self) -> None:
+        create_legacy_schema(self.database_path)
+
+        with patch.dict("os.environ", {"APPLICATION_ID": "workshop"}):
+            with self.assertRaises(MigrationError) as raised:
+                upgrade_database(self.database_path, application_version="test-version")
+
+        self.assertIn("refusing to assign", str(raised.exception.__cause__))
+        with sqlite3.connect(self.database_path) as connection:
+            identity = connection.execute(
+                "SELECT application_id, profile_id FROM business_configuration WHERE id = 1"
+            ).fetchone()
+            product = connection.execute(
+                "SELECT name, quantity FROM products WHERE id = 1"
+            ).fetchone()
+        self.assertEqual(identity, ("retail", "retail"))
+        self.assertEqual(product, ("Synthetic item", 12.5))
+        with sqlite3.connect(self.database_path) as connection:
+            applied = [
+                row[0]
+                for row in connection.execute(
+                    f"SELECT migration_id FROM {HISTORY_TABLE} ORDER BY migration_id"
+                )
+            ]
+        self.assertEqual(applied, [migration.migration_id for migration in MIGRATIONS[:-1]])
 
     def test_application_databases_keep_separate_history_and_backups(self) -> None:
         second_database = self.root / "workshop" / "data" / "pos.db"

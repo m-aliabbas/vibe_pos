@@ -1,0 +1,1 @@
+"""Restaurant application manifest and future domain modules."""

@@ -27,18 +27,16 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { customerApi, CustomerListResponse, CustomerCreate } from "@/lib/api";
+import { CustomerIdentityFields } from "@/components/customers/CustomerIdentityFields";
+import { ModuleUiContributionSlot } from "@/components/ModuleUiContributions";
 import {
   Search,
   Plus,
   UserCheck,
   Phone,
-  Mail,
-  MapPin,
   DollarSign,
   Calendar,
   Eye,
-  Edit,
-  Trash2,
   Download,
 } from "lucide-react";
 
@@ -389,56 +387,16 @@ export default function CustomersPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone Number</Label>
-                  <Input
-                    id="phone"
-                    placeholder="03171585452"
-                    value={newCustomer.phone}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="customer_id">Customer ID (Optional)</Label>
-                  <Input
-                    id="customer_id"
-                    placeholder="CUST001"
-                    value={newCustomer.customer_id}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, customer_id: e.target.value.toUpperCase() })}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
-                <Input
-                  id="name"
-                  placeholder="John Doe"
-                  value={newCustomer.name}
-                  onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email (Optional)</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="john@example.com"
-                    value={newCustomer.email}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="address">Address (Optional)</Label>
-                  <Input
-                    id="address"
-                    placeholder="123 Main St, City"
-                    value={newCustomer.address}
-                    onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
-                  />
-                </div>
-              </div>
+              <CustomerIdentityFields
+                idPrefix="create-customer"
+                values={newCustomer}
+                includeCustomerId
+                onChange={(field, value) => setNewCustomer((previous) => ({
+                  ...previous,
+                  [field]: value,
+                }))}
+              />
+              <ModuleUiContributionSlot slot="shared.customer.profile-fields" />
 
               <div className="space-y-2">
                 <Label htmlFor="opening_balance">Opening Balance (Legacy Udhar)</Label>

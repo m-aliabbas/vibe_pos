@@ -20,6 +20,8 @@ class ProfileId(StableIdentifier):
     RETAIL = "retail"
     CLOTHING_RETAIL = "clothing-retail"
     MILK_COUNTER_RETAIL = "milk-counter-retail"
+    WORKSHOP = "workshop"
+    RESTAURANT = "restaurant"
 
 
 class ModuleId(StableIdentifier):

@@ -25,7 +25,7 @@ class RouterRegistration:
     prefix: str
     tags: tuple[str, ...]
     capability: CapabilityId
-    owner_application: ApplicationId
+    owner_application: ApplicationId | None
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,10 @@ def validate_manifest(manifest: ApplicationManifest) -> None:
     if manifest.default_profile not in manifest.compatible_profiles:
         raise InvalidApplicationManifest("Default profile is not compatible with application")
     for registration in manifest.routers:
-        if registration.owner_application != manifest.application_id:
+        if (
+            registration.owner_application is not None
+            and registration.owner_application != manifest.application_id
+        ):
             raise InvalidApplicationManifest(
                 f"{manifest.application_id.value} cannot register a router owned by "
                 f"{registration.owner_application.value}"
@@ -90,7 +93,27 @@ def register_manifest_routers(target: APIRouter, manifest: ApplicationManifest) 
 
 
 def get_active_manifest() -> ApplicationManifest:
-    from app.applications.retail.manifest import RETAIL_MANIFEST
+    from app.core.config import settings
 
-    validate_manifest(RETAIL_MANIFEST)
-    return RETAIL_MANIFEST
+    manifests = {
+        ApplicationId.RETAIL: "app.applications.retail.manifest",
+        ApplicationId.WORKSHOP: "app.applications.workshop.manifest",
+        ApplicationId.RESTAURANT: "app.applications.restaurant.manifest",
+    }
+    try:
+        application_id = ApplicationId(settings.APPLICATION_ID)
+    except ValueError as exc:
+        raise InvalidApplicationManifest(
+            f"Unsupported application ID: {settings.APPLICATION_ID!r}"
+        ) from exc
+
+    try:
+        module = importlib.import_module(manifests[application_id])
+        manifest = module.MANIFEST
+    except (KeyError, AttributeError, ImportError) as exc:
+        raise InvalidApplicationManifest(
+            f"Application manifest is not packaged: {application_id.value!r}"
+        ) from exc
+
+    validate_manifest(manifest)
+    return manifest

@@ -167,8 +167,8 @@ Working rules:
 | 1 | Upgrade and migration safety | Phase 0 | Approved |
 | 1B | Database connector and provider portability | Phase 1 | Approved |
 | 2 | Platform capabilities, app manifests, and profiles | Phase 1B | Approved |
-| 3 | Shared capability and business-transaction boundaries | Phase 2 | Awaiting manual verification |
-| 4 | Frontend composition and application shells | Phases 2-3 | Not started |
+| 3 | Shared capability and business-transaction boundaries | Phase 2 | Approved |
+| 4 | Frontend composition and application shells | Phases 2-3 | Awaiting manual verification |
 | 5 | Auto workshop proof application/module | Phase 4 | Not started |
 | 6 | Restaurant application/module | Phase 5 lessons applied | Not started |
 | 7 | Clothing profile/module | Phase 4 | Not started |
@@ -490,32 +490,49 @@ UI intact.
 
 ### Tasks
 
-- [ ] **UI-001:** Add typed frontend app-configuration interfaces and API client
+- [x] **UI-001:** Add typed frontend app-configuration interfaces and API client
   functions synchronized with the backend schema.
-- [ ] **UI-002:** Add an app-configuration provider with explicit loading,
+- [x] **UI-002:** Add an app-configuration provider with explicit loading,
   unavailable, and fallback states.
-- [ ] **UI-003:** Replace duplicated hardcoded navigation definitions with a
+- [x] **UI-003:** Replace duplicated hardcoded navigation definitions with a
   registry that includes required roles and capabilities.
-- [ ] **UI-004:** Add route-level capability guards for module pages while keeping
+- [x] **UI-004:** Add route-level capability guards for module pages while keeping
   backend enforcement authoritative.
-- [ ] **UI-005:** Extract reusable POS pieces from the large sales page: product
+- [x] **UI-005:** Extract reusable POS pieces from the large sales page: product
   search, cart, totals, customer/payment section, and completion flow.
-- [ ] **UI-006:** Extract reusable inventory form sections for item type, units,
+- [x] **UI-006:** Extract reusable inventory form sections for item type, units,
   fractional quantity, variations, and module contributions.
-- [ ] **UI-007:** Define supported module UI contribution points instead of
+- [x] **UI-007:** Define supported module UI contribution points instead of
   allowing arbitrary module code inside core pages.
-- [ ] **UI-008:** Confirm the `retail` profile renders the same navigation,
+- [x] **UI-008:** Confirm the `retail` profile renders the same navigation,
   workflows, receipts, and reports as before the refactor.
-- [ ] **UI-009:** Run accessibility, keyboard/scanner workflow, empty-state,
+- [x] **UI-009:** Run accessibility, keyboard/scanner workflow, empty-state,
   loading-state, and error-state checks on the refactored screens.
-- [ ] **UI-010:** Compose customer forms from a shared common-information section
+- [x] **UI-010:** Compose customer forms from a shared common-information section
   and an app-owned profile section; do not make the common customer form aware
   of every business type.
-- [ ] **UI-011:** Where Phase 0 selects independent products, create separate app
+- [?] **UI-011:** Where Phase 0 selects independent products, create separate app
   shells/entry points with independent navigation, branding, Tauri identifiers,
   data directories, and build targets.
-- [ ] **UI-012:** Add import-boundary checks so one business application cannot
+- [x] **UI-012:** Add import-boundary checks so one business application cannot
   import another application's frontend features.
+
+**UI-011 implementation:** Workshop and restaurant now select distinct backend
+manifests, profiles, license application IDs, and per-app writable data roots.
+Fresh databases are stamped for their app; migration 0005 refuses to relabel a
+database containing business rows. Retail retains its existing data path and
+legacy-data migration. Independent targets skip retail sample seeding and bundle
+no `bin/data` tree. Tauri overlays have separate product identifiers, and
+`tauri:build:workshop` / `tauri:build:restaurant` set the matching compile-time
+application ID. All targets keep ports 4321/8000 and `pos.local`, as only one is
+expected to run at a time. Each target has its own frontend shell and one-time
+first-admin setup; retail cannot access that bootstrap route.
+
+Owner verification: build/install both targets, confirm app-config identity and
+data paths, bootstrap one admin per independent app and verify subsequent setup
+is rejected, then confirm retail still opens the original database. Native
+Tauri builds and full backend integration tests could not run in this environment
+because Cargo/Rust and FastAPI dependencies are unavailable.
 
 ### Exit gate
 
@@ -796,7 +813,19 @@ Add one row whenever a task or phase is completed or blocked.
 | 2026-09-26 | Phase 2 | In progress | Started backend-authoritative app manifests, business profiles, and capability enforcement | Work in progress | Complete the Phase 2 automated gate before manual verification |
 | 2026-09-26 | Phase 2 | Awaiting manual verification | Added the retail manifest, persistent retail profile, typed app-config contract, capability/license enforcement, profile-switch safety, shared service contracts, and compatibility validation | 34 backend tests pass; Python compile passes; frontend build passes; temporary frozen backend starts and serves app-config; lint remains at the recorded 131-error/80-warning baseline | Owner completes the Phase 2 checklist in `phases.md`; do not begin Phase 3 before approval |
 | 2026-09-26 | Phase 2 approval | Complete | Owner confirmed completion of the Phase 2 manual checklist and approved the phase | Explicit owner confirmation in the current task | Begin Phase 3 only |
-| 2026-09-26 | Phase 3 | Awaiting manual verification | Added typed catalog items, pure rounded sale calculations, inventory consumption policies, retail sale commands, shared inventory mutation, and application-neutral invoice/payment references | Backend suite: 43 passed, 19 provider-service tests skipped; migration and Python compilation pass; frontend build passes; see Phase 3 verification record | Owner completes `phases.md` Phase 3 checklist before Phase 4 |
+| 2026-09-26 | Phase 3 | Approved | Added typed catalog items, pure rounded sale calculations, inventory consumption policies, retail sale commands, shared inventory mutation, and application-neutral invoice/payment references | Backend suite: 43 passed, 19 provider-service tests skipped; migration and Python compilation pass; frontend build passes; owner confirmed all Phase 3 manual checks passed | Begin Phase 4 |
+| 2026-09-26 | Phase 4 | In progress | Started frontend composition and application-shell work after Phase 3 owner approval | Phase 4 criteria reviewed; first implementation slice is app-config context, capability-aware navigation, and route guarding | Complete Phase 4 tasks and automated gate before manual verification |
+| 2026-09-26 | Phase 4 | In progress | Added app-config provider with explicit backend/fallback status, shared role/capability navigation registry, capability route guard, and config-driven shell branding | Focused ESLint passes; frontend production build passes with all 27 routes; dev smoke check confirms login renders while app-config falls back because local backend port 8000 is unavailable | Continue POS/inventory/customer composition, shell separation, accessibility and retail workflow checks |
+| 2026-09-26 | Phase 4 | In progress | Owner manually verified the app-config, navigation, capability, and branding foundation; extracted reusable POS product-search/category controls from the sales page | New component focused ESLint passes; sales route integration and TypeScript pass in `npm run build`; page-level ESLint still reports existing `any` errors unrelated to the extraction | Continue UI-005 with cart, totals, customer/payment, and completion components; do not close Phase 4 |
+| 2026-09-26 | Phase 4 | In progress | Owner verified POS search/category, scanner/keyboard selection, and focus behavior; extracted the controlled cart table and row actions from the sales page | Cart component focused ESLint passes; production build and TypeScript pass with all 27 routes; page-level ESLint still reports three unrelated existing `any` errors and warnings | Continue UI-005 with totals, customer/payment, and completion components; perform manual cart interaction check with backend available |
+| 2026-09-26 | Phase 4 | In progress | Extracted the POS totals/action panel into a controlled component; sale totals remain calculated by the existing sales functions and checkout/hold remain parent-owned | Totals panel focused ESLint and production build/TypeScript pass with all 27 routes; sales-page lint remains blocked by three unrelated existing `any` errors and warnings | Continue UI-005 with customer/payment and completion components; manually verify cart quantities, discounts, totals, checkout, and hold flows |
+| 2026-09-26 | Phase 4 | In progress | Extracted checkout customer phone/name selection, selected/new/walk-in states, suggestions, and keyboard handling into a controlled UI component; lookup and selection state remain parent-owned | New component focused ESLint passes; production build and TypeScript pass with all 27 routes; sales-page lint retains three unrelated existing `any` errors and warnings | Continue UI-005 with payment and completion components; manually verify customer lookup/name selection together with cart and totals |
+| 2026-09-26 | Phase 4 | In progress | Owner manually verified checkout customer phone/name lookup, suggestion selection, customer removal, and walk-in states | Owner confirmation in the current task | Continue UI-005 with payment and completion components; cart/totals and payment manual checks remain pending |
+| 2026-09-26 | Phase 4 | In progress | Extracted controlled checkout payment inputs and amount summary, including payment method, discount, tax, delivery, amount paid, due, change, and prior balance displays; all calculations remain in the sales route | New component focused ESLint and production build/TypeScript pass with all 27 routes; sales-page lint retains three unrelated existing `any` errors and warnings | Continue UI-005 with sale-completion flow; manually verify payment summary and existing checkout outcomes |
+| 2026-09-26 | Phase 4 | In progress | Completed POS completion-dialog extraction, shared inventory catalog capability fields (including `item_type`), shared customer identity sections, approved module UI slots, and frontend import-boundary checks | `npm run build` passes (27 routes); new components/root layout focused ESLint passes; boundary tests 2/2 and source scan pass; repository-wide lint still fails on existing lint findings in legacy pages | Owner verifies cart/payment/receipt/report and accessibility regressions; UI-011 remains blocked on application-specific backend/data/sidecar build isolation |
+| 2026-09-26 | Phase 4 | Blocked | Owner confirmed the remaining Phase 4 manual checks passed, including retail navigation/workflows/receipts/reports, cart/payment/hold, keyboard/accessibility, and empty/loading/error states | Owner confirmation in the current task; automated frontend build, focused lint, boundary tests, boundary scan, and `git diff --check` pass; full repository lint retains legacy findings | UI-011 must be completed before Phase 4 can be approved: backend app manifests and per-app data/sidecar/build isolation are not implemented |
+| 2026-09-26 | Phase 4 | Awaiting manual verification | Implemented independent workshop/restaurant manifests, same-port app targets, per-app writable data roots with retail-only legacy migration/seeding, one-time admin setup, and distinct Tauri configs/build commands | Backend compile; migration tests 8/8; data-path tests 2/2; SQLite identity migration probe; frontend target tests 3/3; boundary tests 2/2 and scan; focused lint; Next build 29 routes all pass. Cargo/Rust and full FastAPI integration tests unavailable | Owner builds/installs both Tauri targets and confirms app identity, data isolation, bootstrap behavior, and unchanged retail database access before Phase 4 approval |
+| 2026-09-26 | Phase 4 | Awaiting manual verification | Fixed retail launcher failure caused by the selector expecting `MANIFEST` while retail exported `RETAIL_MANIFEST`; retained the legacy export and added the standard alias | Platform/migration/data-isolation tests: 28 passed; disposable full-app startup probes pass for retail, workshop, and restaurant with isolated temp data roots; backend compile passes | Owner continues native target installation/data-path verification; Cargo/Rust unavailable in current shell |
 | 2026-09-26 | Phase 2 approval | Complete | Owner confirmed completion of the Phase 2 manual checklist and approved the phase | Explicit owner confirmation in the current task | Begin Phase 3 only |
 | 2026-09-26 | Phase 3 | In progress | Started shared capability and retail transaction-boundary extraction | Work in progress | Complete the Phase 3 automated gate before manual verification |
 

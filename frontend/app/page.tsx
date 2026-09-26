@@ -1,36 +1,34 @@
 'use client';
 
 import { useAuthStore } from '@/store/authStore';
+import { useAppConfig } from '@/components/AppConfigProvider';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 export default function Home() {
-  const { user, checkAuth } = useAuthStore();
+  const checkAuth = useAuthStore((state) => state.checkAuth);
+  const { config, status } = useAppConfig();
   const router = useRouter();
   const [hasRedirected, setHasRedirected] = useState(false);
 
   useEffect(() => {
-    if (hasRedirected) return;
+    if (hasRedirected || status === 'loading') return;
 
     const redirect = async () => {
       await checkAuth();
-      
-      // If no token, redirect to login
+
       if (!sessionStorage.getItem('token')) {
         setHasRedirected(true);
         router.replace('/login');
         return;
       }
-      
-      // Redirect based on user role
-      if (user) {
-        setHasRedirected(true);
-        router.replace('/sales');
-      }
+
+      setHasRedirected(true);
+      router.replace(config.application_id === 'retail' ? '/sales' : `/${config.application_id}`);
     };
 
-    redirect();
-  }, []);
+    void redirect();
+  }, [checkAuth, config.application_id, hasRedirected, router, status]);
 
   return (
     <div className="h-full flex items-center justify-center">

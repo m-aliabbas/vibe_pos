@@ -1,13 +1,16 @@
 # Database Migration and Recovery Contract
 
-Status: Phase 1 implementation
+Status: Phase 1 implementation; application identity extension added in Phase 4
 
 ## Runtime behavior
 
-The retail application owns one ordered migration registry under
-`backend/app/db/migrations/`. Both direct Uvicorn imports and the packaged
-`run_server.py` launcher execute the same runner before accepting requests or
-seeding data.
+Each application target uses the ordered registry under
+`backend/app/db/migrations/` against its own configured database. Both direct
+Uvicorn imports and the packaged `run_server.py` launcher select the application
+manifest and execute the same runner before accepting requests or seeding data.
+Tauri supplies an application ID and relative writable data path. Retail keeps
+its legacy `VibePOS/data` location; workshop and restaurant use separate
+`VibePOS/<application-id>/data` roots.
 
 For an existing SQLite database with pending migrations, startup:
 
@@ -32,7 +35,12 @@ The old standalone `migrate_*.py` scripts did not share a history table. Migrati
 `0001_legacy_schema_baseline` therefore inspects the schema and idempotently adds
 only the product columns previously guaranteed by packaged startup. Migration
 `0002_startup_column_additions` takes ownership of the additions formerly made
-by `app.main.ensure_schema_columns()`.
+by `app.main.ensure_schema_columns()`. Migration `0003` records the default
+retail application/profile, and `0004` adds the compatible `stock` item type.
+Migration `0005_application_identity` stamps an empty independent-app database
+with its selected application/profile. It refuses to reassign a database when
+any business table contains rows; a populated retail database is never converted
+by switching an installer or environment variable.
 
 Already-upgraded installations are stamped without replaying historical data
 transformations. The standalone scripts remain historical references and must
@@ -67,6 +75,11 @@ explicit provider adapter; raw SQLite DDL must not be presented as portable.
 
 The registry imports migration callables statically as Python modules. PyInstaller
 therefore discovers them through normal analysis; there are no loose migration
-files or runtime directory scans to bundle. Tauri continues to start the same
-backend sidecar, which runs migrations after resolving its writable `DATA_DIR`
-and before seeding or serving HTTP traffic.
+files or runtime directory scans to bundle. PyInstaller also explicitly includes
+the workshop and restaurant manifests selected dynamically by application ID.
+Tauri targets share sidecar binaries but have distinct application IDs, bundle
+identifiers, app-owned data roots, and build configurations. They use the
+existing `4321` frontend and `8000` backend ports because only one target is
+expected to run at a time. Retail alone copies legacy bundled data and applies
+retail sample seeding; independent targets never copy the retail data resource
+or create the retail sample catalog.

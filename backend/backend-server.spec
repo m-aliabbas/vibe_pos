@@ -4,6 +4,11 @@ from PyInstaller.utils.hooks import collect_all
 datas = []
 binaries = []
 hiddenimports = ['uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan.on', 'engineio.async_drivers.asgi', 'jose', 'passlib.handlers.bcrypt', 'python_multipart', 'PIL', 'neonize', 'dotenv']
+hiddenimports += [
+    'app.applications.retail.manifest',
+    'app.applications.workshop.manifest',
+    'app.applications.restaurant.manifest',
+]
 tmp_ret = collect_all('fastapi')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('dotenv')

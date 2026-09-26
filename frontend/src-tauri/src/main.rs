@@ -218,6 +218,11 @@ use tauri::Manager;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
+const APPLICATION_ID: &str = match option_env!("VIBE_APPLICATION_ID") {
+    Some(application_id) => application_id,
+    None => "retail",
+};
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -264,11 +269,16 @@ async fn open_backup_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
 // --------------------- helpers ---------------------
 
 fn log_path_fallback(_app: &tauri::App) -> PathBuf {
-    // best effort: LOCALAPPDATA\com.pos.desktop\startup.log
+    // Keep retail's existing log path; isolate logs for other desktop targets.
     let base = std::env::var("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
-    base.join("com.pos.desktop").join("startup.log")
+    let app_directory = if APPLICATION_ID == "retail" {
+        "com.pos.desktop".to_string()
+    } else {
+        format!("com.vibeexe.{APPLICATION_ID}")
+    };
+    base.join(app_directory).join("startup.log")
 }
 
 fn append_log(log_path: &PathBuf, msg: &str) {
@@ -439,6 +449,10 @@ fn start_backend_visible(app: &tauri::AppHandle, log_path: &PathBuf) {
     // Use native spawning
     let spawned = std::process::Command::new(&backend_exe)
         .current_dir(&workdir)
+        .env("APPLICATION_ID", APPLICATION_ID)
+        .env("DATA_DIR", "data")
+        .env("AP_HOST", "0.0.0.0")
+        .env("AP_PORT", "8000")
         .creation_flags(CREATE_NEW_CONSOLE)
         .spawn();
 
@@ -452,7 +466,9 @@ fn start_backend_sidecar(app: &tauri::AppHandle, log_path: &PathBuf) {
     let command = match app.shell().sidecar("backend-server") {
         Ok(command) => command
             .env("AP_HOST", "0.0.0.0")
-            .env("AP_PORT", "8000"),
+            .env("AP_PORT", "8000")
+            .env("APPLICATION_ID", APPLICATION_ID)
+            .env("DATA_DIR", "data"),
         Err(error) => {
             append_log(log_path, &format!("backend: sidecar resolve failed: {error}"));
             return;
@@ -565,6 +581,7 @@ fn main() {
                     .env("PORT", port.to_string())
                     // Make the web app reachable by every device on the local network.
                     .env("HOSTNAME", "0.0.0.0")
+                    .env("BACKEND_PORT", "8000")
                     .env("NODE_ENV", "production")
                     .env("NEXT_TELEMETRY_DISABLED", "1")
                     .spawn()

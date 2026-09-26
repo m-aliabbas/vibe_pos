@@ -65,6 +65,9 @@ pyinstaller --name "$NAME" \
   --hidden-import=PIL \
   --hidden-import=neonize \
   --hidden-import=dotenv \
+  --hidden-import=app.applications.retail.manifest \
+  --hidden-import=app.applications.workshop.manifest \
+  --hidden-import=app.applications.restaurant.manifest \
   --hidden-import=apscheduler \
   \
   "$ENTRY"

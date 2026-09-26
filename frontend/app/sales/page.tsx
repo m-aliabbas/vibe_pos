@@ -34,24 +34,23 @@ import api, {
   HoldSaleResponse,
 } from "@/lib/api";
 import {
-  Search,
-  ShoppingCart,
   Plus,
   Minus,
-  Trash2,
-  DollarSign,
-  CheckCircle2,
   FileText,
-  Filter,
   Package as PackageIcon,
   Printer,
-  Settings,
-  X,
 } from "lucide-react";
 import { ToWords } from "to-words";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { formatPakistanDateTime, todayPKTDateString, nowPKTFormatted } from "@/lib/utils";
 import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
+import { ProductSearchControls } from "@/components/pos/ProductSearchControls";
+import { CartItemsTable } from "@/components/pos/CartItemsTable";
+import { SaleTotalsPanel } from "@/components/pos/SaleTotalsPanel";
+import { CheckoutCustomerSection } from "@/components/pos/CheckoutCustomerSection";
+import { CheckoutPaymentSection } from "@/components/pos/CheckoutPaymentSection";
+import { SaleCompletionDialog } from "@/components/pos/SaleCompletionDialog";
+import { ModuleUiContributionSlot } from "@/components/ModuleUiContributions";
 
 interface ProductVariation {
   id: number;
@@ -1920,205 +1919,61 @@ export default function SalesTerminal() {
         {/* ── LEFT: Cart ──────────────────────────────────── */}
         <div className="lg:col-span-3 flex flex-col border-r overflow-hidden">
 
-          {/* Cart table header */}
-          <div className="bg-primary text-primary-foreground flex items-center text-xs font-semibold select-none shrink-0">
-            <div className="grid flex-1" style={{ gridTemplateColumns: "2rem 1fr 7rem 6rem 6rem 6rem 3.5rem" }}>
-              <span className="px-2 py-2 text-center">#</span>
-              <span className="px-3 py-2">Description</span>
-              <span className="px-2 py-2 text-center">Qty</span>
-              <span className="px-2 py-2 text-right">Rate</span>
-              <span className="px-2 py-2 text-right">Disc</span>
-              <span className="px-2 py-2 text-right">Total</span>
-              <span className="px-2 py-2"></span>
-            </div>
-            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-300 hover:text-red-100 hover:bg-red-800/40 mr-1 shrink-0" onClick={clearCart}>
-              Clear
-            </Button>
-          </div>
+          <CartItemsTable
+            items={cart}
+            onClear={clearCart}
+            onQuantityChange={updateQuantity}
+            onDiscountChange={(index, value) => {
+              setCart((previous) => {
+                const next = [...previous];
+                next[index] = { ...next[index], item_discount: value };
+                return next;
+              });
+            }}
+            onEdit={(index) => {
+              const item = cart[index];
+              if (!item) return;
+              setEditingCartIndex(index);
+              setSelectedProductForVariation(item.product);
+              setSelectedVariation(item.variation || null);
+              setQuantityForVariation(String(item.quantity));
+              setSelectedUnit(item.unit);
+              setVariationDiscount(item.item_discount || 0);
+              setVariationUnitPrice(typeof item.unit_price === "number" ? String(item.unit_price) : "");
+              setVariationPriceOverrideEnabled(typeof item.unit_price === "number");
+              setVariationDialogOpen(true);
+            }}
+            onRemove={removeFromCart}
+          />
 
-          {/* Cart rows — scrollable 80% */}
-          <div className="overflow-y-auto bg-white" style={{ flex: 4 }}>
-            {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
-                <ShoppingCart className="h-10 w-10 opacity-20" />
-                <p className="text-sm">Cart is empty — search or click a product</p>
-              </div>
-            ) : (
-              <table className="w-full text-sm border-collapse">
-                <tbody>
-                  {cart.map((item, index) => {
-                    let itemPrice = typeof item.unit_price === "number" ? item.unit_price : item.product.selling_price;
-                    if (item.variation && typeof item.unit_price !== "number") itemPrice += item.variation.price_adjustment;
-                    if (item.unit !== item.product.base_unit && typeof item.unit_price !== "number") {
-                      const su = item.product.selling_units.find((u) => u.unit === item.unit);
-                      if (su) itemPrice = su.price;
-                    }
-                    const lineTotal = itemPrice * item.quantity - (item.item_discount || 0);
-                    return (
-                      <tr
-                        key={`${item.product.id}-${item.variation?.id || "base"}-${item.unit}`}
-                        className="border-b hover:bg-blue-50/40 transition-colors"
-                      >
-                        <td className="px-2 py-2 text-center text-muted-foreground w-8">{index + 1}</td>
-                        <td className="px-3 py-2">
-                          <p className="font-medium leading-tight">{item.product.name}</p>
-                          {item.variation && (
-                            <p className="text-xs text-purple-600 mt-0.5">
-                              {Object.entries(item.variation.attributes).map(([k, v]) => `${k}: ${v}`).join(", ")}
-                            </p>
-                          )}
-                          {typeof item.unit_price === "number" && (
-                            <span className="text-[10px] text-blue-600">(price override)</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 w-28">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button size="icon" variant="outline" className="h-6 w-6"
-                              onClick={() => updateQuantity(index, item.quantity - (item.product.allow_decimal_qty ? 0.25 : 1))}>
-                              <Minus className="h-3 w-3" />
-                            </Button>
-                            <span className="w-7 text-center font-semibold tabular-nums">{item.quantity}</span>
-                            <Button size="icon" variant="outline" className="h-6 w-6"
-                              onClick={() => updateQuantity(index, item.quantity + (item.product.allow_decimal_qty ? 0.25 : 1))}>
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-muted-foreground w-24">
-                          {itemPrice.toFixed(2)}
-                        </td>
-                        <td className="px-2 py-2 w-24">
-                          <Input
-                            type="number"
-                            className="h-7 w-20 text-right text-sm ml-auto"
-                            value={item.item_discount || ""}
-                            placeholder="0"
-                            min="0"
-                            onFocus={(e) => e.target.select()}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value) || 0;
-                              setCart((prev) => { const n = [...prev]; n[index] = { ...n[index], item_discount: val }; return n; });
-                            }}
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-right font-bold text-primary tabular-nums w-24">
-                          {lineTotal.toFixed(2)}
-                        </td>
-                        <td className="px-1 py-2 text-center w-14">
-                          <div className="flex flex-col gap-0.5 items-center">
-                            <Button size="icon" variant="ghost" className="h-6 w-6 text-blue-500 hover:text-blue-700"
-                              title="Edit"
-                              onClick={() => {
-                                setEditingCartIndex(index);
-                                setSelectedProductForVariation(item.product);
-                                setSelectedVariation(item.variation || null);
-                                setQuantityForVariation(String(item.quantity));
-                                setSelectedUnit(item.unit);
-                                setVariationDiscount(item.item_discount || 0);
-                                setVariationUnitPrice(typeof item.unit_price === "number" ? String(item.unit_price) : "");
-                                setVariationPriceOverrideEnabled(typeof item.unit_price === "number");
-                                setVariationDialogOpen(true);
-                              }}>
-                              <Settings className="h-3 w-3" />
-                            </Button>
-                            <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500 hover:text-red-700"
-                              onClick={() => removeFromCart(index)}>
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* ── Totals + Action buttons ── */}
-          <div className="border-t bg-gray-50 overflow-y-auto" style={{ flex: 1, minHeight: 110 }}>
-            <div className="flex gap-3 p-3 items-start">
-              {/* Totals */}
-              <div className="flex-1 flex flex-col gap-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Qty:</span>
-                  <span className="font-medium tabular-nums">{cart.reduce((s, i) => s + i.quantity, 0)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Sub Total:</span>
-                  <span className="font-medium tabular-nums">rs {calculateSubtotal().toFixed(2)}</span>
-                </div>
-                {(discount > 0 || calculateItemDiscounts() > 0) && (
-                  <div className="flex justify-between text-red-600">
-                    <span>Discount:</span>
-                    <span className="tabular-nums">-rs {(discount + calculateItemDiscounts()).toFixed(2)}</span>
-                  </div>
-                )}
-                {tax > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tax:</span>
-                    <span className="tabular-nums">+rs {tax.toFixed(2)}</span>
-                  </div>
-                )}
-                {deliveryCharges > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Delivery:</span>
-                    <span className="tabular-nums">+rs {deliveryCharges.toFixed(2)}</span>
-                  </div>
-                )}
-                {selectedCustomer && Math.abs(selectedCustomer.outstanding_balance) > 0.005 && (
-                  <div className="flex justify-between text-orange-700">
-                    <span>Previous Balance:</span>
-                    <span className="tabular-nums">{selectedCustomer.outstanding_balance >= 0 ? "+" : "-"}rs {Math.abs(selectedCustomer.outstanding_balance).toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between border-t pt-1 mt-0.5 font-bold text-base">
-                  <span>Grand Total</span>
-                  <span className="text-primary text-lg tabular-nums">rs {(calculateTotal() + (selectedCustomer?.outstanding_balance || 0)).toFixed(2)}</span>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex flex-col gap-2 w-40 shrink-0">
-                <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-bold text-xs" size="sm" onClick={handleCheckout}>
-                  <DollarSign className="h-3.5 w-3.5 mr-1 shrink-0" />Checkout (Ctrl+M)
-                </Button>
-                <Button size="sm" className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold text-xs" onClick={() => void holdCurrentSale()}>
-                  Hold (Ctrl+H)
-                </Button>
-              </div>
-            </div>
-          </div>
+          <SaleTotalsPanel
+            totalQuantity={cart.reduce((sum, item) => sum + item.quantity, 0)}
+            subtotal={calculateSubtotal()}
+            discount={discount + calculateItemDiscounts()}
+            showDiscount={discount > 0 || calculateItemDiscounts() > 0}
+            tax={tax}
+            deliveryCharges={deliveryCharges}
+            previousBalance={selectedCustomer?.outstanding_balance}
+            grandTotal={calculateTotal() + (selectedCustomer?.outstanding_balance || 0)}
+            onCheckout={handleCheckout}
+            onHold={() => void holdCurrentSale()}
+          />
+          <ModuleUiContributionSlot slot="retail.pos.cart-summary" />
         </div>
 
         {/* ── RIGHT: Product Search + List ──────────────────── */}
         <div className="lg:col-span-2 flex flex-col overflow-hidden">
 
-          {/* Search + filter bar */}
-          <div className="bg-muted/40 border-b p-2 flex gap-2 shrink-0">
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-32 h-9 shrink-0 text-xs">
-                <Filter className="h-3 w-3 mr-1" />
-                <SelectValue placeholder="All" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                ref={productSearchInputRef}
-                placeholder="Search name, SKU, barcode..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={handleSearchKeyDown}
-                className="pl-8 h-9 text-sm"
-              />
-            </div>
-          </div>
+          <ProductSearchControls
+            categories={categories}
+            category={categoryFilter}
+            onCategoryChange={setCategoryFilter}
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            onKeyDown={handleSearchKeyDown}
+            inputRef={productSearchInputRef}
+          />
+          <ModuleUiContributionSlot slot="retail.pos.after-product-search" />
 
           {/* Product list column headers */}
           <div className="bg-primary text-primary-foreground grid text-xs font-semibold select-none shrink-0"
@@ -2218,336 +2073,93 @@ export default function SalesTerminal() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 py-4 px-1 relative">
-            <div className="space-y-2">
-              <Label htmlFor="customerPhone">Phone Number</Label>
-              <Input
-                id="customerPhone"
-                placeholder="e.g., 0300xxxxxxx"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-              />
-            </div>
+            <CheckoutCustomerSection
+              customerId={customerId}
+              customerPhone={customerPhone}
+              onPhoneChange={setCustomerPhone}
+              customerSearchLoading={customerSearchLoading}
+              selectedCustomer={selectedCustomer}
+              onRemoveCustomer={() => {
+                setSelectedCustomer(null);
+                setCustomerPhone("");
+                setCustomerId("");
+                setCustomerName("");
+              }}
+              customerName={customerName}
+              onNameChange={(value) => {
+                setCustomerName(value);
+                if (selectedCustomer && value !== (selectedCustomer.name || "")) {
+                  setSelectedCustomer(null);
+                }
+                setShowCustomerNameResults(value.trim().length >= 2);
+              }}
+              onNameFocus={() => {
+                if (customerName.trim().length >= 2) setShowCustomerNameResults(true);
+              }}
+              onNameBlur={() => {
+                setTimeout(() => setShowCustomerNameResults(false), 150);
+              }}
+              onNameKeyDown={(event) => {
+                if (!showCustomerNameResults || customerNameResults.length === 0) return;
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setSelectedCustomerNameIndex((previous) =>
+                    previous < customerNameResults.length - 1 ? previous + 1 : previous
+                  );
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setSelectedCustomerNameIndex((previous) => (previous > 0 ? previous - 1 : 0));
+                } else if (event.key === "Enter") {
+                  event.preventDefault();
+                  const customer = customerNameResults[selectedCustomerNameIndex];
+                  if (customer) handleSelectCustomerByName(customer);
+                } else if (event.key === "Escape") {
+                  setShowCustomerNameResults(false);
+                }
+              }}
+              customerNameLoading={customerNameLoading}
+              showCustomerNameResults={showCustomerNameResults}
+              customerNameResults={customerNameResults}
+              selectedCustomerNameIndex={selectedCustomerNameIndex}
+              onSelectCustomerNameIndex={setSelectedCustomerNameIndex}
+              customerNameListRef={customerNameListRef}
+              onSelectCustomer={handleSelectCustomerByName}
+            />
 
-            {customerSearchLoading && (
-              <div className="absolute right-6 top-6">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
-              </div>
-            )}
-
-            {selectedCustomer && (
-              <div className={`p-2 border rounded text-sm ${
-                selectedCustomer.outstanding_balance < 0 
-                  ? 'bg-green-50 border-green-200' 
-                  : 'bg-green-50 border-green-200'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-green-800">{selectedCustomer.name || "Customer"}</p>
-                    <p className="text-xs text-green-600">
-                      {selectedCustomer.customer_id && `ID: ${selectedCustomer.customer_id}`}
-                      {selectedCustomer.phone && ` • Phone: ${selectedCustomer.phone}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {selectedCustomer.outstanding_balance > 0 && (
-                      <Badge variant="destructive" className="text-xs">
-                        Udhar: rs {selectedCustomer.outstanding_balance.toFixed(2)}
-                      </Badge>
-                    )}
-                    {selectedCustomer.outstanding_balance < 0 && (
-                      <Badge variant="default" className="text-xs bg-green-600">
-                        Credit: +rs {Math.abs(selectedCustomer.outstanding_balance).toFixed(2)}
-                      </Badge>
-                    )}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
-                      title="Remove customer"
-                      onClick={() => {
-                        setSelectedCustomer(null);
-                        setCustomerPhone("");
-                        setCustomerId("");
-                        setCustomerName("");
-                      }}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!selectedCustomer && (customerId.trim() || customerPhone.trim()) && !customerSearchLoading && (
-              <div className="p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                <p className="text-blue-800 font-medium mb-1">New customer will be created:</p>
-                {customerId.trim() && (
-                  <p>
-                    ID: <b>{customerId.trim().toUpperCase()}</b>
-                  </p>
-                )}
-                {customerPhone.trim() && (
-                  <p>
-                    Phone: <b>{customerPhone.trim()}</b>
-                  </p>
-                )}
-              </div>
-            )}
-
-            {!customerId.trim() && !customerPhone.trim() && (
-              <div className="p-2 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600 font-medium">
-                Walk-in sale (no customer linked)
-              </div>
-            )}
-
-            <div className="space-y-1 relative">
-              <Label htmlFor="customer" className="text-sm">
-                Customer Name (Search / Optional)
-              </Label>
-              <Input
-                id="customer"
-                placeholder="Type a name to search"
-                value={customerName}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setCustomerName(value);
-
-                  if (selectedCustomer && value !== (selectedCustomer.name || "")) {
-                    setSelectedCustomer(null);
-                  }
-                  if (value.trim().length >= 2) {
-                    setShowCustomerNameResults(true);
-                  } else {
-                    setShowCustomerNameResults(false);
-                  }
-                }}
-                onFocus={() => {
-                  if (customerName.trim().length >= 2) setShowCustomerNameResults(true);
-                }}
-                onBlur={() => {
-                  setTimeout(() => setShowCustomerNameResults(false), 150);
-                }}
-                onKeyDown={(e) => {
-                  if (!showCustomerNameResults || customerNameResults.length === 0) return;
-
-                  if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    setSelectedCustomerNameIndex((prev) =>
-                      prev < customerNameResults.length - 1 ? prev + 1 : prev
-                    );
-                  } else if (e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setSelectedCustomerNameIndex((prev) => (prev > 0 ? prev - 1 : 0));
-                  } else if (e.key === "Enter") {
-                    e.preventDefault();
-                    if (customerNameResults[selectedCustomerNameIndex]) {
-                      handleSelectCustomerByName(customerNameResults[selectedCustomerNameIndex]);
-                    }
-                  } else if (e.key === "Escape") {
-                    setShowCustomerNameResults(false);
-                  }
-                }}
-              />
-
-              {customerNameLoading && (
-                <div className="absolute right-3 top-9">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
-                </div>
-              )}
-
-              {showCustomerNameResults && customerNameResults.length > 0 && (
-                <div 
-                  ref={customerNameListRef}
-                  className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-56 overflow-y-auto"
-                >
-                  {customerNameResults.map((cust, index) => (
-                    <button
-                      key={cust.id}
-                      type="button"
-                      className={`w-full text-left px-3 py-2 text-sm transition-colors ${
-                        index === selectedCustomerNameIndex
-                          ? "bg-blue-50 border-l-2 border-blue-500"
-                          : "hover:bg-gray-50"
-                      }`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onMouseEnter={() => setSelectedCustomerNameIndex(index)}
-                      onClick={() => handleSelectCustomerByName(cust)}
-                    >
-                      <div className="font-medium text-gray-900">{cust.name || "Customer"}</div>
-                      <div className="text-xs text-gray-500">
-                        {cust.customer_id ? `ID: ${cust.customer_id}` : ""}
-                        {cust.phone ? ` • ${cust.phone}` : ""}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {showCustomerNameResults && customerNameResults.length === 0 && !customerNameLoading && (
-                <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg px-3 py-2 text-xs text-gray-500">
-                  No customers found
-                </div>
-              )}
-            </div>
-
-            {/* Delivery Charges */}
-            <div className="space-y-1 pt-2">
-              <Label htmlFor="delivery" className="text-sm">
-                Delivery Charges (rs)
-              </Label>
-              <Input
-                id="delivery"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={deliveryCharges || ""}
-                onChange={(e) => setDeliveryCharges(parseFloat(e.target.value) || 0)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="payment" className="text-sm">
-                Payment Method
-              </Label>
-              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger id="payment" className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="mobile">Mobile Payment</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label htmlFor="discount" className="text-sm">
-                  Global Discount (rs)
-                </Label>
-                <Input
-                  id="discount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={discount}
-                  onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                  className="text-xs h-8"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="tax" className="text-sm">
-                  Tax (rs)
-                </Label>
-                <Input
-                  id="tax"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={tax}
-                  onChange={(e) => setTax(parseFloat(e.target.value) || 0)}
-                  className="text-xs h-8"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="amountPaid" className="text-sm">
-                Amount Paid (rs)
-              </Label>
-              <Input
-                ref={amountPaidInputRef}
-                id="amountPaid"
-                type="number"
-                min="0"
-                step="0.01"
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-                className="text-sm font-semibold h-8"
-              />
-              <p className="text-xs text-muted-foreground">Amount received from customer</p>
-              {amountPaidInWords && (
-                <p className="text-xs font-medium text-primary">In words: {amountPaidInWords}</p>
-              )}
-            </div>
-
-            <div className="border-t pt-2 space-y-1 text-xs">
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span>rs {calculateSubtotal().toFixed(2)}</span>
-              </div>
-
-              {(discount > 0 || calculateItemDiscounts() > 0) && (
-                <div className="flex justify-between text-red-600">
-                  <span>Total Discount:</span>
-                  <span>-rs {(discount + calculateItemDiscounts()).toFixed(2)}</span>
-                </div>
-              )}
-
-              {(discount > 0 || calculateItemDiscounts() > 0) && (
-                <div className="flex justify-between font-semibold border-t pt-1">
-                  <span>After Discount:</span>
-                  <span>rs {(calculateSubtotal() - discount - calculateItemDiscounts()).toFixed(2)}</span>
-                </div>
-              )}
-
-              {tax > 0 && (
-                <div className="flex justify-between">
-                  <span>Tax:</span>
-                  <span>+rs {tax.toFixed(2)}</span>
-                </div>
-              )}
-
-              {deliveryCharges > 0 && (
-                <div className="flex justify-between">
-                  <span>Delivery:</span>
-                  <span>+rs {deliveryCharges.toFixed(2)}</span>
-                </div>
-              )}
-
-              {selectedCustomer && Math.abs(selectedCustomer.outstanding_balance) > 0.005 && (
-                <div className="flex justify-between text-orange-700 font-semibold">
-                  <span>Previous Balance:</span>
-                  <span>{selectedCustomer.outstanding_balance >= 0 ? "+" : "-"}rs {Math.abs(selectedCustomer.outstanding_balance).toFixed(2)}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between font-bold border-t-2 pt-1 mt-1">
-                <span>GRAND TOTAL:</span>
-                <span className="text-lg">rs {(calculateTotal() + (selectedCustomer?.outstanding_balance || 0)).toFixed(2)}</span>
-              </div>
-
-              {amountPaidValue < calculateTotal() && (
-                <div className="flex justify-between text-red-600 font-semibold">
-                  <span>New Bill Due (Udhar):</span>
-                  <span>rs {(calculateTotal() - amountPaidValue).toFixed(2)}</span>
-                </div>
-              )}
-
-              {selectedCustomer && selectedCustomer.outstanding_balance > 0 && (
-                <div className="flex justify-between text-red-700 font-bold">
-                  <span>Total Balance After Payment:</span>
-                  <span>rs {(selectedCustomer.outstanding_balance + Math.max(0, calculateTotal() - amountPaidValue)).toFixed(2)}</span>
-                </div>
-              )}
-
-              {amountPaidValue > calculateTotal() && (
-                <div className="flex justify-between text-green-600 font-semibold">
-                  <span>Change:</span>
-                  <span>rs {(amountPaidValue - calculateTotal()).toFixed(2)}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-primary/10 p-2 rounded border border-primary/20">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-sm">Amount Paid:</span>
-                <span className="text-xl font-bold text-primary">rs {amountPaidValue.toFixed(2)}</span>
-              </div>
-            </div>
+            <CheckoutPaymentSection
+              deliveryCharges={deliveryCharges}
+              onDeliveryChargesChange={setDeliveryCharges}
+              paymentMethod={paymentMethod}
+              onPaymentMethodChange={setPaymentMethod}
+              discount={discount}
+              onDiscountChange={setDiscount}
+              tax={tax}
+              onTaxChange={setTax}
+              amountPaid={amountPaid}
+              onAmountPaidChange={setAmountPaid}
+              amountPaidInputRef={amountPaidInputRef}
+              amountPaidInWords={amountPaidInWords}
+              summary={{
+                subtotal: calculateSubtotal(),
+                totalDiscount: discount + calculateItemDiscounts(),
+                showDiscount: discount > 0 || calculateItemDiscounts() > 0,
+                afterDiscount: calculateSubtotal() - discount - calculateItemDiscounts(),
+                tax,
+                deliveryCharges,
+                previousBalance: selectedCustomer?.outstanding_balance,
+                grandTotal: calculateTotal() + (selectedCustomer?.outstanding_balance || 0),
+                newBillDue: amountPaidValue < calculateTotal()
+                  ? calculateTotal() - amountPaidValue
+                  : undefined,
+                customerBalanceAfterPayment: selectedCustomer && selectedCustomer.outstanding_balance > 0
+                  ? selectedCustomer.outstanding_balance + Math.max(0, calculateTotal() - amountPaidValue)
+                  : undefined,
+                change: amountPaidValue > calculateTotal()
+                  ? amountPaidValue - calculateTotal()
+                  : undefined,
+                amountPaid: amountPaidValue,
+              }}
+            />
           </div>
 
           <DialogFooter className="border-t pt-3">
@@ -2561,92 +2173,19 @@ export default function SalesTerminal() {
         </DialogContent>
       </Dialog>
 
-      {/* Success Dialog */}
-      <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-600">
-              <CheckCircle2 className="h-6 w-6" />
-              Sale Completed!
-            </DialogTitle>
-            <DialogDescription>The sale has been successfully processed.</DialogDescription>
-          </DialogHeader>
-
-          <div className="py-6 space-y-4">
-            <div className="text-center pb-4 border-b">
-              <p className="text-sm text-muted-foreground mb-1">Sale ID</p>
-              <p className="text-2xl font-bold">#{saleId}</p>
-            </div>
-
-            <div className="space-y-3 bg-muted/50 p-4 rounded-lg">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Current Bill:</span>
-                <span className="text-xl font-bold text-primary">rs {completedSaleTotal.toFixed(2)}</span>
-              </div>
-              {Math.abs(completedPreviousBalance) > 0.005 && (
-                <>
-                  <div className="flex justify-between items-center text-orange-700">
-                    <span className="text-sm font-medium">Previous Balance:</span>
-                    <span className="text-lg font-semibold">rs {completedPreviousBalance.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center border-t pt-2">
-                    <span className="text-base font-bold">Grand Total:</span>
-                    <span className="text-2xl font-bold text-primary">
-                      rs {(completedSaleTotal + completedPreviousBalance).toFixed(2)}
-                    </span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Amount Paid:</span>
-                <span className="text-xl font-semibold text-green-600">
-                  rs {completedAmountPaid.toFixed(2)}
-                </span>
-              </div>
-
-              {completedChange > 0 && (
-                <div className="flex justify-between items-center pt-3 border-t-2 border-green-600">
-                  <span className="text-base font-bold text-green-700">Change to Return:</span>
-                  <span className="text-3xl font-bold text-green-700">rs {completedChange.toFixed(2)}</span>
-                </div>
-              )}
-
-              {completedAmountPaid < completedSaleTotal && (
-                <div className="flex justify-between items-center pt-3 border-t-2 border-red-600">
-                  <span className="text-base font-bold text-red-700">Amount Due (Udhar):</span>
-                  <span className="text-3xl font-bold text-red-700">
-                    rs {(completedSaleTotal - completedAmountPaid).toFixed(2)}
-                  </span>
-                </div>
-              )}
-              {Math.abs(completedPreviousBalance) > 0.005 && completedPreviousBalance + Math.max(0, completedSaleTotal - completedAmountPaid) > 0 && (
-                <div className="flex justify-between items-center pt-3 border-t-2 border-red-600">
-                  <span className="text-base font-bold text-red-700">Total Customer Balance:</span>
-                  <span className="text-3xl font-bold text-red-700">
-                    rs {(completedPreviousBalance + Math.max(0, completedSaleTotal - completedAmountPaid)).toFixed(2)}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter className="flex-col gap-2 sm:flex-row">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (saleId) router.push(`/sales/invoice/${saleId}`);
-              }}
-              className="w-full sm:w-auto"
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              View Invoice
-            </Button>
-            <Button onClick={handleNewSale} className="w-full sm:w-auto">
-              New Sale
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SaleCompletionDialog
+        open={successOpen}
+        onOpenChange={setSuccessOpen}
+        saleId={saleId}
+        saleTotal={completedSaleTotal}
+        previousBalance={completedPreviousBalance}
+        amountPaid={completedAmountPaid}
+        change={completedChange}
+        onViewInvoice={() => {
+          if (saleId) router.push(`/sales/invoice/${saleId}`);
+        }}
+        onNewSale={handleNewSale}
+      />
 
       {/* Variation Picker Dialog */}
       <Dialog open={variationDialogOpen} onOpenChange={setVariationDialogOpen}>

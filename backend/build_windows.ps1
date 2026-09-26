@@ -90,6 +90,9 @@ $pyInstallerArgs = @(
     "--hidden-import", "uvicorn.protocols.http.auto",
     "--hidden-import", "uvicorn.protocols.websockets.auto",
     "--hidden-import", "uvicorn.lifespan.on",
+    "--hidden-import", "app.applications.retail.manifest",
+    "--hidden-import", "app.applications.workshop.manifest",
+    "--hidden-import", "app.applications.restaurant.manifest",
     $entryPoint
 )
 

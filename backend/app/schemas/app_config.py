@@ -25,6 +25,7 @@ class AppConfigResponse(BaseModel):
     enabled_capabilities: list[CapabilityId]
     shared_package_versions: dict[str, str]
     branding: AppBranding
+    bootstrap_required: bool = False
 
 
 class ProfileChangeRequest(BaseModel):

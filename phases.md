@@ -21,10 +21,10 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 
 | Field | Value |
 | --- | --- |
-| Active phase | Phase 3 — Shared capability boundaries and retail transaction services |
+| Active phase | Phase 4 — Frontend composition and application shells |
 | Status | Awaiting manual verification |
 | Started | 2026-09-26 |
-| Owner approval | Phase 2 approved by owner on 2026-09-26 |
+| Owner approval | Phase 3 approved by owner on 2026-09-26 |
 | Production database changes | Additive `products.item_type`; existing rows default to `stock` |
 
 ## Phase sequence
@@ -35,8 +35,8 @@ Status values: **Not started**, **In progress**, **Awaiting manual verification*
 | 1 | Safe ordered migration runner, pre-migration backup, and recovery behavior | Approved | Phase 1B |
 | 1B | SQLite/PostgreSQL/MySQL connector and provider conformance layer | Approved | Phase 2 |
 | 2 | Application manifests, business profiles, and capability enforcement | Approved | Phase 3 |
-| 3 | Shared capability boundaries and retail transaction services | Awaiting manual verification | Phase 4 |
-| 4 | Frontend composition, registries, and independent application shells | Not started | Phase 5 |
+| 3 | Shared capability boundaries and retail transaction services | Approved | Phase 4 |
+| 4 | Frontend composition, registries, and independent application shells | In progress | Phase 5 |
 | 5 | Auto-workshop application/module | Not started | Phase 6 or release |
 | 6 | Restaurant application/module | Not started | Restaurant release |
 | 7 | Clothing profile/module | Not started | Clothing release |
@@ -168,27 +168,72 @@ Implementation and automated evidence: [Phase 3 verification record](docs/archit
 
 Owner manual verification:
 
-- [ ] Existing catalog rows upgrade as `stock`; service and non-stock items do not mutate inventory.
-- [ ] Cash, credit, partial payment, price override, discount, tax, and delivery totals match expected rounded amounts.
-- [ ] Fractional/base-unit conversions and variation stock remain accurate.
-- [ ] Purchase receiving, FIFO sale issue, purchase return, and sale return update stock once.
-- [ ] Customer/vendor balances and every resulting journal remain consistent and balanced.
-- [ ] Held sales and purchases do not change stock or journals before completion.
-- [ ] A deliberately failed accounting post rolls back transaction, stock, and customer balance changes.
+- [x] Existing catalog rows upgrade as `stock`; service and non-stock items do not mutate inventory.
+- [x] Cash, credit, partial payment, price override, discount, tax, and delivery totals match expected rounded amounts.
+- [x] Fractional/base-unit conversions and variation stock remain accurate.
+- [x] Purchase receiving, FIFO sale issue, purchase return, and sale return update stock once.
+- [x] Customer/vendor balances and every resulting journal remain consistent and balanced.
+- [x] Held sales and purchases do not change stock or journals before completion.
+- [x] A deliberately failed accounting post rolls back transaction, stock, and customer balance changes.
 
 Approval record:
 
 | Field | Value |
 | --- | --- |
-| Decision | Pending |
-| Approved by | — |
-| Approval date | — |
-| Notes | Owner completes the Phase 3 manual checklist before Phase 4. |
+| Decision | Approved |
+| Approved by | Owner |
+| Approval date | 2026-09-26 |
+| Notes | Owner confirmed all Phase 3 manual checks passed; begin Phase 4. |
 
 ## Phase 4 — Frontend composition and application shells
 
 Manual focus: verify navigation, keyboard/scanner behavior, loading/errors,
 customer-form composition, branding, and separation between application shells.
+
+Implementation started on 2026-09-26. The first delivered slice adds a typed
+app-configuration provider with explicit backend/fallback states, a role- and
+capability-aware navigation registry shared by the retail navbar and admin
+sidebar, route-level capability guards, and configuration-driven shell branding.
+The owner manually verified that foundation and confirmed it is behaving as
+expected. A reusable POS product-search/category toolbar has now been extracted;
+the owner manually verified the search/category controls, scanner and keyboard
+selection behavior, and focus behavior. Its focused lint and the frontend
+production build pass. POS product search, cart table, totals/action panel,
+checkout customer/payment sections, and sale-completion dialog are extracted as
+controlled components; transaction, lookup, and currency calculations remain in
+the sales route. The owner manually verified POS search/scanner/keyboard/focus
+and checkout customer lookup, selection, removal, and walk-in behavior.
+
+Inventory create/edit forms share item-type, unit conversion, fractional
+quantity, selling-unit, and variation sections; `item_type` is included in both
+product requests and legacy rows default to `stock`. Customer create/edit forms
+share common identity fields, with financial and profile fields outside that
+section. Typed module UI slots are available at the POS, catalog, and customer
+profile surfaces. Frontend import-boundary checks prevent cross-application
+imports. Focused lint, boundary tests (2/2), boundary scan, production build
+(27 routes), and `git diff --check` pass. Repository-wide lint still reports
+existing findings in legacy pages.
+
+The owner confirmed on 2026-09-26 that the remaining retail Phase 4 manual checks
+passed, including cart quantity/discount/totals, payment/checkout/hold,
+receipt/report regression, accessibility, and loading/error/empty states.
+Independent app isolation is now implemented: workshop/restaurant manifests and
+profiles, app-scoped writable data roots, fail-closed application identity
+migration, separate Tauri identifiers/config overlays/build scripts, shared
+4321/8000 ports for one-at-a-time use, app-aware login/navigation/workspace
+shells, and one-time independent-app administrator bootstrap.
+
+Automated backend compilation, migration/data-path tests, frontend target and
+boundary tests, focused lint, production build, and `git diff --check` pass.
+Owner verification remains for building/installing each native Tauri target,
+checking reported application IDs/data directories, first-admin bootstrap and
+repeat refusal, and confirming retail still opens its original database. Native
+Cargo compilation could not run because `cargo`/`rustc` are unavailable here;
+full FastAPI integration tests could not run because FastAPI is missing from the
+active Python environment. A retail startup regression found during owner-side
+testing was fixed by exporting the standardized `MANIFEST` alias while retaining
+`RETAIL_MANIFEST`; isolated full-app startup probes now pass for all three app
+IDs with temporary data roots.
 
 ## Phase 5 — Auto workshop
 

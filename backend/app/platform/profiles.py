@@ -37,6 +37,17 @@ RETAIL_PROFILE_CAPABILITIES = frozenset(
     }
 )
 
+WORKSHOP_PROFILE_CAPABILITIES = frozenset(
+    {
+        CapabilityId.AUTHENTICATION,
+        CapabilityId.USERS,
+        CapabilityId.STORE_CONFIGURATION,
+        CapabilityId.BACKUP,
+    }
+)
+
+RESTAURANT_PROFILE_CAPABILITIES = WORKSHOP_PROFILE_CAPABILITIES
+
 PROFILES: dict[ProfileId, BusinessProfile] = {
     profile_id: BusinessProfile(
         profile_id=profile_id,
@@ -49,6 +60,16 @@ PROFILES: dict[ProfileId, BusinessProfile] = {
         ProfileId.MILK_COUNTER_RETAIL,
     )
 }
+PROFILES[ProfileId.WORKSHOP] = BusinessProfile(
+    ProfileId.WORKSHOP,
+    ApplicationId.WORKSHOP,
+    WORKSHOP_PROFILE_CAPABILITIES,
+)
+PROFILES[ProfileId.RESTAURANT] = BusinessProfile(
+    ProfileId.RESTAURANT,
+    ApplicationId.RESTAURANT,
+    RESTAURANT_PROFILE_CAPABILITIES,
+)
 
 
 def get_profile(profile_id: str | ProfileId) -> BusinessProfile:

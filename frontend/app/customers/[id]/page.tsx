@@ -61,6 +61,8 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
+import { CustomerIdentityFields } from "@/components/customers/CustomerIdentityFields";
+import { ModuleUiContributionSlot } from "@/components/ModuleUiContributions";
 
 export default function CustomerDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap params Promise using React.use()
@@ -883,32 +885,15 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name">Full Name</Label>
-                  <Input
-                    id="edit-name"
-                    value={editCustomer.name}
-                    onChange={(e) => setEditCustomer({ ...editCustomer, name: e.target.value })}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-phone">Phone</Label>
-                  <Input
-                    id="edit-phone"
-                    value={editCustomer.phone}
-                    onChange={(e) => setEditCustomer({ ...editCustomer, phone: e.target.value })}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-address">Address</Label>
-                  <Input
-                    id="edit-address"
-                    value={editCustomer.address}
-                    onChange={(e) => setEditCustomer({ ...editCustomer, address: e.target.value })}
-                  />
-                </div>
+                <CustomerIdentityFields
+                  idPrefix="edit-customer"
+                  values={editCustomer}
+                  onChange={(field, value) => setEditCustomer((previous) => ({
+                    ...previous,
+                    [field]: value,
+                  }))}
+                />
+                <ModuleUiContributionSlot slot="shared.customer.profile-fields" />
 
                 <div className="space-y-2">
                   <Label htmlFor="edit-opening-balance">Opening Balance (Legacy Udhar)</Label>

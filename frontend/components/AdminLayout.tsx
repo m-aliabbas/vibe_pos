@@ -17,18 +17,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
-  BarChart3,
-  Users,
-  Settings,
   LogOut,
-  Home,
   PieChart,
-  Store,
-  Truck,
-  Tags,
-  Layers,
-  Download,
 } from 'lucide-react';
+import { getNavigationItems } from '@/lib/navigation';
+import { useAppConfig } from '@/components/AppConfigProvider';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -37,6 +30,7 @@ interface AdminLayoutProps {
 const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const { config, hasCapability } = useAppConfig();
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   // Check if user is admin
@@ -51,65 +45,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     );
   }
 
-  const menuItems = [
-    {
-      href: '/admin',
-      label: 'Dashboard',
-      icon: Home,
-      description: 'Overview and key metrics'
-    },
-    // Management Section
-    {
-      href: '/sales',
-      label: 'Point of Sale',
-      icon: Store,
-      description: 'Create new orders'
-    },
-    {
-      href: '/inventory',
-      label: 'Inventory',
-      icon: Tags,
-      description: 'Manage products & stock'
-    },
-    {
-      href: '/stock-audit',
-      label: 'Stock Audit',
-      icon: Layers,
-      description: 'Batch costing & audit'
-    },
-    {
-      href: '/vendors',
-      label: 'Vendors',
-      icon: Truck,
-      description: 'Manage suppliers'
-    },
-    {
-      href: '/users',
-      label: 'Staff Management',
-      icon: Users,
-      description: 'Manage users & roles'
-    },
-    // Reports Section
-    {
-      href: '/reports',
-      label: 'Reports & Analytics',
-      icon: BarChart3,
-      description: 'Inventory, products, buying & customers'
-    },
-    // Settings Section
-    {
-      href: '/backup',
-      label: 'Backup & Restore',
-      icon: Settings,
-      description: 'Database backup management'
-    },
-    {
-      href: '/updates',
-      label: 'Application Updates',
-      icon: Download,
-      description: 'Check for new VibePOS releases'
-    },
-  ];
+  const menuItems = getNavigationItems('admin', user.role, hasCapability, config.application_id);
 
   const isActive = (href: string) => {
     if (href === '/admin') {

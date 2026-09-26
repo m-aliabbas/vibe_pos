@@ -6,6 +6,7 @@ from pathlib import Path
 class Settings(BaseSettings):
     PROJECT_NAME: str = "VibePOS"
     API_V1_STR: str = "/api/v1"
+    APPLICATION_ID: Literal["retail", "workshop", "restaurant"] = "retail"
 
     # Store branding
     STORE_NAME: str = "MyStore"

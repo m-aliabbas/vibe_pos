@@ -7,6 +7,11 @@ use tauri_plugin_shell::process::CommandEvent;
 use std::time::Duration;
 use std::path::PathBuf;
 
+const APPLICATION_ID: &str = match option_env!("VIBE_APPLICATION_ID") {
+    Some(application_id) => application_id,
+    None => "retail",
+};
+
 #[derive(Clone, serde::Serialize)]
 struct Payload {
     message: String,
@@ -75,7 +80,8 @@ fn main() {
                 let sidecar_command = app.shell().sidecar("next-server").unwrap()
                     .args([script_path])
                     .env("PORT", port.to_string())
-                    .env("HOSTNAME", "0.0.0.0");
+                    .env("HOSTNAME", "0.0.0.0")
+                    .env("BACKEND_PORT", "8000");
 
                 let (mut rx, _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");
 
@@ -90,35 +96,36 @@ fn main() {
                     }
                 });
 
-                // Launch Python Backend Sidecar in a visible Terminal Window (User Requirement)
+                // Launch the app-specific backend sidecar with its isolated data root.
                 #[cfg(target_os = "macos")]
                 {
-                    let current_exe = std::env::current_exe().unwrap();
-                    let bin_dir = current_exe.parent().unwrap();
-                    
-                    // In startup (dev), bin has triple. In bundle (release), it is renamed to just the name.
-                    let backend_name = if cfg!(debug_assertions) {
-                        "backend-server-aarch64-apple-darwin"
-                    } else {
-                        "backend-server"
-                    };
-
-                    let backend_path = bin_dir.join(backend_name);
-                    
-                    println!("Launching backend from: {:?}", backend_path);
-                    
-                    std::process::Command::new("open")
-                        .arg("-a")
-                        .arg("Terminal")
-                        .arg(backend_path)
-                        .spawn()
-                        .expect("Failed to launch backend terminal");
+                    let backend_command = app.shell().sidecar("backend-server").unwrap()
+                        .env("APPLICATION_ID", APPLICATION_ID)
+                        .env("DATA_DIR", "data")
+                        .env("AP_HOST", "0.0.0.0")
+                        .env("AP_PORT", "8000");
+                    let (mut backend_events, _backend_child) = backend_command.spawn()
+                        .expect("Failed to launch backend sidecar");
+                    tauri::async_runtime::spawn(async move {
+                        while let Some(event) = backend_events.recv().await {
+                            match event {
+                                CommandEvent::Stdout(line) => println!("BACKEND: {}", String::from_utf8_lossy(&line)),
+                                CommandEvent::Stderr(line) => println!("BACKEND ERROR: {}", String::from_utf8_lossy(&line)),
+                                _ => {}
+                            }
+                        }
+                    });
                 }
                  #[cfg(not(target_os = "macos"))]
                 {
                    // Fallback for non-macOS (e.g. standard sidecar) or Windows (cmd /c start ...)
                    // For now, focusing on the macOS requirement.
-                   let _ = app.shell().sidecar("backend-server").unwrap().spawn();
+                   let _ = app.shell().sidecar("backend-server").unwrap()
+                       .env("APPLICATION_ID", APPLICATION_ID)
+                       .env("DATA_DIR", "data")
+                       .env("AP_HOST", "0.0.0.0")
+                       .env("AP_PORT", "8000")
+                       .spawn();
                 }
 
                 // Perform navigation in a separate thread to not block main thread

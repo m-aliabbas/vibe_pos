@@ -3,13 +3,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from jose import jwt, JWTError
 
 from app.core import security
 from app.core.config import settings
 from app.core.config import settings
 from app.api import deps
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas import user as user_schema
 
 router = APIRouter()
@@ -70,6 +72,12 @@ def register_user(
     db: Session = Depends(deps.get_db),
     user_in: user_schema.UserCreate,
 ) -> Any:
+    if settings.APPLICATION_ID != "retail":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Use the independent application's first-admin setup",
+        )
+
     # Check if user exists
     user = db.query(User).filter(User.username == user_in.username).first()
     if user:
@@ -89,6 +97,48 @@ def register_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/bootstrap-admin", status_code=status.HTTP_201_CREATED)
+def bootstrap_independent_admin(
+    payload: user_schema.BootstrapAdminRequest,
+    db: Session = Depends(deps.get_db),
+) -> dict[str, bool]:
+    if settings.APPLICATION_ID == "retail":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    try:
+        # The write lock serializes concurrent first-run requests across supported SQL providers.
+        db.execute(text("UPDATE business_configuration SET id = id WHERE id = 1"))
+        if db.query(User.id).first() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Administrator setup has already been completed",
+            )
+
+        administrator = User(
+            username=payload.username,
+            email=payload.email,
+            hashed_password=security.get_password_hash(payload.password),
+            role=UserRole.ADMIN.value,
+            is_active=True,
+        )
+        db.add(administrator)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Administrator setup has already been completed",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+    return {"created": True}
 
 @router.get("/me", response_model=user_schema.User)
 def read_users_me(current_user: User = Depends(get_current_user)):

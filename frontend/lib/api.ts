@@ -27,7 +27,7 @@ api.interceptors.request.use((config) => {
 export default api;
 
 export type ApplicationId = 'retail' | 'workshop' | 'restaurant';
-export type ProfileId = 'retail' | 'clothing-retail' | 'milk-counter-retail';
+export type ProfileId = 'retail' | 'clothing-retail' | 'milk-counter-retail' | 'workshop' | 'restaurant';
 export type ModuleId = 'workshop' | 'restaurant' | 'clothing' | 'milk';
 export type CatalogItemType = 'stock' | 'service' | 'prepared' | 'non_stock';
 export type CapabilityId =
@@ -74,6 +74,7 @@ export interface AppConfigResponse {
     enabled_capabilities: CapabilityId[];
     shared_package_versions: Record<string, string>;
     branding: AppBranding;
+    bootstrap_required: boolean;
 }
 
 export const appConfigApi = {
@@ -84,6 +85,13 @@ export const appConfigApi = {
     changeProfile: async (profileId: ProfileId): Promise<AppConfigResponse> => {
         const response = await api.put('/app-config/profile', { profile_id: profileId });
         return response.data;
+    },
+};
+
+export const authApi = {
+    bootstrapAdmin: async (payload: { username: string; email?: string; password: string }) => {
+        const response = await api.post('/auth/bootstrap-admin', payload);
+        return response.data as { created: boolean };
     },
 };
 
