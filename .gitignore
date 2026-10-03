@@ -46,6 +46,7 @@ backend/k1.json
 # Google OAuth source credentials and runtime tokens
 google_drive_test/client_secrets.json
 google_drive_test/credentials.json
+**/google_drive_session.enc
 
 # Database
 *.db
@@ -54,6 +55,7 @@ google_drive_test/credentials.json
 # Uploads
 backend/uploads/
 backend/data/
+data/
 
 # Electron
 frontend/electron-builder.yml

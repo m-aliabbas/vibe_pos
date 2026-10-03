@@ -24,7 +24,7 @@ async fn save_backup_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
     
     let file_path = app.dialog()
         .file()
-        .add_filter("VibePOS Database Backup", &["db"])
+        .add_filter("VibePOS Database Backup", &["db", "dump", "sql", "zip"])
         .set_file_name(&format!("pos_backup_{}.db", chrono::Local::now().format("%Y%m%d_%H%M%S")))
         .blocking_save_file();
     
@@ -41,7 +41,7 @@ async fn open_backup_dialog(app: tauri::AppHandle) -> Result<Option<String>, Str
     
     let file_path = app.dialog()
         .file()
-        .add_filter("VibePOS Database Backup", &["db"])
+        .add_filter("VibePOS Database Backup", &["db", "dump", "sql", "zip"])
         .blocking_pick_file();
     
     match file_path {
