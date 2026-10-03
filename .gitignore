@@ -46,7 +46,6 @@ backend/k1.json
 # Google OAuth source credentials and runtime tokens
 google_drive_test/client_secrets.json
 google_drive_test/credentials.json
-backend/g1.json.enc
 
 # Database
 *.db
