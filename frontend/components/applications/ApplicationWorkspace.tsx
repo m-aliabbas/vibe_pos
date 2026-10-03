@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAppConfig } from '@/components/AppConfigProvider';
@@ -10,7 +10,13 @@ import { getNavigationItems } from '@/lib/navigation';
 import { useAuthStore } from '@/store/authStore';
 import type { ApplicationId } from '@/lib/api';
 
-export function ApplicationWorkspace({ expectedApplication }: { expectedApplication: ApplicationId }) {
+export function ApplicationWorkspace({
+    expectedApplication,
+    children,
+}: {
+    expectedApplication: ApplicationId;
+    children?: ReactNode;
+}) {
     const router = useRouter();
     const { config, status, hasCapability } = useAppConfig();
     const { user, token, isLoading } = useAuthStore();
@@ -58,13 +64,15 @@ export function ApplicationWorkspace({ expectedApplication }: { expectedApplicat
                     <p className="mt-1 text-sm text-muted-foreground">{config.branding.name}</p>
                 )}
             </header>
-            <main className="mx-auto max-w-5xl space-y-6 p-6">
+            <main className="mx-auto max-w-6xl space-y-6 p-6">
+                {children ?? (
                 <section aria-labelledby="workspace-heading">
                     <h2 id="workspace-heading" className="text-lg font-semibold text-gray-900">Workspace</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
                         The shared application shell is active. Domain workflows will appear when this application module is enabled.
                     </p>
                 </section>
+                )}
                 {navigation.length > 0 && (
                     <nav aria-label={`${config.application_name} navigation`} className="flex flex-wrap gap-2">
                         {navigation.map((item) => {

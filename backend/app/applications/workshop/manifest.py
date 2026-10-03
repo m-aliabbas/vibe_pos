@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.api.v1.endpoints import auth, backup, settings, users
+from app.api.v1.endpoints import auth, backup, settings, users, workshop
 from app.db.migrations.registry import MIGRATIONS
 from app.platform.compatibility import PackageRequirement
 from app.platform.identifiers import (
@@ -37,11 +37,19 @@ MANIFEST = ApplicationManifest(
         _platform_route(users, "/users", "users", CapabilityId.USERS),
         _platform_route(settings, "/settings", "settings", CapabilityId.STORE_CONFIGURATION),
         _platform_route(backup, "/backup", "backup", CapabilityId.BACKUP),
+        RouterRegistration(
+            router=workshop.router,
+            prefix="/workshop",
+            tags=("workshop",),
+            capability=CapabilityId.WORKSHOP_JOBS,
+            owner_application=ApplicationId.WORKSHOP,
+        ),
     ),
     model_modules=(
         "app.models.user",
         "app.models.settings",
         "app.models.business_configuration",
+        "app.models.workshop",
     ),
     migration_registry_module="app.db.migrations.registry",
     migration_ids=tuple(migration.migration_id for migration in MIGRATIONS),

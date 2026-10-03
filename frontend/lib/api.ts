@@ -1055,3 +1055,144 @@ export const stockAuditApi = {
         return response.data;
     },
 };
+
+export type WorkshopJobStatus = 'open' | 'in_progress' | 'ready' | 'delivered';
+
+export interface WorkshopVehicleInput {
+    plate_number: string;
+    make?: string | null;
+    model?: string | null;
+    year?: number | null;
+    engine_oil_type?: string | null;
+    notes?: string | null;
+}
+
+export interface WorkshopVehicle extends WorkshopVehicleInput {
+    id: number;
+    customer_id: number;
+}
+
+export interface WorkshopCustomer {
+    id: number;
+    name: string;
+    whatsapp: string;
+    vehicles: WorkshopVehicle[];
+}
+
+export interface WorkshopOilProduct {
+    id: number;
+    name: string;
+    grade: string | null;
+    container_litres: number;
+    sealed_containers: number;
+    open_litres: number;
+    price_per_litre: number;
+    cost_per_container: number;
+    default_interval_km: number | null;
+    default_interval_months: number | null;
+    low_stock_containers: number;
+    total_litres: number;
+    low_stock: boolean;
+    opened_at: string | null;
+}
+
+export type WorkshopOilProductInput = Omit<WorkshopOilProduct, 'id' | 'total_litres' | 'low_stock' | 'opened_at'>;
+
+export interface WorkshopServiceRecord {
+    id: number;
+    vehicle_id: number;
+    job_id: number;
+    item_type: string;
+    description: string | null;
+    odometer_km: number;
+    service_date: string;
+    interval_km: number | null;
+    interval_months: number | null;
+    next_due_km: number | null;
+    next_due_date: string | null;
+}
+
+export interface WorkshopJobLine {
+    id: number;
+    kind: 'oil' | 'part' | 'labour';
+    description: string;
+    oil_product_id: number | null;
+    quantity: number;
+    unit_price: number;
+    interval_km: number | null;
+    interval_months: number | null;
+}
+
+export interface WorkshopJobLineInput {
+    kind: 'oil' | 'part' | 'labour';
+    description?: string;
+    oil_product_id?: number;
+    quantity: number;
+    unit_price?: number;
+    interval_km?: number;
+    interval_months?: number;
+}
+
+export interface WorkshopJob {
+    id: number;
+    vehicle_id: number;
+    plate_number: string;
+    customer_name: string;
+    whatsapp: string;
+    odometer_km: number;
+    complaint: string | null;
+    check_in_notes: string | null;
+    mechanic: string | null;
+    status: WorkshopJobStatus;
+    discount: number;
+    subtotal: number;
+    total: number;
+    created_at: string;
+    delivered_at: string | null;
+    lines: WorkshopJobLine[];
+    service_records: WorkshopServiceRecord[];
+    warnings: string[];
+    whatsapp_link: string | null;
+}
+
+export interface WorkshopDueService {
+    vehicle_id: number;
+    plate_number: string;
+    customer_name: string;
+    whatsapp: string;
+    item_type: string;
+    last_service_km: number;
+    next_due_km: number | null;
+    next_due_date: string | null;
+    current_km: number;
+    overdue: boolean;
+    whatsapp_link: string;
+}
+
+export const workshopApi = {
+    register: async (data: { name: string; whatsapp: string; vehicle: WorkshopVehicleInput }): Promise<WorkshopCustomer> =>
+        (await api.post('/workshop/customers', data)).data,
+    lookup: async (q: string): Promise<WorkshopCustomer[]> =>
+        (await api.get('/workshop/lookup', { params: { q } })).data,
+    addVehicle: async (customerId: number, data: WorkshopVehicleInput): Promise<WorkshopVehicle> =>
+        (await api.post(`/workshop/customers/${customerId}/vehicles`, data)).data,
+    vehicleHistory: async (vehicleId: number): Promise<WorkshopServiceRecord[]> =>
+        (await api.get(`/workshop/vehicles/${vehicleId}/history`)).data,
+    listOil: async (): Promise<WorkshopOilProduct[]> => (await api.get('/workshop/oil')).data,
+    createOil: async (data: WorkshopOilProductInput): Promise<WorkshopOilProduct> =>
+        (await api.post('/workshop/oil', data)).data,
+    adjustOil: async (id: number, data: { add_sealed_containers?: number; wastage_litres?: number }): Promise<WorkshopOilProduct> =>
+        (await api.post(`/workshop/oil/${id}/adjust`, data)).data,
+    createJob: async (data: { vehicle_id: number; odometer_km: number; complaint?: string; check_in_notes?: string; mechanic?: string }): Promise<WorkshopJob> =>
+        (await api.post('/workshop/jobs', data)).data,
+    listJobs: async (activeOnly = false): Promise<WorkshopJob[]> =>
+        (await api.get('/workshop/jobs', { params: { active_only: activeOnly } })).data,
+    getJob: async (id: number): Promise<WorkshopJob> => (await api.get(`/workshop/jobs/${id}`)).data,
+    addLine: async (id: number, data: WorkshopJobLineInput): Promise<WorkshopJob> =>
+        (await api.post(`/workshop/jobs/${id}/lines`, data)).data,
+    removeLine: async (id: number, lineId: number): Promise<WorkshopJob> =>
+        (await api.delete(`/workshop/jobs/${id}/lines/${lineId}`)).data,
+    updateJob: async (id: number, data: { status?: WorkshopJobStatus; mechanic?: string; discount?: number; check_in_notes?: string }): Promise<WorkshopJob> =>
+        (await api.patch(`/workshop/jobs/${id}`, data)).data,
+    dueServices: async (): Promise<WorkshopDueService[]> => (await api.get('/workshop/due-services')).data,
+};
