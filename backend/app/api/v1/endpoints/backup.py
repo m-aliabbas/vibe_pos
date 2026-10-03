@@ -1,21 +1,25 @@
-import os
-import shutil
 import tempfile
-import zipfile
-import json
 from datetime import datetime
-from app.core.timezone import now_pkt
 from pathlib import Path
-from typing import List
-from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
+from typing import List, Optional
+
+from app.api import deps
+from app.core.config import settings
+from app.db.session import engine
+from app.services import backup_scheduler, google_drive_backup
+from app.services.backup_archive import (
+    DatabaseBackup,
+    POS_DATABASE_FILENAME,
+    create_database_backup,
+    get_pos_database,
+    restore_pos_database,
+)
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-# Import backup scheduler for status and manual trigger
-from app.services import backup_scheduler
-
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(deps.get_current_active_admin)])
 MAX_BACKUP_UPLOAD_BYTES = 1024 * 1024 * 1024
 
 
@@ -25,308 +29,305 @@ class BackupInfo(BaseModel):
     total_size: int
 
 
-class BackupResponse(BaseModel):
+class GoogleDriveAccount(BaseModel):
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class GoogleDriveStatus(BaseModel):
+    configured: bool
+    connected: bool
+    account: Optional[GoogleDriveAccount] = None
+    folder_name: str
+
+
+class GoogleDriveUploadResponse(BaseModel):
     success: bool
     message: str
-    backup_info: BackupInfo | None = None
+    filename: str
+    folder_name: str
+    account: Optional[GoogleDriveAccount] = None
+
+
+class GoogleDriveBackupFile(BaseModel):
+    file_id: str
+    filename: str
+    created: Optional[str] = None
+    size: int
+    size_mb: float
 
 
 def get_data_dir() -> Path:
-    """Get the data directory path from environment"""
-    data_dir = os.environ.get("DATA_DIR")
-    if not data_dir:
-        raise HTTPException(status_code=500, detail="DATA_DIR not configured")
-    return Path(data_dir)
-
-
-def find_all_db_files(data_dir: Path) -> List[Path]:
-    """Find databases and user-managed branding assets in the data directory."""
-    db_files = []
-    for root, dirs, files in os.walk(data_dir):
-        for file in files:
-            if file.endswith('.db'):
-                db_files.append(Path(root) / file)
-    branding_dir = data_dir / "branding"
-    if branding_dir.is_dir():
-        db_files.extend(path for path in branding_dir.rglob("*") if path.is_file())
-    return db_files
+    return Path(settings.DATA_DIR)
 
 
 def get_backup_dir() -> Path:
-    """Get or create the backups directory"""
-    data_dir = get_data_dir()
-    backup_dir = data_dir.parent / "backups"
+    backup_dir = get_data_dir().parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     return backup_dir
 
 
+def _create_manual_backup() -> DatabaseBackup:
+    return create_database_backup(
+        get_data_dir(),
+        get_backup_dir(),
+        filename_prefix="pos_backup",
+    )
+
+
+def _upload_if_connected(backup: DatabaseBackup) -> tuple[bool, str | None]:
+    if not google_drive_backup.get_status()["connected"]:
+        return False, "Connect Google Drive to enable automatic cloud backups."
+    try:
+        google_drive_backup.upload_backup(backup.path)
+        return True, None
+    except google_drive_backup.GoogleDriveBackupError as exc:
+        return False, str(exc)
+
+
+def _restore_database(source_path: Path) -> str:
+    """Create a rollback snapshot, restore pos.db, and recycle pooled connections."""
+    safety_backup = create_database_backup(
+        get_data_dir(),
+        get_backup_dir(),
+        filename_prefix="pos_backup_pre_restore",
+    )
+    try:
+        restore_pos_database(source_path, get_data_dir())
+    except Exception:
+        restore_pos_database(safety_backup.path, get_data_dir())
+        raise
+    finally:
+        engine.dispose()
+    return safety_backup.filename
+
+
 @router.get("/list-files")
 def list_database_files():
-    """List all database files that will be included in backup"""
+    """Show the single application database included in every backup."""
     try:
-        data_dir = get_data_dir()
-        db_files = find_all_db_files(data_dir)
-        
-        files_info = []
-        total_size = 0
-        
-        for db_file in db_files:
-            if db_file.exists():
-                size = db_file.stat().st_size
-                total_size += size
-                # Get relative path from data_dir
-                rel_path = db_file.relative_to(data_dir)
-                files_info.append({
-                    "path": str(rel_path),
-                    "size": size,
-                    "size_mb": round(size / (1024 * 1024), 2)
-                })
-        
+        database_path = get_pos_database(get_data_dir())
+        size = database_path.stat().st_size
         return {
             "success": True,
-            "files": files_info,
-            "total_files": len(files_info),
-            "total_size": total_size,
-            "total_size_mb": round(total_size / (1024 * 1024), 2)
+            "files": [
+                {
+                    "path": POS_DATABASE_FILENAME,
+                    "size": size,
+                    "size_mb": round(size / (1024 * 1024), 2),
+                }
+            ],
+            "total_files": 1,
+            "total_size": size,
+            "total_size_mb": round(size / (1024 * 1024), 2),
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/scheduler/status")
 def get_scheduler_status():
-    """Get the status of the automatic backup scheduler"""
-    try:
-        status = backup_scheduler.get_scheduler_status()
-        return {
-            "success": True,
-            "scheduler": status
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return {"success": True, "scheduler": backup_scheduler.get_scheduler_status()}
 
 
 @router.post("/test-automatic")
 async def test_automatic_backup(background_tasks: BackgroundTasks):
-    """Manually trigger an automatic backup for testing purposes"""
-    try:
-        # Run backup in background
-        background_tasks.add_task(backup_scheduler.create_automatic_backup)
-        return {
-            "success": True,
-            "message": "Automatic backup triggered successfully. Check logs for progress."
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    background_tasks.add_task(backup_scheduler.create_automatic_backup)
+    return {
+        "success": True,
+        "message": "Automatic pos.db backup started. It will upload to Drive when connected.",
+    }
 
 
 @router.post("/create")
-def create_backup():
-    """Create a backup of all database files"""
+async def create_backup():
+    """Create a pos.db snapshot and automatically copy it to connected Drive."""
     try:
-        data_dir = get_data_dir()
-        backup_dir = get_backup_dir()
-        
-        # Find all database files
-        db_files = find_all_db_files(data_dir)
-        
-        if not db_files:
-            raise HTTPException(status_code=404, detail="No database files found")
-        
-        # Create timestamped backup filename
-        timestamp = now_pkt().strftime("%Y%m%d_%H%M%S")
-        backup_filename = f"pos_backup_{timestamp}.zip"
-        backup_path = backup_dir / backup_filename
-        
-        # Create backup metadata
-        backup_metadata = {
-            "timestamp": now_pkt().isoformat(),
-            "files": [],
-            "total_size": 0
-        }
-        
-        # Create ZIP archive
-        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for db_file in db_files:
-                if db_file.exists():
-                    # Store relative path in ZIP to maintain directory structure
-                    rel_path = db_file.relative_to(data_dir)
-                    zipf.write(db_file, arcname=rel_path)
-                    
-                    # Add to metadata
-                    file_size = db_file.stat().st_size
-                    backup_metadata["files"].append({
-                        "path": str(rel_path),
-                        "size": file_size
-                    })
-                    backup_metadata["total_size"] += file_size
-            
-            # Add metadata file to backup
-            metadata_json = json.dumps(backup_metadata, indent=2)
-            zipf.writestr("backup_info.json", metadata_json)
-        
+        backup = await run_in_threadpool(_create_manual_backup)
+        drive_uploaded, drive_error = await run_in_threadpool(
+            _upload_if_connected, backup
+        )
         return {
             "success": True,
-            "message": "Backup created successfully",
-            "backup_path": str(backup_path),
-            "backup_filename": backup_filename,
+            "message": "pos.db backup created successfully",
+            "backup_filename": backup.filename,
             "backup_info": BackupInfo(
-                timestamp=backup_metadata["timestamp"],
-                files=[f["path"] for f in backup_metadata["files"]],
-                total_size=backup_metadata["total_size"]
-            )
+                timestamp=backup.timestamp,
+                files=[POS_DATABASE_FILENAME],
+                total_size=backup.total_size,
+            ),
+            "drive_uploaded": drive_uploaded,
+            "drive_error": drive_error,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Backup failed: {str(e)}")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Backup failed: {exc}") from exc
+
+
+@router.get("/google-drive/status", response_model=GoogleDriveStatus)
+def get_google_drive_status():
+    return google_drive_backup.get_status()
+
+
+@router.post("/google-drive/connect", response_model=GoogleDriveStatus)
+async def connect_google_drive():
+    try:
+        return await run_in_threadpool(google_drive_backup.connect)
+    except google_drive_backup.GoogleDriveBackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/google-drive/disconnect", response_model=GoogleDriveStatus)
+def disconnect_google_drive():
+    try:
+        return google_drive_backup.disconnect()
+    except google_drive_backup.GoogleDriveBackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/google-drive/upload", response_model=GoogleDriveUploadResponse)
+async def upload_backup_to_google_drive():
+    backup: Optional[DatabaseBackup] = None
+    try:
+        backup = await run_in_threadpool(_create_manual_backup)
+        uploaded = await run_in_threadpool(
+            google_drive_backup.upload_backup, backup.path
+        )
+        return {
+            "success": True,
+            "message": "pos.db backup uploaded to Google Drive successfully.",
+            "filename": backup.filename,
+            "folder_name": uploaded["folder_name"],
+            "account": uploaded.get("account"),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except google_drive_backup.GoogleDriveBackupError as exc:
+        local_copy = f" A local copy was saved as {backup.filename}." if backup else ""
+        raise HTTPException(status_code=400, detail=f"{exc}{local_copy}") from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="The backup could not be prepared for Google Drive.",
+        ) from exc
+
+
+@router.get("/google-drive/list", response_model=list[GoogleDriveBackupFile])
+async def list_google_drive_backups():
+    try:
+        return await run_in_threadpool(google_drive_backup.list_backups)
+    except google_drive_backup.GoogleDriveBackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/google-drive/restore/{file_id}")
+async def restore_google_drive_backup(file_id: str):
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="drive_restore_",
+            suffix=".db",
+            dir=get_data_dir().parent,
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+
+        metadata = await run_in_threadpool(
+            google_drive_backup.download_backup, file_id, temporary_path
+        )
+        safety_backup = await run_in_threadpool(_restore_database, temporary_path)
+        return {
+            "success": True,
+            "message": "pos.db restored from Google Drive successfully. Restart VibePOS before continuing.",
+            "restored_file": POS_DATABASE_FILENAME,
+            "source_filename": metadata["filename"],
+            "safety_backup": safety_backup,
+        }
+    except google_drive_backup.GoogleDriveBackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid backup: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Restore failed: {exc}") from exc
+    finally:
+        if temporary_path:
+            temporary_path.unlink(missing_ok=True)
 
 
 @router.get("/download/{filename}")
 def download_backup(filename: str):
-    """Download a specific backup file"""
-    try:
-        backup_dir = get_backup_dir()
-        backup_path = backup_dir / filename
-        
-        if not backup_path.exists():
-            raise HTTPException(status_code=404, detail="Backup file not found")
-        
-        if not backup_path.is_file() or not filename.endswith('.zip'):
-            raise HTTPException(status_code=400, detail="Invalid backup file")
-        
-        return FileResponse(
-            path=backup_path,
-            filename=filename,
-            media_type="application/zip"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if Path(filename).name != filename or not filename.lower().endswith(".db"):
+        raise HTTPException(status_code=400, detail="Invalid backup filename")
+    backup_path = get_backup_dir() / filename
+    if not backup_path.is_file():
+        raise HTTPException(status_code=404, detail="Backup file not found")
+    return FileResponse(
+        path=backup_path,
+        filename=filename,
+        media_type="application/vnd.sqlite3",
+    )
 
 
 @router.post("/restore")
 async def restore_backup(file: UploadFile = File(...)):
-    """Restore database files from a backup ZIP"""
-    temp_backup_path: Path | None = None
-
+    """Restore pos.db from a directly uploaded SQLite database file."""
+    temporary_path: Path | None = None
     try:
-        data_dir = get_data_dir()
+        if not (file.filename or "").lower().endswith(".db"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Select a VibePOS .db backup file.",
+            )
 
-        # Validate file type
-        if not (file.filename or '').lower().endswith('.zip'):
-            raise HTTPException(status_code=400, detail="Invalid file type. Must be a ZIP file")
-
-        data_dir.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-            mode='wb',
-            prefix='temp_restore_',
-            suffix='.zip',
-            dir=data_dir.parent,
+            mode="wb",
+            prefix="local_restore_",
+            suffix=".db",
+            dir=get_data_dir().parent,
             delete=False,
-        ) as temp_file:
-            temp_backup_path = Path(temp_file.name)
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
             uploaded_size = 0
             while chunk := await file.read(1024 * 1024):
                 uploaded_size += len(chunk)
                 if uploaded_size > MAX_BACKUP_UPLOAD_BYTES:
                     raise HTTPException(status_code=413, detail="Backup file is too large")
-                temp_file.write(chunk)
+                temporary_file.write(chunk)
 
-        restored_files, backup_timestamp = await run_in_threadpool(
-            _restore_backup_archive,
-            temp_backup_path,
-            data_dir,
-        )
-
+        safety_backup = await run_in_threadpool(_restore_database, temporary_path)
         return {
             "success": True,
-            "message": "Backup restored successfully. Please restart the application.",
-            "restored_files": restored_files,
-            "backup_timestamp": backup_timestamp,
+            "message": "pos.db restored successfully. Restart VibePOS before continuing.",
+            "restored_file": POS_DATABASE_FILENAME,
+            "safety_backup": safety_backup,
         }
-
     except HTTPException:
         raise
-    except (zipfile.BadZipFile, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Invalid backup file: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid backup: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Restore failed: {exc}") from exc
     finally:
         await file.close()
-        if temp_backup_path and temp_backup_path.exists():
-            temp_backup_path.unlink()
-
-
-def _restore_backup_archive(backup_path: Path, data_dir: Path) -> tuple[List[str], str]:
-    """Validate and restore an uploaded archive without blocking the async server loop."""
-    data_dir = data_dir.resolve()
-
-    with zipfile.ZipFile(backup_path, 'r') as zipf:
-        archive_names = set(zipf.namelist())
-        if 'backup_info.json' not in archive_names:
-            raise ValueError("missing metadata")
-
-        corrupt_member = zipf.testzip()
-        if corrupt_member:
-            raise ValueError(f"corrupt archive member: {corrupt_member}")
-
-        backup_metadata = json.loads(zipf.read('backup_info.json'))
-        file_entries = backup_metadata.get("files")
-        backup_timestamp = backup_metadata.get("timestamp")
-        if not isinstance(file_entries, list) or not isinstance(backup_timestamp, str):
-            raise ValueError("invalid metadata")
-
-        restored_files: List[str] = []
-        for file_info in file_entries:
-            if not isinstance(file_info, dict) or not isinstance(file_info.get("path"), str):
-                raise ValueError("invalid file metadata")
-
-            file_path = file_info["path"]
-            if file_path not in archive_names:
-                raise ValueError(f"missing archive member: {file_path}")
-
-            target_path = (data_dir / file_path).resolve()
-            if target_path == data_dir or data_dir not in target_path.parents:
-                raise ValueError("invalid backup file path")
-
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            with zipf.open(file_path, 'r') as source, target_path.open('wb') as destination:
-                shutil.copyfileobj(source, destination, length=1024 * 1024)
-            restored_files.append(file_path)
-
-    return restored_files, backup_timestamp
+        if temporary_path:
+            temporary_path.unlink(missing_ok=True)
 
 
 @router.get("/list")
 def list_backups():
-    """List all available backup files"""
-    try:
-        backup_dir = get_backup_dir()
-        
-        if not backup_dir.exists():
-            return {
-                "success": True,
-                "backups": [],
-                "total_backups": 0
-            }
-        
-        backups = []
-        for backup_file in backup_dir.glob("pos_backup_*.zip"):
-            if backup_file.is_file():
-                backups.append({
+    backups = []
+    for backup_file in get_backup_dir().glob("pos_backup_*.db"):
+        if backup_file.is_file():
+            backups.append(
+                {
                     "filename": backup_file.name,
                     "size": backup_file.stat().st_size,
                     "size_mb": round(backup_file.stat().st_size / (1024 * 1024), 2),
-                    "created": datetime.fromtimestamp(backup_file.stat().st_mtime).isoformat()
-                })
-        
-        # Sort by creation time (newest first)
-        backups.sort(key=lambda x: x["created"], reverse=True)
-        
-        return {
-            "success": True,
-            "backups": backups,
-            "total_backups": len(backups)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+                    "created": datetime.fromtimestamp(
+                        backup_file.stat().st_mtime
+                    ).isoformat(),
+                }
+            )
+    backups.sort(key=lambda item: item["created"], reverse=True)
+    return {"success": True, "backups": backups, "total_backups": len(backups)}

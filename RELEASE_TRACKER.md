@@ -4,6 +4,14 @@ This file is the source-of-truth summary for application releases. Add user-visi
 
 ## Unreleased
 
+
+
+## v1.0.25 - 2026-10-03
+
+### Backup
+
+- Added Google Drive backup support.
+
 ## v1.0.24 - 2026-09-26
 
 ### Security and licensing
@@ -51,6 +59,7 @@ This file is the source-of-truth summary for application releases. Add user-visi
 
 | Version | Release date | Notes |
 |---|---|---|
+| `v1.0.25` | 2026-10-03 | Added Google Drive backup support. |
 | `v1.0.24` | 2026-09-26 | License expiration and local-cache validation updates. |
 | `v1.0.23` | 2026-09-24 | Version synchronization and release checkpoint. |
 | `v1.0.22` | 2026-09-24 | Version synchronization and release checkpoint. |

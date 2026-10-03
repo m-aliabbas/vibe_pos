@@ -1,6 +1,8 @@
-from pydantic_settings import BaseSettings
-from typing import Optional
 from pathlib import Path
+from typing import Optional
+
+from pydantic_settings import BaseSettings
+
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "VibePOS"
@@ -9,7 +11,7 @@ class Settings(BaseSettings):
     # Store branding
     STORE_NAME: str = "MyStore"
     STORE_ADDRESS: str = "Gulberg Islamabad"
-    
+
     # Database
     # Data Directory
     DATA_DIR: str = "data"
@@ -19,7 +21,7 @@ class Settings(BaseSettings):
     @property
     def DATABASE_URL(self) -> str:
         return f"sqlite:///{self.DATA_DIR}/pos.db"
-    
+
     # Security
     SECRET_KEY: str = "vibe_pos_1234"
     ALGORITHM: str = "HS256"
@@ -27,17 +29,24 @@ class Settings(BaseSettings):
 
     # License / Firebase
     LICENSE_ENFORCEMENT: bool = True
-    FIREBASE_CREDENTIALS_PATH: Optional[str] = './k1.json'
-    FIREBASE_CREDENTIALS_ENC_PATH: Optional[str] = './k1.json.enc'
-    FIREBASE_CREDENTIALS_KEY: Optional[str] = 'EhKGefoVJZoKmg1ikyTppKbmryLi5DcvJcjIUx3zw40='
-    FIREBASE_PROJECT_ID: Optional[str] = 'vibepos-4d412'
+    FIREBASE_CREDENTIALS_PATH: Optional[str] = "./k1.json"
+    FIREBASE_CREDENTIALS_ENC_PATH: Optional[str] = "./k1.json.enc"
+    FIREBASE_CREDENTIALS_KEY: Optional[str] = (
+        "EhKGefoVJZoKmg1ikyTppKbmryLi5DcvJcjIUx3zw40="
+    )
+    FIREBASE_PROJECT_ID: Optional[str] = "vibepos-4d412"
     FIREBASE_LICENSE_COLLECTION: str = "lisence_pos"
     LICENSE_AUTO_REGISTER: bool = True
     LICENSE_CACHE_PATH: Optional[str] = None
     LICENSE_CACHE_KEY: Optional[str] = None
-    
+
+    # Google Drive OAuth client configuration, encrypted with the same Fernet
+    # key used for the Firebase credential resource.
+    GOOGLE_DRIVE_CLIENT_CONFIG_ENC_PATH: Optional[str] = "./g1.json.enc"
+
     class Config:
         env_file = ".env"
+
 
 settings = Settings()
 

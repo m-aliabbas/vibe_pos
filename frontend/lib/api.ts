@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosProgressEvent } from 'axios';
 
 const getBaseURL = () => {
     if (typeof window !== 'undefined') {
@@ -91,6 +91,127 @@ export const whatsappReportSettingsApi = {
     },
     update: async (payload: WhatsAppReportSettingsUpdate): Promise<WhatsAppReportSettings> => {
         const response = await api.put('/settings/whatsapp-reports', payload);
+        return response.data;
+    },
+};
+
+export interface PosDatabaseFile {
+    path: string;
+    size: number;
+    size_mb: number;
+}
+
+export interface LocalBackupFile {
+    filename: string;
+    size: number;
+    size_mb: number;
+    created: string;
+}
+
+export interface BackupCreateResult {
+    success: boolean;
+    message: string;
+    backup_filename: string;
+    drive_uploaded: boolean;
+    drive_error: string | null;
+}
+
+export interface BackupRestoreResult {
+    success: boolean;
+    restored_file: 'pos.db';
+    safety_backup: string;
+}
+
+export const backupApi = {
+    listDatabaseFiles: async (): Promise<PosDatabaseFile[]> => {
+        const response = await api.get('/backup/list-files');
+        return response.data.files || [];
+    },
+    listLocal: async (): Promise<LocalBackupFile[]> => {
+        const response = await api.get('/backup/list');
+        return response.data.backups || [];
+    },
+    create: async (): Promise<BackupCreateResult> => {
+        const response = await api.post('/backup/create');
+        return response.data;
+    },
+    download: async (filename: string): Promise<Blob> => {
+        const response = await api.get(`/backup/download/${encodeURIComponent(filename)}`, {
+            responseType: 'blob',
+        });
+        return response.data;
+    },
+    restoreLocal: async (
+        file: File,
+        onUploadProgress?: (event: AxiosProgressEvent) => void,
+    ): Promise<BackupRestoreResult> => {
+        const body = new FormData();
+        body.append('file', file);
+        const response = await api.post('/backup/restore', body, {
+            timeout: 60_000,
+            onUploadProgress,
+        });
+        return response.data;
+    },
+};
+
+export interface GoogleDriveAccount {
+    display_name: string | null;
+    email: string | null;
+}
+
+export interface GoogleDriveBackupStatus {
+    configured: boolean;
+    connected: boolean;
+    account: GoogleDriveAccount | null;
+    folder_name: string;
+}
+
+export interface GoogleDriveBackupUpload {
+    success: boolean;
+    message: string;
+    filename: string;
+    folder_name: string;
+    account: GoogleDriveAccount | null;
+}
+
+export interface GoogleDriveBackupFile {
+    file_id: string;
+    filename: string;
+    created: string | null;
+    size: number;
+    size_mb: number;
+}
+
+export const googleDriveBackupApi = {
+    getStatus: async (): Promise<GoogleDriveBackupStatus> => {
+        const response = await api.get('/backup/google-drive/status');
+        return response.data;
+    },
+    connect: async (): Promise<GoogleDriveBackupStatus> => {
+        const response = await api.post('/backup/google-drive/connect', undefined, {
+            timeout: 180_000,
+        });
+        return response.data;
+    },
+    disconnect: async (): Promise<GoogleDriveBackupStatus> => {
+        const response = await api.delete('/backup/google-drive/disconnect');
+        return response.data;
+    },
+    upload: async (): Promise<GoogleDriveBackupUpload> => {
+        const response = await api.post('/backup/google-drive/upload', undefined, {
+            timeout: 180_000,
+        });
+        return response.data;
+    },
+    list: async (): Promise<GoogleDriveBackupFile[]> => {
+        const response = await api.get('/backup/google-drive/list');
+        return response.data;
+    },
+    restore: async (fileId: string): Promise<{ success: boolean; source_filename: string; safety_backup: string }> => {
+        const response = await api.post(`/backup/google-drive/restore/${encodeURIComponent(fileId)}`, undefined, {
+            timeout: 180_000,
+        });
         return response.data;
     },
 };
