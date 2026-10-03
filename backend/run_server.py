@@ -316,10 +316,17 @@ def ensure_schema_ready() -> str:
     """Initialize or safely upgrade the configured application database."""
     from app.db.session import Base, engine, provider
     from app.db.bootstrap import bootstrap_database
-    from app.platform.manifests import get_active_manifest, load_manifest_models
+    from app.platform.manifests import get_active_manifest, get_manifest_migrations, load_manifest_models
 
-    load_manifest_models(get_active_manifest())
-    result = bootstrap_database(provider, engine, Base.metadata)
+    manifest = get_active_manifest()
+    load_manifest_models(manifest)
+    result = bootstrap_database(
+        provider,
+        engine,
+        Base.metadata,
+        application_version=manifest.application_version,
+        migrations=get_manifest_migrations(manifest),
+    )
     if result.applied:
         log(f"Applied database migrations: {', '.join(result.applied)}")
         if result.backup_path:

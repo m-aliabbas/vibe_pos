@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import api from "@/lib/api";
-import type { InvoiceDesign, InvoiceFormat } from "@/lib/api";
+import type { InvoiceDesign, InvoiceFormat, SaleOilChangeDetails } from "@/lib/api";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -97,6 +97,7 @@ interface Sale {
   change_amount: number;
   created_at: string;
   items: SaleItem[];
+  oil_change?: SaleOilChangeDetails | null;
   user?: User;
   customer?: Customer;
 }
@@ -418,6 +419,19 @@ export default function InvoicePage() {
                 <span className="font-semibold">Qty :</span> {totalQty}
               </div>
             </div>
+
+            {sale.oil_change && (
+              <div className="border-b border-black py-1.5">
+                <p className="font-bold uppercase">Vehicle / Oil Change</p>
+                <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
+                  <span>Vehicle</span><span className="text-right font-semibold">{sale.oil_change.vehicle_identifier}</span>
+                  <span>Previous meter</span><span className="text-right">{sale.oil_change.previous_mileage == null ? "Not recorded" : `${sale.oil_change.previous_mileage.toLocaleString()} KM`}</span>
+                  <span>Current meter</span><span className="text-right">{sale.oil_change.current_mileage.toLocaleString()} KM</span>
+                  <span>Change after</span><span className="text-right">{sale.oil_change.oil_change_interval.toLocaleString()} KM</span>
+                  <span>Next oil change</span><span className="text-right font-bold">{sale.oil_change.next_oil_change_mileage.toLocaleString()} KM</span>
+                </div>
+              </div>
+            )}
 
             <table className="w-full mt-1" style={{ borderCollapse: "collapse" }}>
               <thead>

@@ -2,10 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.api import api_router
-from app.db.session import engine, Base, provider
+from app.db.session import engine, Base, provider, SessionLocal
 from app.db.bootstrap import bootstrap_database
-from app.platform.manifests import get_active_manifest, load_manifest_models
-from app.platform.identifiers import CapabilityId
+from app.platform.manifests import get_active_manifest, get_manifest_migrations, load_manifest_models
+from app.platform.identifiers import ApplicationId, CapabilityId
 from app.services.license import check_license_or_exit, LicenseError
 
 # Import backup scheduler
@@ -21,7 +21,13 @@ bootstrap_database(
     engine,
     Base.metadata,
     application_version=active_manifest.application_version,
+    migrations=get_manifest_migrations(active_manifest),
 )
+if active_manifest.application_id == ApplicationId.WORKSHOP:
+    from app.applications.workshop.seed import seed_workshop_sample_products
+
+    with SessionLocal() as seed_session:
+        seed_workshop_sample_products(seed_session)
 
 app = FastAPI(
     title=active_manifest.application_name,

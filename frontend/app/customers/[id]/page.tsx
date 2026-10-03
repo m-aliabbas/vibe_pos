@@ -37,7 +37,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import api, { customerApi, CustomerResponse, CustomerNote, CustomerPayment } from "@/lib/api";
+import api, {
+  customerApi,
+  CustomerResponse,
+  CustomerNote,
+  CustomerPayment,
+  workshopApi,
+  WorkshopJob,
+  WorkshopVehicle,
+} from "@/lib/api";
 import { storeConfig, fetchStoreConfig } from "@/lib/store-config";
 import { formatPakistanDate, formatPakistanDateTime, todayPKTDateString } from "@/lib/utils";
 import {
@@ -58,11 +66,14 @@ import {
   TrendingUp,
   FileText,
   Printer,
+  Car,
+  Wrench,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CreditLimitAlert, parseCreditLimitError } from "@/components/CreditLimitAlert";
 import { CustomerIdentityFields } from "@/components/customers/CustomerIdentityFields";
 import { ModuleUiContributionSlot } from "@/components/ModuleUiContributions";
+import { useAppConfig } from "@/components/AppConfigProvider";
 
 export default function CustomerDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   // Unwrap params Promise using React.use()
@@ -70,6 +81,8 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   
   const router = useRouter();
   const { token, isLoading } = useAuthStore();
+  const { config } = useAppConfig();
+  const workshopMode = config.application_id === "workshop";
 
   // Number to words converter for prices
   const toWords = useMemo(
@@ -1371,6 +1384,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
       <Tabs defaultValue="purchases" className="flex-1 min-h-0 flex flex-col gap-4">
         <TabsList className="shrink-0">
           <TabsTrigger value="purchases">Purchase History</TabsTrigger>
+          {workshopMode && <TabsTrigger value="vehicles">Vehicles & Oil Changes</TabsTrigger>}
           <TabsTrigger value="returns">Return History</TabsTrigger>
           <TabsTrigger value="advances">Journel Entries ({customer.notes.filter((n: CustomerNote) => n.note_type === 'advance_payment').length})</TabsTrigger>
           <TabsTrigger value="payments">Payment History ({customer.payments.length})</TabsTrigger>
@@ -1380,6 +1394,12 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
         <TabsContent value="purchases" className="flex-1 min-h-0 overflow-y-auto">
           <PurchaseHistoryTab customerId={customerId} />
         </TabsContent>
+
+        {workshopMode && (
+          <TabsContent value="vehicles" className="flex-1 min-h-0 overflow-y-auto">
+            <WorkshopVehicleHistoryTab customerId={customerId} />
+          </TabsContent>
+        )}
 
         <TabsContent value="returns" className="flex-1 min-h-0 overflow-y-auto">
           <ReturnHistoryTab customerId={customerId} />
@@ -2054,6 +2074,83 @@ function AllPaymentsTab({ customerId, customerPayments, onRefresh }: { customerI
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function WorkshopVehicleHistoryTab({ customerId }: { customerId: number }) {
+  const [vehicles, setVehicles] = useState<WorkshopVehicle[]>([]);
+  const [jobs, setJobs] = useState<WorkshopJob[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      workshopApi.listVehicles(undefined, 500, customerId),
+      workshopApi.listJobs({ customer_id: customerId }),
+    ]).then(([vehicleRows, jobRows]) => {
+      if (!active) return;
+      setVehicles(vehicleRows);
+      setJobs(jobRows);
+    }).catch((requestError) => {
+      console.error("Failed to load vehicle history:", requestError);
+      if (active) setError("Unable to load vehicle and oil-change history.");
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [customerId]);
+
+  if (loading) return <Card className="p-8 text-center text-muted-foreground">Loading vehicle history…</Card>;
+  if (error) return <Card className="p-8 text-center text-red-600">{error}</Card>;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Car className="h-5 w-5" /> Vehicles ({vehicles.length})</CardTitle></CardHeader>
+        <CardContent>
+          {vehicles.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">No vehicles recorded for this customer.</p>
+          ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>Vehicle</TableHead><TableHead>Make / Model</TableHead><TableHead>Current meter</TableHead><TableHead>Next oil change</TableHead><TableHead>Last changed</TableHead></TableRow></TableHeader>
+              <TableBody>{vehicles.map((vehicle) => (
+                <TableRow key={vehicle.id}>
+                  <TableCell><div className="font-medium">{vehicle.registration_number || vehicle.vehicle_id}</div><div className="text-xs text-muted-foreground">{vehicle.vehicle_id}</div></TableCell>
+                  <TableCell>{[vehicle.make, vehicle.model].filter(Boolean).join(" ") || "—"}</TableCell>
+                  <TableCell>{vehicle.current_mileage == null ? "—" : `${vehicle.current_mileage.toLocaleString()} KM`}</TableCell>
+                  <TableCell className="font-medium">{vehicle.next_oil_change_mileage == null ? "Not scheduled" : `${vehicle.next_oil_change_mileage.toLocaleString()} KM`}</TableCell>
+                  <TableCell>{vehicle.last_oil_change_at ? formatPakistanDateTime(vehicle.last_oil_change_at) : "—"}</TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Wrench className="h-5 w-5" /> Oil-change history ({jobs.length})</CardTitle></CardHeader>
+        <CardContent>
+          {jobs.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">No oil changes recorded for this customer.</p>
+          ) : (
+            <Table>
+              <TableHeader><TableRow><TableHead>Job</TableHead><TableHead>Vehicle</TableHead><TableHead>Meter readings</TableHead><TableHead>Status</TableHead><TableHead>Total</TableHead><TableHead>Invoice</TableHead></TableRow></TableHeader>
+              <TableBody>{jobs.map((job) => (
+                <TableRow key={job.id}>
+                  <TableCell><div className="font-medium">{job.job_number}</div><div className="text-xs text-muted-foreground">{formatPakistanDateTime(job.created_at)}</div></TableCell>
+                  <TableCell>{job.vehicle_identifier || `Vehicle #${job.vehicle_id}`}</TableCell>
+                  <TableCell><div>{job.previous_mileage == null ? "No previous reading" : `${job.previous_mileage.toLocaleString()} KM`} → {job.current_mileage.toLocaleString()} KM</div><div className="text-xs font-medium text-blue-700">Next: {job.next_oil_change_mileage.toLocaleString()} KM</div></TableCell>
+                  <TableCell><Badge variant="secondary" className="capitalize">{job.status.replace("_", " ")}</Badge></TableCell>
+                  <TableCell>rs {job.total.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                  <TableCell>{job.sale_id ? <Button asChild variant="outline" size="sm"><a href={`/sales/invoice/${job.sale_id}`}>View</a></Button> : "—"}</TableCell>
+                </TableRow>
+              ))}</TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

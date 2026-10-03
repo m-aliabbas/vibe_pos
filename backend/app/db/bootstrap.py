@@ -7,7 +7,7 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, inspect, select
 from sqlalchemy.engine import Engine
 
 from app.db.integrity import assert_journals_balanced
-from app.db.migrations.registry import MIGRATIONS
+from app.db.migrations.registry import MIGRATIONS, Migration
 from app.db.migrations.runner import MigrationError, MigrationResult, upgrade_database
 from app.db.providers.base import DatabaseProvider
 from app.db.providers.sqlite import SQLiteProvider
@@ -41,6 +41,7 @@ def bootstrap_database(
     application_metadata: MetaData,
     *,
     application_version: str = "1.0.20",
+    migrations: tuple[Migration, ...] = MIGRATIONS,
 ) -> MigrationResult:
     provider.health_check(engine)
     if isinstance(provider, SQLiteProvider):
@@ -48,6 +49,7 @@ def bootstrap_database(
             provider.database_path,
             application_version=application_version,
             schema_initializer=lambda: application_metadata.create_all(bind=engine),
+            migrations=migrations,
         )
 
     initial_tables = set(inspect(engine).get_table_names())
@@ -64,7 +66,7 @@ def bootstrap_database(
                 row.migration_id
                 for row in connection.execute(select(schema_migrations.c.migration_id))
             }
-        if len(applied_before) < len(MIGRATIONS):
+        if len(applied_before) < len(migrations):
             backup_path = provider.create_backup(
                 engine,
                 Path(provider.settings.DATA_DIR).resolve().parent / "backups" / "migrations",
@@ -81,7 +83,7 @@ def bootstrap_database(
                 select(schema_migrations.c.migration_id, schema_migrations.c.checksum)
             )
         }
-        for migration in MIGRATIONS:
+        for migration in migrations:
             checksum = applied.get(migration.migration_id)
             if checksum and checksum != migration.checksum:
                 raise MigrationError(f"Applied migration was modified: {migration.migration_id}")

@@ -223,7 +223,14 @@ class MigrationRunnerTests(unittest.TestCase):
                     f"SELECT migration_id FROM {HISTORY_TABLE} ORDER BY migration_id"
                 )
             ]
-        self.assertEqual(applied, [migration.migration_id for migration in MIGRATIONS[:-1]])
+        identity_index = next(
+            index for index, migration in enumerate(MIGRATIONS)
+            if migration.migration_id == "0005_application_identity"
+        )
+        self.assertEqual(
+            applied,
+            [migration.migration_id for migration in MIGRATIONS[:identity_index]],
+        )
 
     def test_application_databases_keep_separate_history_and_backups(self) -> None:
         second_database = self.root / "workshop" / "data" / "pos.db"

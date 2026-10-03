@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, field_validator
 import json
-from app.applications.retail.catalog import CatalogItemType
+from app.platform.pos.catalog import CatalogItemType
 
 # Product Variation Schemas
 class SellingUnit(BaseModel):

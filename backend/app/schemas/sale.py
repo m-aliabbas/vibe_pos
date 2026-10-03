@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import Enum
 
 class PaymentMethod(str, Enum):
@@ -38,6 +38,23 @@ class SaleBase(BaseModel):
     customer_phone: Optional[str] = None
     payment_method: PaymentMethod = PaymentMethod.CASH
 
+
+class SaleOilChangeCreate(BaseModel):
+    vehicle_id: int
+    current_mileage: int = Field(ge=0)
+    oil_change_interval: int = Field(gt=0)
+
+
+class SaleOilChange(BaseModel):
+    job_id: int
+    job_number: str
+    vehicle_id: int
+    vehicle_identifier: str
+    previous_mileage: Optional[int] = None
+    current_mileage: int
+    oil_change_interval: int
+    next_oil_change_mileage: int
+
 class SaleCreate(SaleBase):
     items: List[SaleItemCreate]
     discount: Optional[float] = 0.0
@@ -47,6 +64,7 @@ class SaleCreate(SaleBase):
     # Customer linking - can provide customer_ref_id or phone to link/create customer
     customer_ref_id: Optional[int] = None  # Direct link to customer by internal ID
     customer_id: Optional[str] = None  # Link by readable customer_id (e.g., CUST001)
+    oil_change: Optional[SaleOilChangeCreate] = None
 
 
 class SaleUpdate(SaleBase):
@@ -75,6 +93,7 @@ class Sale(SaleBase):
     # Customer linking fields
     customer_ref_id: Optional[int] = None
     is_walkin: bool = True
+    oil_change: Optional[SaleOilChange] = None
 
     class Config:
         from_attributes = True

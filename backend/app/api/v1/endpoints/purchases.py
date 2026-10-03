@@ -11,7 +11,7 @@ from app.models.vendor import Vendor
 from app.models.stock_batch import StockBatch, BatchStatus
 from app.schemas import purchase as purchase_schema
 from app.services import accounting as accounting_service
-from app.applications.retail.inventory import InventoryService
+from app.platform.pos.inventory import InventoryService
 
 
 def _generate_batch_number(db: Session, product_id: int) -> str:

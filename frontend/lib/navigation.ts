@@ -13,6 +13,7 @@ import {
     Truck,
     UserCheck,
     Users,
+    Wrench,
 } from 'lucide-react';
 import type { ApplicationId, CapabilityId } from '@/lib/api';
 
@@ -39,6 +40,11 @@ export const navigationRegistry: NavigationEntry[] = [
         id: 'dashboard', href: '/admin', label: 'Dashboard', icon: Home,
         surfaces: ['admin'], requiredRoles: ['admin'], routeGuard: true,
         description: 'Overview and key metrics',
+    },
+    {
+        id: 'workshop', href: '/workshop', label: 'Oil Change', icon: Wrench,
+        surfaces: ['navbar', 'admin'], requiredCapability: 'workshop.jobs', routeGuard: true,
+        description: 'Vehicles and oil-change jobs',
     },
     {
         id: 'sales', href: '/sales', label: 'Sales', icon: Store,
@@ -108,6 +114,24 @@ export const navigationRegistry: NavigationEntry[] = [
     },
 ];
 
+const workshopCapabilityAliases: Partial<Record<CapabilityId, CapabilityId>> = {
+    'retail.catalog': 'shared.pos.catalog',
+    'retail.inventory': 'shared.pos.inventory',
+    'retail.purchasing': 'shared.pos.purchasing',
+    'retail.sales': 'shared.pos.sales',
+    'retail.returns': 'shared.pos.returns',
+    'retail.accounting': 'shared.pos.accounting',
+    'retail.holds': 'shared.pos.holds',
+};
+
+function capabilityForApplication(
+    capability: CapabilityId | undefined,
+    applicationId: ApplicationId,
+) {
+    if (!capability || applicationId !== 'workshop') return capability;
+    return workshopCapabilityAliases[capability] || capability;
+}
+
 export function getNavigationItems(
     surface: NavigationSurface,
     role: string,
@@ -117,23 +141,30 @@ export function getNavigationItems(
     const independentShellItems = new Set(['home', 'customers', 'users', 'backup']);
     return navigationRegistry
         .filter((entry) => entry.surfaces.includes(surface))
-        .filter((entry) => applicationId === 'retail' || independentShellItems.has(entry.id))
+        .filter((entry) => applicationId !== 'restaurant' || independentShellItems.has(entry.id))
+        .filter((entry) => applicationId === 'workshop' || entry.id !== 'workshop')
         .filter((entry) => !entry.requiredRoles || entry.requiredRoles.includes(role))
+        .map((entry) => ({
+            ...entry,
+            requiredCapability: capabilityForApplication(entry.requiredCapability, applicationId),
+        }))
         .filter((entry) => !entry.requiredCapability || hasCapability(entry.requiredCapability))
-        .map((entry) => entry.id === 'home'
-            ? {
-                ...entry,
-                href: applicationId === 'retail'
-                    ? role === 'admin' ? '/admin' : '/sales'
-                    : `/${applicationId}`,
-            }
-            : entry);
+        .map((entry) => entry.id === 'home' ? {
+            ...entry,
+            href: applicationId === 'retail'
+                ? role === 'admin' ? '/admin' : '/sales'
+                : `/${applicationId}`,
+        } : entry);
 }
 
-export function getRouteAccess(pathname: string) {
-    return navigationRegistry
+export function getRouteAccess(pathname: string, applicationId: ApplicationId = 'retail') {
+    const entry = navigationRegistry
         .filter((entry) => entry.routeGuard && (
             pathname === entry.href || pathname.startsWith(`${entry.href}/`)
         ))
         .sort((left, right) => right.href.length - left.href.length)[0];
+    return entry ? {
+        ...entry,
+        requiredCapability: capabilityForApplication(entry.requiredCapability, applicationId),
+    } : undefined;
 }

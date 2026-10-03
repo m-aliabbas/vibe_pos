@@ -196,9 +196,16 @@ class PlatformConfigurationTests(unittest.TestCase):
         self.assertEqual(restaurant_manifest.application_id, ApplicationId.RESTAURANT)
         self.assertNotIn(CapabilityId.RETAIL_SALES, workshop_manifest.capabilities)
         self.assertNotIn(CapabilityId.RETAIL_SALES, restaurant_manifest.capabilities)
-        self.assertEqual(
-            {registration.prefix for registration in workshop_manifest.routers},
-            {"/auth", "/users", "/settings", "/backup"},
+        self.assertIn(CapabilityId.POS_SALES, workshop_manifest.capabilities)
+        self.assertIn(CapabilityId.WORKSHOP_JOBS, workshop_manifest.capabilities)
+        self.assertNotIn(CapabilityId.POS_SALES, restaurant_manifest.capabilities)
+        self.assertTrue(
+            {
+                "/auth", "/users", "/settings", "/backup", "/customers",
+                "/products", "/vendors", "/purchases", "/sales", "/returns",
+                "/accounting", "/reports", "/workshop",
+            }
+            <= {registration.prefix for registration in workshop_manifest.routers}
         )
 
     def test_legacy_application_agnostic_license_is_retail_only(self) -> None:

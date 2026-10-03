@@ -43,12 +43,38 @@ WORKSHOP_PROFILE_CAPABILITIES = frozenset(
     {
         CapabilityId.AUTHENTICATION,
         CapabilityId.USERS,
+        CapabilityId.CUSTOMER_IDENTITY,
+        CapabilityId.PAYMENTS,
+        CapabilityId.INVOICES,
+        CapabilityId.PRINTING,
+        CapabilityId.REPORTING,
+        CapabilityId.PERMISSIONS,
+        CapabilityId.AUDIT,
+        CapabilityId.STORE_CONFIGURATION,
+        CapabilityId.POS_CATALOG,
+        CapabilityId.POS_INVENTORY,
+        CapabilityId.POS_PURCHASING,
+        CapabilityId.POS_SALES,
+        CapabilityId.POS_RETURNS,
+        CapabilityId.POS_ACCOUNTING,
+        CapabilityId.POS_HOLDS,
+        CapabilityId.POS_EXPENSES,
+        CapabilityId.POS_CASH_REGISTER,
+        CapabilityId.BACKUP,
+        CapabilityId.FILES,
+        CapabilityId.MESSAGING,
+        CapabilityId.WORKSHOP_JOBS,
+    }
+)
+
+RESTAURANT_PROFILE_CAPABILITIES = frozenset(
+    {
+        CapabilityId.AUTHENTICATION,
+        CapabilityId.USERS,
         CapabilityId.STORE_CONFIGURATION,
         CapabilityId.BACKUP,
     }
 )
-
-RESTAURANT_PROFILE_CAPABILITIES = WORKSHOP_PROFILE_CAPABILITIES
 
 PROFILES: dict[ProfileId, BusinessProfile] = {
     profile_id: BusinessProfile(

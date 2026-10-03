@@ -79,6 +79,11 @@ def load_manifest_models(manifest: ApplicationManifest) -> None:
         importlib.import_module(module_name)
 
 
+def get_manifest_migrations(manifest: ApplicationManifest):
+    registry = importlib.import_module(manifest.migration_registry_module)
+    return tuple(registry.MIGRATIONS)
+
+
 def register_manifest_routers(target: APIRouter, manifest: ApplicationManifest) -> None:
     from app.platform.capabilities import require_capability
 

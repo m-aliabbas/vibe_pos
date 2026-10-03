@@ -20,8 +20,8 @@ import json
 import re
 from app.models.purchase import Purchase
 from app.models.vendor import Vendor
-from app.applications.retail.calculations import convert_to_base_quantity
-from app.applications.retail.inventory import InventoryService
+from app.platform.pos.calculations import convert_to_base_quantity
+from app.platform.pos.inventory import InventoryService
 
 RETURN_DIR = Path.home() / "Downloads" / "pos_invoices"
 RETURN_DIR.mkdir(parents=True, exist_ok=True)

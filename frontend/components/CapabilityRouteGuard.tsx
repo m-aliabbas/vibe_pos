@@ -10,9 +10,14 @@ export function CapabilityRouteGuard({ children }: { children: React.ReactNode }
     const role = useAuthStore((state) => state.user?.role);
     const authLoading = useAuthStore((state) => state.isLoading);
     const { config, status, hasCapability } = useAppConfig();
-    const route = getRouteAccess(pathname);
+    const route = getRouteAccess(pathname, config.application_id);
 
     const sharedApplicationRoutes = ['/customers', '/users', '/backup', '/settings', '/profile'];
+    const workshopRoutes = [
+        '/workshop', '/sales', '/inventory', '/stock-audit', '/customers', '/vendors',
+        '/purchases', '/returns', '/accounting', '/reports', '/backup', '/users',
+        '/settings', '/profile', '/updates', '/admin',
+    ];
     const applicationHome = `/${config.application_id}`;
     const isSharedRoute = sharedApplicationRoutes.some((prefix) =>
         pathname === prefix || pathname.startsWith(`${prefix}/`)
@@ -22,6 +27,9 @@ export function CapabilityRouteGuard({ children }: { children: React.ReactNode }
         pathname !== '/' &&
         pathname !== applicationHome &&
         !isSharedRoute &&
+        !(config.application_id === 'workshop' && workshopRoutes.some((prefix) =>
+            pathname === prefix || pathname.startsWith(`${prefix}/`)
+        )) &&
         pathname !== '/login'
     ) {
         return <AccessDenied />;

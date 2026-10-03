@@ -295,6 +295,15 @@ export type CapabilityId =
     | 'infrastructure.backup'
     | 'infrastructure.files'
     | 'infrastructure.messaging'
+    | 'shared.pos.catalog'
+    | 'shared.pos.inventory'
+    | 'shared.pos.purchasing'
+    | 'shared.pos.sales'
+    | 'shared.pos.returns'
+    | 'shared.pos.accounting'
+    | 'shared.pos.holds'
+    | 'shared.pos.expenses'
+    | 'shared.pos.cash-register'
     | 'workshop.jobs'
     | 'restaurant.orders';
 
@@ -336,6 +345,152 @@ export const authApi = {
     bootstrapAdmin: async (payload: { username: string; email?: string; password: string }) => {
         const response = await api.post('/auth/bootstrap-admin', payload);
         return response.data as { created: boolean };
+    },
+};
+
+export interface WorkshopVehicle {
+    id: number;
+    customer_id: number;
+    vehicle_id: string;
+    registration_number?: string | null;
+    make?: string | null;
+    model?: string | null;
+    model_year?: number | null;
+    engine?: string | null;
+    current_mileage?: number | null;
+    next_oil_change_mileage?: number | null;
+    last_oil_change_at?: string | null;
+    customer_name?: string | null;
+    customer_phone?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface WorkshopJobLineInput {
+    product_id: number;
+    variation_id?: number | null;
+    quantity: number;
+    unit: string;
+    unit_price?: number | null;
+    item_discount?: number;
+}
+
+export interface WorkshopJobLine extends WorkshopJobLineInput {
+    id: number;
+    description: string;
+    unit_price: number;
+    item_discount: number;
+    total_price: number;
+}
+
+export interface WorkshopJob {
+    id: number;
+    job_number: string;
+    vehicle_id: number;
+    customer_id: number;
+    technician_id?: number | null;
+    sale_id?: number | null;
+    status: 'open' | 'in_progress' | 'completed' | 'cancelled';
+    previous_mileage?: number | null;
+    current_mileage: number;
+    oil_change_interval: number;
+    next_oil_change_mileage: number;
+    notes?: string | null;
+    subtotal: number;
+    discount: number;
+    tax: number;
+    total: number;
+    payment_method?: string | null;
+    amount_paid: number;
+    amount_due: number;
+    created_at: string;
+    completed_at?: string | null;
+    updated_at: string;
+    lines: WorkshopJobLine[];
+    vehicle_identifier?: string | null;
+    customer_name?: string | null;
+    customer_phone?: string | null;
+}
+
+export interface SaleOilChangeInput {
+    vehicle_id: number;
+    current_mileage: number;
+    oil_change_interval: number;
+}
+
+export interface SaleOilChangeDetails extends SaleOilChangeInput {
+    job_id: number;
+    job_number: string;
+    vehicle_identifier: string;
+    previous_mileage?: number | null;
+    next_oil_change_mileage: number;
+}
+
+export interface WorkshopProductOption {
+    id: number;
+    name: string;
+    sku?: string | null;
+    item_type: CatalogItemType;
+    selling_price: number;
+    quantity: number;
+    allow_decimal_qty: boolean;
+    base_unit: string;
+    selling_units: Array<{ unit: string; conversion: number; price: number }>;
+}
+
+export const workshopApi = {
+    listVehicles: async (search?: string, limit = 500, customerId?: number): Promise<WorkshopVehicle[]> => {
+        const response = await api.get('/workshop/vehicles', {
+            params: { search: search || undefined, limit, customer_id: customerId },
+        });
+        return response.data;
+    },
+    createVehicle: async (payload: {
+        customer_id: number;
+        registration_number?: string;
+        make?: string;
+        model?: string;
+        model_year?: number;
+        engine?: string;
+        current_mileage?: number;
+    }): Promise<WorkshopVehicle> => {
+        const response = await api.post('/workshop/vehicles', payload);
+        return response.data;
+    },
+    listJobs: async (params?: { search?: string; status?: string; customer_id?: number; sale_id?: number }): Promise<WorkshopJob[]> => {
+        const response = await api.get('/workshop/jobs', { params });
+        return response.data;
+    },
+    createJob: async (payload: {
+        vehicle_id: number;
+        current_mileage: number;
+        oil_change_interval: number;
+        technician_id?: number;
+        notes?: string;
+        discount?: number;
+        tax?: number;
+        lines: WorkshopJobLineInput[];
+    }): Promise<WorkshopJob> => {
+        const response = await api.post('/workshop/jobs', payload);
+        return response.data;
+    },
+    updateJob: async (
+        jobId: number,
+        payload: { status?: 'open' | 'in_progress' | 'cancelled'; technician_id?: number; notes?: string },
+    ): Promise<WorkshopJob> => {
+        const response = await api.patch(`/workshop/jobs/${jobId}`, payload);
+        return response.data;
+    },
+    completeJob: async (
+        jobId: number,
+        payload: { payment_method: 'cash' | 'card' | 'mobile' | 'other'; amount_paid?: number },
+    ): Promise<WorkshopJob> => {
+        const response = await api.post(`/workshop/jobs/${jobId}/complete`, payload);
+        return response.data;
+    },
+    listProducts: async (): Promise<WorkshopProductOption[]> => {
+        const response = await api.get('/products/', { params: { limit: 500 } });
+        return response.data;
     },
 };
 
@@ -478,6 +633,7 @@ export interface HoldSalePayload {
     tax: number;
     deliveryCharges: number;
     amountPaid: string;
+    oilChange?: SaleOilChangeInput | null;
 }
 
 export interface HoldSaleResponse {

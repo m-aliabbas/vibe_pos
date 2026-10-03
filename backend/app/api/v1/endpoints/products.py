@@ -16,7 +16,7 @@ from app.models.purchase import PurchaseItem
 from app.models.stock_adjustment import ProductStockAdjustment
 from app.core import security
 from app.schemas import product as product_schema
-from app.applications.retail.inventory import InventoryService
+from app.platform.pos.inventory import InventoryService
 
 router = APIRouter()
 

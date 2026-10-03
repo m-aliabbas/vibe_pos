@@ -32,6 +32,9 @@ import api, {
   CustomerSimple,
   holdSalesApi,
   HoldSaleResponse,
+  SaleOilChangeInput,
+  workshopApi,
+  WorkshopVehicle,
 } from "@/lib/api";
 import {
   Plus,
@@ -39,6 +42,7 @@ import {
   FileText,
   Package as PackageIcon,
   Printer,
+  Car,
 } from "lucide-react";
 import { ToWords } from "to-words";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
@@ -51,6 +55,8 @@ import { CheckoutCustomerSection } from "@/components/pos/CheckoutCustomerSectio
 import { CheckoutPaymentSection } from "@/components/pos/CheckoutPaymentSection";
 import { SaleCompletionDialog } from "@/components/pos/SaleCompletionDialog";
 import { ModuleUiContributionSlot } from "@/components/ModuleUiContributions";
+import { useAppConfig } from "@/components/AppConfigProvider";
+import { SearchablePicker } from "@/applications/workshop/searchable-picker";
 
 interface ProductVariation {
   id: number;
@@ -105,6 +111,8 @@ interface SaleSummary {
 export default function SalesTerminal() {
   const router = useRouter();
   const { user, token, isLoading } = useAuthStore();
+  const { config } = useAppConfig();
+  const workshopMode = config.application_id === "workshop";
 
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
@@ -143,6 +151,11 @@ export default function SalesTerminal() {
   const [completedPreviousBalance, setCompletedPreviousBalance] = useState<number>(0);
   const [completedAmountPaid, setCompletedAmountPaid] = useState<number>(0);
   const [completedChange, setCompletedChange] = useState<number>(0);
+  const [workshopVehicles, setWorkshopVehicles] = useState<WorkshopVehicle[]>([]);
+  const [oilChangeEnabled, setOilChangeEnabled] = useState(false);
+  const [checkoutVehicleId, setCheckoutVehicleId] = useState("");
+  const [checkoutCurrentMileage, setCheckoutCurrentMileage] = useState("");
+  const [checkoutOilInterval, setCheckoutOilInterval] = useState("5000");
 
   const [summaryOpen, setSummaryOpen] = useState<boolean>(false);
   const [heldSales, setHeldSales] = useState<HoldSaleResponse[]>([]);
@@ -185,6 +198,7 @@ export default function SalesTerminal() {
     tax: number;
     deliveryCharges: number;
     amountPaid: string;
+    oilChange: SaleOilChangeInput | null;
     token: string | null;
   }>({
     cart: [],
@@ -197,6 +211,7 @@ export default function SalesTerminal() {
     tax: 0,
     deliveryCharges: 0,
     amountPaid: "",
+    oilChange: null,
     token: null,
   });
 
@@ -484,6 +499,25 @@ export default function SalesTerminal() {
     [cart, normalizeQuantityForProduct, removeFromCart]
   );
 
+  const selectedCheckoutVehicle = useMemo(
+    () => workshopVehicles.find((vehicle) => vehicle.id === Number(checkoutVehicleId)) || null,
+    [checkoutVehicleId, workshopVehicles]
+  );
+  const customerWorkshopVehicles = useMemo(
+    () => selectedCustomer
+      ? workshopVehicles.filter((vehicle) => vehicle.customer_id === selectedCustomer.id)
+      : workshopVehicles,
+    [selectedCustomer, workshopVehicles]
+  );
+  const checkoutOilChange = useMemo<SaleOilChangeInput | null>(() => {
+    const mileage = Number(checkoutCurrentMileage);
+    const interval = Number(checkoutOilInterval);
+    if (!workshopMode || !oilChangeEnabled || !checkoutVehicleId || !Number.isFinite(mileage) || !Number.isFinite(interval)) {
+      return null;
+    }
+    return { vehicle_id: Number(checkoutVehicleId), current_mileage: mileage, oil_change_interval: interval };
+  }, [checkoutCurrentMileage, checkoutOilInterval, checkoutVehicleId, oilChangeEnabled, workshopMode]);
+
   const clearCart = useCallback(() => {
     setCart([]);
     setCustomerName("");
@@ -494,6 +528,10 @@ export default function SalesTerminal() {
     setTax(0);
     setDeliveryCharges(0);
     setAmountPaid("");
+    setOilChangeEnabled(false);
+    setCheckoutVehicleId("");
+    setCheckoutCurrentMileage("");
+    setCheckoutOilInterval("5000");
   }, []);
 
   const buildHoldRequest = useCallback((snapshot: {
@@ -507,6 +545,7 @@ export default function SalesTerminal() {
     tax: number;
     deliveryCharges: number;
     amountPaid: string;
+    oilChange: SaleOilChangeInput | null;
   }) => {
     const labelParts = [
       snapshot.customerName.trim(),
@@ -533,6 +572,7 @@ export default function SalesTerminal() {
       tax: snapshot.tax,
       deliveryCharges: snapshot.deliveryCharges,
       amountPaid: snapshot.amountPaid,
+      oilChange: snapshot.oilChange,
     };
 
     const signature = JSON.stringify(payload);
@@ -597,6 +637,7 @@ export default function SalesTerminal() {
       tax,
       deliveryCharges,
       amountPaid,
+      oilChange: checkoutOilChange,
     });
 
     try {
@@ -622,6 +663,7 @@ export default function SalesTerminal() {
     tax,
     deliveryCharges,
     amountPaid,
+    checkoutOilChange,
     buildHoldRequest,
     clearCart,
     fetchHeldSales,
@@ -656,6 +698,7 @@ export default function SalesTerminal() {
       tax,
       deliveryCharges,
       amountPaid,
+      oilChange: checkoutOilChange,
     });
     const quotationPayload = { ...payload, kind: "quotation" };
     if (sendToCustomer && !customerPhone.trim()) {
@@ -694,6 +737,7 @@ export default function SalesTerminal() {
     tax,
     deliveryCharges,
     amountPaid,
+    checkoutOilChange,
     buildHoldRequest,
     clearCart,
     fetchHeldSales,
@@ -758,6 +802,10 @@ export default function SalesTerminal() {
       setTax(payload.tax || 0);
       setDeliveryCharges(payload.deliveryCharges || 0);
       setAmountPaid(payload.amountPaid || "");
+      setOilChangeEnabled(Boolean(payload.oilChange));
+      setCheckoutVehicleId(payload.oilChange ? String(payload.oilChange.vehicle_id) : "");
+      setCheckoutCurrentMileage(payload.oilChange ? String(payload.oilChange.current_mileage) : "");
+      setCheckoutOilInterval(payload.oilChange ? String(payload.oilChange.oil_change_interval) : "5000");
 
       try {
         await holdSalesApi.delete(hold.id);
@@ -1457,6 +1505,25 @@ export default function SalesTerminal() {
     setShowCustomerNameResults(false);
   }, []);
 
+  const handleSelectCheckoutVehicle = useCallback(async (vehicle: WorkshopVehicle) => {
+    setCheckoutVehicleId(String(vehicle.id));
+    setCheckoutCurrentMileage(vehicle.current_mileage == null ? "" : String(vehicle.current_mileage));
+    try {
+      const customer = await customerApi.getCustomer(vehicle.customer_id);
+      handleSelectCustomerByName(customer);
+    } catch (error) {
+      console.error("Failed to select the vehicle customer:", error);
+    }
+  }, [handleSelectCustomerByName]);
+
+  useEffect(() => {
+    if (!selectedCustomer || !selectedCheckoutVehicle) return;
+    if (selectedCheckoutVehicle.customer_id !== selectedCustomer.id) {
+      setCheckoutVehicleId("");
+      setCheckoutCurrentMileage("");
+    }
+  }, [selectedCheckoutVehicle, selectedCustomer]);
+
   // --------------------------
   // Effects
   // --------------------------
@@ -1475,6 +1542,17 @@ export default function SalesTerminal() {
     void fetchProducts();
     fetchStoreConfig().then(setStoreInfo);
   }, [token, isLoading, router, fetchTodayStats, fetchHeldSales, fetchProducts]);
+
+  useEffect(() => {
+    if (!token || !workshopMode) {
+      setWorkshopVehicles([]);
+      return;
+    }
+    void workshopApi.listVehicles().then(setWorkshopVehicles).catch((error) => {
+      console.error("Failed to load workshop vehicles:", error);
+      setWorkshopVehicles([]);
+    });
+  }, [token, workshopMode]);
 
   // Debounced server search fetch
   useEffect(() => {
@@ -1699,6 +1777,7 @@ export default function SalesTerminal() {
       tax,
       deliveryCharges,
       amountPaid,
+      oilChange: checkoutOilChange,
       token,
     };
   }, [
@@ -1712,6 +1791,7 @@ export default function SalesTerminal() {
     tax,
     deliveryCharges,
     amountPaid,
+    checkoutOilChange,
     token,
   ]);
 
@@ -1776,6 +1856,22 @@ export default function SalesTerminal() {
   }, [customerName, checkoutOpen]);
 
   const completeSale = useCallback(async () => {
+    if (workshopMode && oilChangeEnabled) {
+      if (!selectedCheckoutVehicle || !selectedCustomer) {
+        alert("Select a customer and vehicle for the oil change.");
+        return;
+      }
+      const currentMileage = Number(checkoutCurrentMileage);
+      const interval = Number(checkoutOilInterval);
+      if (!Number.isFinite(currentMileage) || currentMileage < 0 || !Number.isFinite(interval) || interval <= 0) {
+        alert("Enter a valid current meter reading and oil-change interval.");
+        return;
+      }
+      if (selectedCheckoutVehicle.current_mileage != null && currentMileage < selectedCheckoutVehicle.current_mileage) {
+        alert(`Current meter reading cannot be below ${selectedCheckoutVehicle.current_mileage.toLocaleString()} KM.`);
+        return;
+      }
+    }
     setLoading(true);
     try {
       const phoneVal = customerPhone.trim();
@@ -1809,6 +1905,7 @@ export default function SalesTerminal() {
         tax,
         delivery_charges: deliveryCharges,
         amount_paid: amountPaidValue,
+        oil_change: checkoutOilChange,
         items: cart.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
@@ -1835,6 +1932,7 @@ export default function SalesTerminal() {
 
       void fetchProducts();
       void fetchTodayStats();
+      if (workshopMode) void workshopApi.listVehicles().then(setWorkshopVehicles);
     } catch (error: any) {
       console.error("Failed to complete sale:", error);
       const detail: string = error.response?.data?.detail || "";
@@ -1863,6 +1961,12 @@ export default function SalesTerminal() {
     tax,
     deliveryCharges,
     amountPaidValue,
+    checkoutOilChange,
+    checkoutCurrentMileage,
+    checkoutOilInterval,
+    oilChangeEnabled,
+    selectedCheckoutVehicle,
+    workshopMode,
     clearCart,
     fetchProducts,
     fetchTodayStats,
@@ -2192,6 +2296,88 @@ export default function SalesTerminal() {
               customerNameListRef={customerNameListRef}
               onSelectCustomer={handleSelectCustomerByName}
             />
+
+            {workshopMode && (
+              <div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="checkout-oil-change"
+                      checked={oilChangeEnabled}
+                      onCheckedChange={(checked) => setOilChangeEnabled(checked === true)}
+                    />
+                    <Label htmlFor="checkout-oil-change" className="flex items-center gap-2 font-semibold">
+                      <Car className="h-4 w-4" /> Vehicle oil change
+                    </Label>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => router.push("/workshop")}>Manage vehicles</Button>
+                </div>
+
+                {oilChangeEnabled && (
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label>Vehicle</Label>
+                      <SearchablePicker
+                        value={checkoutVehicleId}
+                        options={customerWorkshopVehicles}
+                        placeholder={selectedCustomer ? "Search this customer's vehicles" : "Search or select a vehicle"}
+                        searchPlaceholder="Search registration, vehicle ID, make, model, or customer"
+                        emptyText={selectedCustomer ? "No vehicles found for this customer." : "No vehicles found."}
+                        getValue={(vehicle) => String(vehicle.id)}
+                        getSearchText={(vehicle) => `${vehicle.registration_number || ""} ${vehicle.vehicle_id} ${vehicle.make || ""} ${vehicle.model || ""} ${vehicle.customer_name || ""} ${vehicle.customer_phone || ""}`}
+                        renderValue={(vehicle) => vehicle.registration_number || vehicle.vehicle_id}
+                        renderOption={(vehicle) => (
+                          <span className="block min-w-0">
+                            <span className="block truncate font-medium">{vehicle.registration_number || vehicle.vehicle_id}</span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {[vehicle.make, vehicle.model].filter(Boolean).join(" ") || "Vehicle"} · {vehicle.customer_name || vehicle.customer_phone || "Customer"}
+                            </span>
+                          </span>
+                        )}
+                        onChange={(_id, vehicle) => void handleSelectCheckoutVehicle(vehicle)}
+                      />
+                    </div>
+
+                    {selectedCheckoutVehicle && (
+                      <div className="rounded-md border bg-white px-3 py-2 text-xs text-muted-foreground">
+                        Previous meter reading: {selectedCheckoutVehicle.current_mileage == null
+                          ? "Not recorded"
+                          : `${selectedCheckoutVehicle.current_mileage.toLocaleString()} KM`}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="checkout-current-mileage">Current meter (KM)</Label>
+                        <Input
+                          id="checkout-current-mileage"
+                          type="number"
+                          min={selectedCheckoutVehicle?.current_mileage || 0}
+                          value={checkoutCurrentMileage}
+                          onChange={(event) => setCheckoutCurrentMileage(event.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="checkout-oil-interval">Change again after (KM)</Label>
+                        <Input
+                          id="checkout-oil-interval"
+                          type="number"
+                          min="1"
+                          value={checkoutOilInterval}
+                          onChange={(event) => setCheckoutOilInterval(event.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    {Number(checkoutCurrentMileage) >= 0 && Number(checkoutOilInterval) > 0 && checkoutCurrentMileage !== "" && (
+                      <div className="rounded-md bg-blue-100 px-3 py-2 text-sm font-semibold text-blue-900">
+                        Next oil change at {(Number(checkoutCurrentMileage) + Number(checkoutOilInterval)).toLocaleString()} KM
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <CheckoutPaymentSection
               deliveryCharges={deliveryCharges}

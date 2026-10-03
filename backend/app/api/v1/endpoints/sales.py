@@ -3,10 +3,12 @@ import os
 import re
 import json
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, object_session
 from sqlalchemy import func, or_
 from datetime import datetime, date, timezone, timedelta
+from uuid import uuid4
 from app.core.timezone import now_pkt
+from app.core.config import settings
 from pathlib import Path
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import mm
@@ -27,11 +29,11 @@ from app.models.pos_return import PosReturn
 from app.models.accounting import JournalEntry
 from app.schemas.sale import SaleCreate, SaleUpdate, Sale as SaleSchema, SaleStats
 from app.services import accounting as accounting_service
-from app.applications.retail.calculations import (
+from app.platform.pos.calculations import (
     convert_to_base_quantity,
 )
-from app.applications.retail.inventory import InventoryService
-from app.applications.retail.sales import RetailSaleCommand, RetailSaleLineCommand, RetailSaleService
+from app.platform.pos.inventory import InventoryService
+from app.platform.pos.sales import RetailSaleCommand, RetailSaleLineCommand, RetailSaleService
 
 router = APIRouter()
 
@@ -150,6 +152,40 @@ def _get_invoice_amounts(sale: Sale) -> Dict[str, float]:
     }
 
 
+def _sale_oil_change_details(sale: Sale) -> Optional[dict]:
+    """Return workshop service metadata without coupling retail databases to workshop tables."""
+    attached = getattr(sale, "oil_change", None)
+    if attached:
+        return attached
+    if settings.APPLICATION_ID != "workshop" or not isinstance(sale, Sale):
+        return None
+    session = object_session(sale)
+    if session is None:
+        return None
+    from app.applications.workshop.models import WorkshopJob
+
+    job = (
+        session.query(WorkshopJob)
+        .options(joinedload(WorkshopJob.vehicle))
+        .filter(WorkshopJob.sale_id == sale.id)
+        .first()
+    )
+    if job is None:
+        return None
+    details = {
+        "job_id": job.id,
+        "job_number": job.job_number,
+        "vehicle_id": job.vehicle_id,
+        "vehicle_identifier": job.vehicle_identifier or f"Vehicle #{job.vehicle_id}",
+        "previous_mileage": job.previous_mileage,
+        "current_mileage": job.current_mileage,
+        "oil_change_interval": job.oil_change_interval,
+        "next_oil_change_mileage": job.next_oil_change_mileage,
+    }
+    setattr(sale, "oil_change", details)
+    return details
+
+
 def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) -> str:
     """Build a WhatsApp caption using the same monetary values shown on the invoice image."""
     amounts = _get_invoice_amounts(sale)
@@ -170,9 +206,19 @@ def _build_whatsapp_invoice_caption(sale: Sale, refunded_amount: float = 0.0) ->
         f"Date/Time (GMT+5): {_convert_utc_to_pakistan(sale.created_at).strftime('%Y-%m-%d %H:%M')}",
         f"Cashier: {sale.user.username if sale.user else 'N/A'}",
         f"Customer: {sale.customer_name or 'Walk-in Customer'}",
-        "",
-        f"Subtotal: RS {subtotal:.2f}",
     ]
+
+    oil_change = _sale_oil_change_details(sale)
+    if oil_change:
+        previous = oil_change["previous_mileage"]
+        lines.extend([
+            f"Vehicle: {oil_change['vehicle_identifier']}",
+            f"Previous meter: {f'{previous:,} KM' if previous is not None else 'Not recorded'}",
+            f"Current meter: {oil_change['current_mileage']:,} KM",
+            f"Oil interval: {oil_change['oil_change_interval']:,} KM",
+            f"Next oil change: {oil_change['next_oil_change_mileage']:,} KM",
+        ])
+    lines.extend(["", f"Subtotal: RS {subtotal:.2f}"])
 
     if total_discount > 0:
         lines.append(f"Discount: -RS {total_discount:.2f}")
@@ -217,7 +263,10 @@ def _render_invoice_image(
     # 80mm thermal receipt width
     width = int(80 * mm_to_px)
     has_previous_balance = abs(float(getattr(sale, "previous_balance", 0.0) or 0.0)) > 0.005
+    oil_change = _sale_oil_change_details(sale)
     base_height_mm = 135 + (14 if refunded_amount > 0 else 0) + (12 if has_previous_balance else 0)
+    if oil_change:
+        base_height_mm += 31
     base_height = int(base_height_mm * mm_to_px)
     item_height = len(sale.items) * int(22 * mm_to_px)
     total_height = base_height + item_height
@@ -287,6 +336,22 @@ def _render_invoice_image(
     customer_name = sale.customer_name or "Walk-in Customer"
     draw.text((mm(3), y), customer_name[:40], fill="black", font=font_md)
     y += mm(6)
+
+    if oil_change:
+        previous = oil_change["previous_mileage"]
+        draw.text((mm(3), y), "VEHICLE / OIL CHANGE", fill="black", font=font_sm_bold)
+        y += mm(4)
+        vehicle_lines = [
+            f"Vehicle: {oil_change['vehicle_identifier']}",
+            f"Previous meter: {f'{previous:,} KM' if previous is not None else 'Not recorded'}",
+            f"Current meter: {oil_change['current_mileage']:,} KM",
+            f"Change after: {oil_change['oil_change_interval']:,} KM",
+            f"Next oil change: {oil_change['next_oil_change_mileage']:,} KM",
+        ]
+        for line in vehicle_lines:
+            draw.text((mm(3), y), line[:44], fill="black", font=font_sm)
+            y += mm(4)
+        y += mm(1)
 
     draw.line([(mm(3), y), (width - mm(3), y)], fill="black", width=1)
     y += mm(4)
@@ -606,6 +671,98 @@ def resolve_sale_customer(db: Session, sale_in: SaleCreate):
     return customer, customer_ref_id, is_walkin, normalized_phone
 
 
+def _checkout_oil_change_vehicle(db: Session, sale_in: SaleCreate, customer: Optional[Customer]):
+    oil_change = sale_in.oil_change
+    if oil_change is None:
+        return None
+    if settings.APPLICATION_ID != "workshop":
+        raise HTTPException(status_code=400, detail="Vehicle oil-change checkout is not enabled")
+    if customer is None:
+        raise HTTPException(status_code=400, detail="Select a customer for an oil-change sale")
+
+    from app.applications.workshop.models import WorkshopVehicle
+
+    vehicle = db.query(WorkshopVehicle).filter(WorkshopVehicle.id == oil_change.vehicle_id).first()
+    if vehicle is None:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    if vehicle.customer_id != customer.id:
+        raise HTTPException(status_code=400, detail="Selected vehicle does not belong to the selected customer")
+    if vehicle.current_mileage is not None and oil_change.current_mileage < vehicle.current_mileage:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Current mileage cannot be below previous reading {vehicle.current_mileage}",
+        )
+    return vehicle
+
+
+def _record_checkout_oil_change(
+    db: Session,
+    sale_in: SaleCreate,
+    sale: Sale,
+    vehicle,
+    products: Dict[int, Product],
+    calculations,
+) -> None:
+    if sale_in.oil_change is None or vehicle is None:
+        return
+
+    from app.applications.workshop.models import WorkshopJob, WorkshopJobLine
+
+    oil_change = sale_in.oil_change
+    completed_at = now_pkt()
+    job = WorkshopJob(
+        job_number=f"WO-{date.today():%Y%m%d}-{uuid4().hex[:6].upper()}",
+        vehicle_id=vehicle.id,
+        customer_id=vehicle.customer_id,
+        sale_id=sale.id,
+        status="completed",
+        previous_mileage=vehicle.current_mileage,
+        current_mileage=oil_change.current_mileage,
+        oil_change_interval=oil_change.oil_change_interval,
+        next_oil_change_mileage=oil_change.current_mileage + oil_change.oil_change_interval,
+        notes="Completed from sales terminal checkout",
+        subtotal=sale.subtotal,
+        discount=sale.discount,
+        tax=sale.tax,
+        total=sale.total,
+        payment_method=str(getattr(sale.payment_method, "value", sale.payment_method)),
+        amount_paid=sale.amount_paid,
+        amount_due=sale.amount_due,
+        completed_at=completed_at,
+    )
+    db.add(job)
+    db.flush()
+    for source, calculated in zip(sale_in.items, calculations):
+        db.add(
+            WorkshopJobLine(
+                job_id=job.id,
+                product_id=source.product_id,
+                variation_id=source.variation_id,
+                description=products[source.product_id].name,
+                quantity=source.quantity,
+                unit=source.unit,
+                unit_price=calculated.unit_price,
+                item_discount=calculated.item_discount,
+                total_price=calculated.total_price,
+            )
+        )
+
+    vehicle.current_mileage = job.current_mileage
+    vehicle.next_oil_change_mileage = job.next_oil_change_mileage
+    vehicle.last_oil_change_at = completed_at
+    db.add(vehicle)
+    setattr(sale, "oil_change", {
+        "job_id": job.id,
+        "job_number": job.job_number,
+        "vehicle_id": vehicle.id,
+        "vehicle_identifier": vehicle.registration_number or vehicle.vehicle_id,
+        "previous_mileage": job.previous_mileage,
+        "current_mileage": job.current_mileage,
+        "oil_change_interval": job.oil_change_interval,
+        "next_oil_change_mileage": job.next_oil_change_mileage,
+    })
+
+
 def generate_and_send_invoice(sale_id: int, phone_number: str):
     """
     Background task to generate invoice image and send via WhatsApp
@@ -745,6 +902,7 @@ def create_sale(
     change_amount = max(0, amount_paid - total)
     
     customer, customer_ref_id, is_walkin, normalized_phone = resolve_sale_customer(db, sale_in)
+    oil_change_vehicle = _checkout_oil_change_vehicle(db, sale_in, customer)
     if customer and customer_ref_id:
         customer.outstanding_balance = accounting_service.get_customer_balance(
             db,
@@ -793,6 +951,15 @@ def create_sale(
             total=total,
             amount_due=db_sale.amount_due,
         )
+
+    _record_checkout_oil_change(
+        db,
+        sale_in,
+        db_sale,
+        oil_change_vehicle,
+        products_dict,
+        sale_lines,
+    )
     
     # Commit transaction
     try:
@@ -806,6 +973,7 @@ def create_sale(
         if normalized_phone:
             background_tasks.add_task(generate_and_send_invoice, db_sale.id, normalized_phone)
         
+        _sale_oil_change_details(db_sale)
         return db_sale
     except Exception as e:
         db.rollback()
@@ -1089,7 +1257,7 @@ def get_sale(
         raise HTTPException(status_code=404, detail="Sale not found")
     
     # All authenticated users can view any sale (removed cashier restriction)
-    
+    _sale_oil_change_details(sale)
     return sale
 
 
