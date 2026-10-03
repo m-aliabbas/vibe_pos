@@ -1,5 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
+
+backend_dir = Path(SPECPATH)
 
 datas = []
 binaries = []
@@ -47,11 +51,23 @@ tmp_ret = collect_all('cryptography')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('neonize')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('pydrive2')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('googleapiclient')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('oauth2client')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('httplib2')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+datas += [
+    (str(backend_dir / 'k1.json.enc'), '.'),
+    (str(backend_dir / 'g1.json.enc'), '.'),
+]
 
 
 a = Analysis(
-    ['/Users/ali/Desktop/POS/backend/run_server.py'],
-    pathex=['/Users/ali/Desktop/POS/backend'],
+    [str(backend_dir / 'run_server.py')],
+    pathex=[str(backend_dir)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

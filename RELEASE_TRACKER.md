@@ -6,6 +6,37 @@ This file is the source-of-truth summary for application releases. Add user-visi
 
 No changes recorded yet.
 
+## v1.0.25 - 2026-10-03
+
+### Backup
+
+- Added Google Drive backup support.
+
+## v1.0.24 - 2026-09-26
+
+### Security and licensing
+
+- Enforced explicit license expiration dates and limited local license-cache validity to 30 days.
+- No database schema changes.
+
+## v1.0.23 - 2026-09-24
+
+- stable realease
+
+## v1.0.22 - 2026-09-24
+
+### Release checkpoint
+
+- Synchronized application and desktop package versions for the v1.0.22 release.
+- No database schema changes.
+
+## v1.0.21 - 2026-09-24
+
+### Release checkpoint
+
+- Synchronized application and desktop package versions for the v1.0.21 release.
+- No database schema changes.
+
 ## v1.0.20 - 2026-09-24
 
 ### Fixed
@@ -28,6 +59,11 @@ No changes recorded yet.
 
 | Version | Release date | Notes |
 |---|---|---|
+| `v1.0.25` | 2026-10-03 | Added Google Drive backup support. |
+| `v1.0.24` | 2026-09-26 | License expiration and local-cache validation updates. |
+| `v1.0.23` | 2026-09-24 | Version synchronization and release checkpoint. |
+| `v1.0.22` | 2026-09-24 | Version synchronization and release checkpoint. |
+| `v1.0.21` | 2026-09-24 | Version synchronization and release checkpoint. |
 | `v1.0.20` | 2026-09-24 | Fixed in-app update checks and hardened public release contents. |
 | `v1.0.19` | 2026-09-23 | Bill-printing fixes. |
 | `v1.0.18` | 2026-09-23 | Release checkpoint; no detailed notes were recorded. |

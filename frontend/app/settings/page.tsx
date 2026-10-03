@@ -27,8 +27,13 @@ import {
     FileText,
     ImagePlus,
     Trash2,
+    CloudUpload,
+    CloudDownload,
+    LogIn,
+    LogOut,
+    UserRound,
 } from 'lucide-react';
-import api, { WhatsAppReportSettings, whatsappReportSettingsApi, cashRegisterApi, CashRegisterSession, InvoiceDesign, InvoiceFormat, storeSettingsApi } from '@/lib/api';
+import api, { backupApi, WhatsAppReportSettings, whatsappReportSettingsApi, cashRegisterApi, CashRegisterSession, DatabaseBackupInfo, GoogleDriveBackupFile, GoogleDriveBackupStatus, googleDriveBackupApi, InvoiceDesign, InvoiceFormat, LocalBackupFile, PosDatabaseFile, storeSettingsApi } from '@/lib/api';
 import axios from 'axios';
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
@@ -37,19 +42,6 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
     }
     return error instanceof Error ? error.message : fallback;
 };
-
-interface DatabaseFile {
-    path: string;
-    size: number;
-    size_mb: number;
-}
-
-interface BackupFile {
-    filename: string;
-    size: number;
-    size_mb: number;
-    created: string;
-}
 
 interface StoreSettingsForm {
     store_name: string;
@@ -85,8 +77,9 @@ const invoiceDesigns: Array<{ id: InvoiceDesign; title: string; description: str
 ];
 
 const BackupRestorePage: React.FC = () => {
-    const [dbFiles, setDbFiles] = useState<DatabaseFile[]>([]);
-    const [backups, setBackups] = useState<BackupFile[]>([]);
+    const [dbFiles, setDbFiles] = useState<PosDatabaseFile[]>([]);
+    const [databaseBackupInfo, setDatabaseBackupInfo] = useState<DatabaseBackupInfo | null>(null);
+    const [backups, setBackups] = useState<LocalBackupFile[]>([]);
     const [backupLoading, setBackupLoading] = useState(false);
     const [restoreLoading, setRestoreLoading] = useState(false);
     const [restoreStatus, setRestoreStatus] = useState('');
@@ -127,6 +120,10 @@ const BackupRestorePage: React.FC = () => {
     });
     const [whatsAppLoading, setWhatsAppLoading] = useState(false);
     const [whatsAppMessage, setWhatsAppMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [driveStatus, setDriveStatus] = useState<GoogleDriveBackupStatus | null>(null);
+    const [driveBackups, setDriveBackups] = useState<GoogleDriveBackupFile[]>([]);
+    const [driveLoading, setDriveLoading] = useState<'connect' | 'disconnect' | 'upload' | null>(null);
+    const [driveMessage, setDriveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const fetchStoreSettings = async () => {
         try {
@@ -239,8 +236,9 @@ const BackupRestorePage: React.FC = () => {
 
     const fetchDatabaseFiles = async () => {
         try {
-            const response = await api.get('/backup/list-files');
-            setDbFiles(response.data.files || []);
+            const info = await backupApi.getDatabaseInfo();
+            setDatabaseBackupInfo(info);
+            setDbFiles(info.files);
         } catch (error) {
             console.error('Failed to fetch database files:', error);
         }
@@ -248,10 +246,26 @@ const BackupRestorePage: React.FC = () => {
 
     const fetchBackups = async () => {
         try {
-            const response = await api.get('/backup/list');
-            setBackups(response.data.backups || []);
+            setBackups(await backupApi.listLocal());
         } catch (error) {
             console.error('Failed to fetch backups:', error);
+        }
+    };
+
+    const fetchGoogleDriveStatus = async () => {
+        try {
+            const status = await googleDriveBackupApi.getStatus();
+            setDriveStatus(status);
+            if (status.connected) {
+                setDriveBackups(await googleDriveBackupApi.list());
+            } else {
+                setDriveBackups([]);
+            }
+        } catch (error: unknown) {
+            setDriveMessage({
+                type: 'error',
+                text: getErrorMessage(error, 'Could not load Google Drive backup status.'),
+            });
         }
     };
 
@@ -261,6 +275,7 @@ const BackupRestorePage: React.FC = () => {
         fetchStoreSettings();
         fetchWhatsAppReportSettings();
         fetchOpenCashSessions();
+        fetchGoogleDriveStatus();
     }, []);
 
     const fetchOpenCashSessions = async () => {
@@ -282,17 +297,14 @@ const BackupRestorePage: React.FC = () => {
             setBackupLoading(true);
             setMessage(null);
 
-            const response = await api.post('/backup/create');
+            const result = await backupApi.create();
 
-            if (response.data.success) {
+            if (result.success) {
                 backupCreated = true;
-                const filename = response.data.backup_filename;
-                const downloadResponse = await api.get(
-                    `/backup/download/${filename}`,
-                    { responseType: 'blob' }
-                );
+                const filename = result.backup_filename;
+                const downloadedBackup = await backupApi.download(filename);
 
-                const blob = new Blob([downloadResponse.data], { type: 'application/zip' });
+                const blob = new Blob([downloadedBackup], { type: 'application/octet-stream' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -304,8 +316,13 @@ const BackupRestorePage: React.FC = () => {
 
                 setMessage({
                     type: 'success',
-                    text: `Backup created and downloaded successfully: ${filename}`
+                    text: result.drive_uploaded
+                        ? `${filename} was saved to Google Drive and downloaded locally.`
+                        : `${filename} was downloaded locally. ${result.drive_error || 'Google Drive is not connected.'}`
                 });
+                if (result.drive_uploaded) {
+                    void fetchGoogleDriveStatus();
+                }
             }
         } catch (error: unknown) {
             setMessage({
@@ -322,10 +339,100 @@ const BackupRestorePage: React.FC = () => {
         }
     };
 
+    const handleGoogleDriveConnect = async () => {
+        setDriveLoading('connect');
+        setDriveMessage(null);
+        try {
+            const status = await googleDriveBackupApi.connect();
+            setDriveStatus(status);
+            setDriveBackups(await googleDriveBackupApi.list());
+            const account = status.account?.email || status.account?.display_name || 'Google account';
+            setDriveMessage({ type: 'success', text: `Connected ${account} successfully.` });
+        } catch (error: unknown) {
+            setDriveMessage({
+                type: 'error',
+                text: getErrorMessage(error, 'Google Drive sign-in did not complete.'),
+            });
+        } finally {
+            setDriveLoading(null);
+        }
+    };
+
+    const handleGoogleDriveDisconnect = async () => {
+        if (!window.confirm('Disconnect this Google account from VibePOS backups?')) return;
+
+        setDriveLoading('disconnect');
+        setDriveMessage(null);
+        try {
+            const status = await googleDriveBackupApi.disconnect();
+            setDriveStatus(status);
+            setDriveBackups([]);
+            setDriveMessage({ type: 'success', text: 'Google Drive account disconnected.' });
+        } catch (error: unknown) {
+            setDriveMessage({
+                type: 'error',
+                text: getErrorMessage(error, 'Could not disconnect Google Drive.'),
+            });
+        } finally {
+            setDriveLoading(null);
+        }
+    };
+
+    const handleGoogleDriveUpload = async () => {
+        setDriveLoading('upload');
+        setDriveMessage(null);
+        try {
+            const result = await googleDriveBackupApi.upload();
+            setDriveMessage({
+                type: 'success',
+                text: `${result.filename} uploaded to ${result.folder_name}.`,
+            });
+            setDriveBackups(await googleDriveBackupApi.list());
+            fetchBackups();
+        } catch (error: unknown) {
+            setDriveMessage({
+                type: 'error',
+                text: getErrorMessage(error, 'Could not upload the backup to Google Drive.'),
+            });
+        } finally {
+            setDriveLoading(null);
+        }
+    };
+
+    const handleGoogleDriveRestore = async (backup: GoogleDriveBackupFile) => {
+        const confirmed = window.confirm(
+            `Restore ${backup.filename} from Google Drive?\n\n` +
+            'This will replace the current database. A local safety backup will be created first, then VibePOS must be restarted.'
+        );
+        if (!confirmed) return;
+
+        setRestoreLoading(true);
+        setRestoreStatus('Downloading from Google Drive...');
+        setMessage(null);
+        try {
+            const result = await googleDriveBackupApi.restore(backup.file_id);
+            setMessage({
+                type: 'success',
+                text: `${result.source_filename} restored successfully. Safety copy: ${result.safety_backup}. Restart VibePOS before continuing.`,
+            });
+            fetchBackups();
+        } catch (error: unknown) {
+            setMessage({
+                type: 'error',
+                text: `Drive restore failed: ${getErrorMessage(error, 'Unknown error')}`,
+            });
+        } finally {
+            setRestoreLoading(false);
+            setRestoreStatus('');
+        }
+    };
+
     const handleRestoreBackup = () => {
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
-        fileInput.accept = '.zip,application/zip';
+        fileInput.accept = databaseBackupInfo?.provider === 'sqlite'
+            ? '.db,.zip,application/vnd.sqlite3,application/x-sqlite3,application/zip'
+            : databaseBackupInfo?.backup_suffix || '.db,.dump,.sql';
 
         fileInput.onchange = async (event: Event) => {
             const file = (event.target as HTMLInputElement).files?.[0];
@@ -333,7 +440,7 @@ const BackupRestorePage: React.FC = () => {
 
             const confirmed = window.confirm(
                 'Are you sure you want to restore from this backup?\n\n' +
-                'This will replace all current database files and the application will need to be restarted.\n\n' +
+                'This will replace the current database. A local safety backup will be created first, then VibePOS must be restarted.\n\n' +
                 'Click OK to continue.'
             );
 
@@ -342,24 +449,21 @@ const BackupRestorePage: React.FC = () => {
             setRestoreLoading(true);
             setRestoreStatus('Uploading backup...');
             setMessage(null);
-            const formData = new FormData();
-            formData.append('file', file);
-
             try {
-                const response = await api.post('/backup/restore', formData, {
-                    timeout: 60_000,
-                    onUploadProgress: (progressEvent) => {
+                const result = await backupApi.restoreLocal(
+                    file,
+                    (progressEvent) => {
                         if (progressEvent.total) {
                             const percent = Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100));
                             setRestoreStatus(percent < 100 ? `Uploading backup... ${percent}%` : 'Applying backup...');
                         }
-                    },
-                });
+                    }
+                );
 
-                if (response.data.success) {
+                if (result.success) {
                     setMessage({
                         type: 'success',
-                        text: 'Backup restored successfully! Please restart the application for changes to take effect.'
+                        text: `${result.restored_file} restored successfully. Safety backup: ${result.safety_backup}. Restart VibePOS before continuing.`
                     });
                 }
             } catch (error: unknown) {
@@ -390,7 +494,7 @@ const BackupRestorePage: React.FC = () => {
                     {/* Header */}
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-                        <p className="text-gray-600 mt-1">Manage store information, WhatsApp reports, and database backups</p>
+                        <p className="text-gray-600 mt-1">Manage store information, WhatsApp reports, and local or Google Drive backups</p>
                     </div>
 
                     {/* Store Information */}
@@ -779,9 +883,9 @@ const BackupRestorePage: React.FC = () => {
                     </Card>
 
                     {/* Backup Header */}
-                    <div>
+                    <div id="backup-restore" className="scroll-mt-6">
                         <h2 className="text-xl font-bold text-gray-900">Backup &amp; Restore</h2>
-                        <p className="text-gray-600 mt-1">Manage your database backups</p>
+                        <p className="text-gray-600 mt-1">Manage local and Google Drive database backups</p>
                     </div>
 
                     {/* Message Alert */}
@@ -804,7 +908,7 @@ const BackupRestorePage: React.FC = () => {
                                 Database Files
                             </CardTitle>
                             <CardDescription>
-                                These files will be included in your backup
+                                The configured {databaseBackupInfo?.provider || 'database'} data store is included in each backup
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -837,6 +941,138 @@ const BackupRestorePage: React.FC = () => {
                         </CardContent>
                     </Card>
 
+                    {/* Google Drive Backup */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <CloudUpload className="h-5 w-5" />
+                                Google Drive Backup
+                            </CardTitle>
+                            <CardDescription>
+                                Every manual and scheduled database backup is saved in the {driveStatus?.folder_name || 'VibePOS Backups'} folder when connected.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {driveMessage && (
+                                <Alert variant={driveMessage.type === 'error' ? 'destructive' : 'default'}>
+                                    {driveMessage.type === 'success' ? (
+                                        <CheckCircle2 className="h-4 w-4" />
+                                    ) : (
+                                        <AlertCircle className="h-4 w-4" />
+                                    )}
+                                    <AlertDescription>{driveMessage.text}</AlertDescription>
+                                </Alert>
+                            )}
+
+                            {driveStatus?.configured === false ? (
+                                <Alert variant="destructive">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <AlertDescription>
+                                        Google Drive sign-in is not configured in this application build.
+                                    </AlertDescription>
+                                </Alert>
+                            ) : driveStatus?.connected ? (
+                                <div className="flex flex-col gap-4 rounded-lg border bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="rounded-full bg-white p-2 shadow-sm">
+                                            <UserRound className="h-5 w-5 text-blue-600" />
+                                        </div>
+                                        <div>
+                                            <p className="font-medium">
+                                                {driveStatus.account?.display_name || 'Google Drive account'}
+                                            </p>
+                                            {driveStatus.account?.email && (
+                                                <p className="text-sm text-muted-foreground">{driveStatus.account.email}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <Badge variant="secondary">Connected</Badge>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">
+                                    Connect a Google account once. A browser window will open so you can approve access.
+                                </p>
+                            )}
+
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                                {driveStatus?.connected ? (
+                                    <>
+                                        <Button
+                                            onClick={handleGoogleDriveUpload}
+                                            disabled={driveLoading !== null || dbFiles.length === 0}
+                                        >
+                                            {driveLoading === 'upload' ? (
+                                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</>
+                                            ) : (
+                                                <><CloudUpload className="mr-2 h-4 w-4" />Back Up to Drive</>
+                                            )}
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleGoogleDriveDisconnect}
+                                            disabled={driveLoading !== null}
+                                        >
+                                            {driveLoading === 'disconnect' ? (
+                                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Disconnecting...</>
+                                            ) : (
+                                                <><LogOut className="mr-2 h-4 w-4" />Disconnect</>
+                                            )}
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <Button
+                                        onClick={handleGoogleDriveConnect}
+                                        disabled={driveLoading !== null || driveStatus?.configured === false}
+                                    >
+                                        {driveLoading === 'connect' ? (
+                                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Waiting for Google...</>
+                                        ) : (
+                                            <><LogIn className="mr-2 h-4 w-4" />Connect Google Account</>
+                                        )}
+                                    </Button>
+                                )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Login credentials are encrypted on this POS. Runtime sessions and uploaded files are never included.
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                Automatic backup runs daily at 12:00 PM. Local automatic copies are retained for 7 days.
+                            </p>
+
+                            {driveStatus?.connected && (
+                                <div className="space-y-2 border-t pt-4">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-sm font-medium">Drive backups</p>
+                                        <Badge variant="secondary">{driveBackups.length}</Badge>
+                                    </div>
+                                    {driveBackups.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground">No compatible database backups found on Drive.</p>
+                                    ) : (
+                                        driveBackups.slice(0, 10).map((backup) => (
+                                            <div key={backup.file_id} className="flex flex-col gap-2 rounded-lg bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                                                <div>
+                                                    <p className="break-all font-mono text-sm">{backup.filename}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {backup.created ? formatDate(backup.created) : 'Unknown date'} · {backup.size_mb} MB
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => handleGoogleDriveRestore(backup)}
+                                                    disabled={restoreLoading || backupLoading || driveLoading !== null}
+                                                >
+                                                    <CloudDownload className="mr-2 h-4 w-4" />
+                                                    Restore
+                                                </Button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     {/* Backup Actions */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Create Backup */}
@@ -847,13 +1083,13 @@ const BackupRestorePage: React.FC = () => {
                                     Create Backup
                                 </CardTitle>
                                 <CardDescription>
-                                    Export all database files to a ZIP archive
+                                    Download a safe native {databaseBackupInfo?.provider || 'database'} snapshot
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <p className="text-sm text-gray-600">
-                                    This will create a timestamped backup of all your database files.
-                                    You can save it anywhere on your computer for safekeeping.
+                                    This creates a timestamped {databaseBackupInfo?.backup_suffix || 'backup'} file, uploads it to connected Google Drive,
+                                    and downloads a local copy.
                                 </p>
                                 <Button
                                     onClick={handleCreateBackup}
@@ -883,15 +1119,15 @@ const BackupRestorePage: React.FC = () => {
                                     Restore Backup
                                 </CardTitle>
                                 <CardDescription>
-                                    Restore database files from a backup archive
+                                    Upload and restore a VibePOS {databaseBackupInfo?.backup_suffix || 'database'} backup
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <Alert>
                                     <AlertCircle className="h-4 w-4" />
                                     <AlertDescription className="text-xs">
-                                        <strong>Warning:</strong> Restoring will replace all current database files.
-                                        Make sure to create a backup first!
+                                        <strong>Warning:</strong> Restoring replaces the configured database.
+                                        A local safety backup is created first, and maintenance mode must be enabled. Restart VibePOS afterward.
                                     </AlertDescription>
                                 </Alert>
                                 <Button
@@ -908,7 +1144,7 @@ const BackupRestorePage: React.FC = () => {
                                     ) : (
                                         <>
                                             <Upload className="h-4 w-4 mr-2" />
-                                            Restore from Backup
+                                            Restore Local Backup
                                         </>
                                     )}
                                 </Button>

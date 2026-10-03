@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal, Optional
 from pathlib import Path
 
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "VibePOS"
     API_V1_STR: str = "/api/v1"
@@ -11,7 +12,6 @@ class Settings(BaseSettings):
     # Store branding
     STORE_NAME: str = "MyStore"
     STORE_ADDRESS: str = "Gulberg Islamabad"
-    
     # Runtime data remains app-owned even when the transactional database is remote.
     DATA_DIR: str = "data"
     DATABASE_PROVIDER: Literal["sqlite", "postgresql", "mysql"] = "sqlite"
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
         if self.DATABASE_URL:
             return self.DATABASE_URL
         return f"sqlite:///{Path(self.DATA_DIR).resolve() / 'pos.db'}"
-    
+
     # Security
     SECRET_KEY: str = "vibe_pos_1234"
     ALGORITHM: str = "HS256"
@@ -58,16 +58,22 @@ class Settings(BaseSettings):
 
     # License / Firebase
     LICENSE_ENFORCEMENT: bool = True
-    FIREBASE_CREDENTIALS_PATH: Optional[str] = './k1.json'
-    FIREBASE_CREDENTIALS_ENC_PATH: Optional[str] = './k1.json.enc'
-    FIREBASE_CREDENTIALS_KEY: Optional[str] = 'EhKGefoVJZoKmg1ikyTppKbmryLi5DcvJcjIUx3zw40='
-    FIREBASE_PROJECT_ID: Optional[str] = 'vibepos-4d412'
+    FIREBASE_CREDENTIALS_PATH: Optional[str] = "./k1.json"
+    FIREBASE_CREDENTIALS_ENC_PATH: Optional[str] = "./k1.json.enc"
+    FIREBASE_CREDENTIALS_KEY: Optional[str] = (
+        "EhKGefoVJZoKmg1ikyTppKbmryLi5DcvJcjIUx3zw40="
+    )
+    FIREBASE_PROJECT_ID: Optional[str] = "vibepos-4d412"
     FIREBASE_LICENSE_COLLECTION: str = "lisence_pos"
     LICENSE_AUTO_REGISTER: bool = True
     LICENSE_CACHE_PATH: Optional[str] = None
     LICENSE_CACHE_KEY: Optional[str] = None
-    
+    # Google Drive OAuth client configuration, encrypted with the same Fernet
+    # key used for the Firebase credential resource.
+    GOOGLE_DRIVE_CLIENT_CONFIG_ENC_PATH: Optional[str] = "./g1.json.enc"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
 
 settings = Settings()
 

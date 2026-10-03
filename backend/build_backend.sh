@@ -5,12 +5,21 @@ BACKEND_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENTRY="$BACKEND_DIR/run_server.py"
 NAME="backend-server"
 REQ_FILE="$BACKEND_DIR/requirements.txt"
+FIREBASE_CREDENTIAL="$BACKEND_DIR/k1.json.enc"
+DRIVE_CREDENTIAL="$BACKEND_DIR/g1.json.enc"
 
-TARGET_DIR="../frontend/src-tauri/bin/backend-server-aarch64-apple-darwin"
+TARGET_DIR="$BACKEND_DIR/../frontend/src-tauri/bin/backend-server-aarch64-apple-darwin"
 
 echo "📌 Backend dir: $BACKEND_DIR"
 echo "📌 Using python: $(which python)"
 echo "📌 Python: $(python --version)"
+
+for required_file in "$ENTRY" "$FIREBASE_CREDENTIAL" "$DRIVE_CREDENTIAL"; do
+  if [[ ! -f "$required_file" ]]; then
+    echo "Required build input is missing: $required_file" >&2
+    exit 1
+  fi
+done
 
 # 1) Install requirements into the CURRENT env (must be agent_dev)
 echo "📦 Installing requirements..."
@@ -48,6 +57,12 @@ pyinstaller --name "$NAME" \
   --collect-all neonize \
   --collect-all apscheduler \
   --collect-all zeroconf \
+  --collect-all pydrive2 \
+  --collect-all googleapiclient \
+  --collect-all oauth2client \
+  --collect-all httplib2 \
+  --add-data "$FIREBASE_CREDENTIAL:." \
+  --add-data "$DRIVE_CREDENTIAL:." \
   \
   --hidden-import=uvicorn.logging \
   --hidden-import=uvicorn.loops \
@@ -69,6 +84,7 @@ pyinstaller --name "$NAME" \
   --hidden-import=app.applications.workshop.manifest \
   --hidden-import=app.applications.restaurant.manifest \
   --hidden-import=apscheduler \
+  --hidden-import=pydrive2 \
   \
   "$ENTRY"
 

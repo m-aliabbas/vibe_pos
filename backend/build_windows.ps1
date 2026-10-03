@@ -16,11 +16,12 @@ $tauriBinDir = Join-Path $repoDir "frontend\src-tauri\bin"
 $requirementsLock = Join-Path $backendDir "requirements-windows.lock"
 $entryPoint = Join-Path $backendDir "run_server.py"
 $credentialFile = Join-Path $backendDir "k1.json.enc"
+$driveCredentialFile = Join-Path $backendDir "g1.json.enc"
 $workDir = Join-Path $backendDir "build\windows"
 $distDir = Join-Path $backendDir "dist\windows"
 $targetExe = Join-Path $tauriBinDir "backend-server-x86_64-pc-windows-msvc.exe"
 
-foreach ($requiredFile in @($requirementsLock, $entryPoint, $credentialFile)) {
+foreach ($requiredFile in @($requirementsLock, $entryPoint, $credentialFile, $driveCredentialFile)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Required build input is missing: $requiredFile"
     }
@@ -65,6 +66,7 @@ $pyInstallerArgs = @(
     "--specpath", $workDir,
     "--distpath", $distDir,
     "--add-data", "${credentialFile};.",
+    "--add-data", "${driveCredentialFile};.",
     "--collect-all", "fastapi",
     "--collect-all", "dotenv",
     "--collect-all", "starlette",
@@ -85,6 +87,10 @@ $pyInstallerArgs = @(
     "--collect-all", "neonize",
     "--collect-all", "apscheduler",
     "--collect-all", "zeroconf",
+    "--collect-all", "pydrive2",
+    "--collect-all", "googleapiclient",
+    "--collect-all", "oauth2client",
+    "--collect-all", "httplib2",
     "--hidden-import", "uvicorn.logging",
     "--hidden-import", "uvicorn.loops.auto",
     "--hidden-import", "uvicorn.protocols.http.auto",
@@ -109,5 +115,6 @@ if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
 
 Copy-Item -LiteralPath $builtExe -Destination $targetExe -Force
 Copy-Item -LiteralPath $credentialFile -Destination (Join-Path $tauriBinDir "k1.json.enc") -Force
+Copy-Item -LiteralPath $driveCredentialFile -Destination (Join-Path $tauriBinDir "g1.json.enc") -Force
 
 Write-Host "Backend sidecar ready: $targetExe"

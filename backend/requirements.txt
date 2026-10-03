@@ -19,3 +19,4 @@ firebase-admin
 passlib[argon2]
 argon2-cffi
 cryptography
+PyDrive2==1.21.3

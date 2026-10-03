@@ -1,6 +1,6 @@
 {
   "name": "vibepos",
-  "version": "1.0.20",
+  "version": "1.0.25",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 4321",
