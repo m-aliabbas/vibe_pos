@@ -16,7 +16,7 @@ neonize==0.4.3.post0
 python-dotenv==1.2.3
 zeroconf==0.151.3
 firebase-admin==7.6.0
-protobuf==6.32.1
+protobuf==7.36.2
 PyDrive2==1.21.3
 
 # Windows packaging tool. Keep this pinned because its bootloader is part of the EXE.
