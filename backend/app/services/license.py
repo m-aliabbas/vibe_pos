@@ -7,6 +7,7 @@ import sys
 import uuid
 import base64
 from datetime import datetime, timedelta, timezone
+from math import ceil
 from pathlib import Path
 from typing import Optional, Tuple, List
 
@@ -26,6 +27,8 @@ DEFAULT_ENC_FILENAME = "k1.json.enc"
 DEFAULT_LICENSE_CACHE_FILENAME = "license_cache.enc"
 LOCAL_LICENSE_CACHE_DAYS = 30
 DEFAULT_LICENSE_TERM_DAYS = 30
+
+_active_license_expiry: Optional[datetime] = None
 
 
 def _normalize_fingerprint_payload() -> dict:
@@ -287,8 +290,36 @@ def _parse_expiry(value: object) -> Optional[datetime]:
     return expires_at
 
 
+def _set_active_license_expiry(expires_at: Optional[datetime]) -> None:
+    global _active_license_expiry
+    _active_license_expiry = expires_at
+
+
+def _days_remaining(
+    expires_at: datetime,
+    *,
+    now: Optional[datetime] = None,
+) -> int:
+    current_time = now or datetime.now(timezone.utc)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=timezone.utc)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return max(0, ceil((expires_at - current_time).total_seconds() / 86400))
+
+
+def get_active_license_status() -> dict:
+    expires_at = _active_license_expiry
+    return {
+        "enforced": settings.LICENSE_ENFORCEMENT,
+        "expires_at": expires_at,
+        "days_remaining": _days_remaining(expires_at) if expires_at else None,
+    }
+
+
 def check_license_or_exit() -> str:
     if not settings.LICENSE_ENFORCEMENT:
+        _set_active_license_expiry(None)
         return "license-check-skipped"
 
     fingerprint = get_device_fingerprint()
@@ -296,6 +327,7 @@ def check_license_or_exit() -> str:
     print("🔐 Doing local license verification...")
     cached = _load_local_license_cache(fingerprint)
     if cached and cached.get("approved") is True:
+        _set_active_license_expiry(_parse_expiry(cached.get("expire_date")))
         print("✅ Local license verification approved")
         return fingerprint
 
@@ -350,10 +382,10 @@ def check_license_or_exit() -> str:
     if _is_expired(expire_date):
         raise LicenseError("License expired for this device")
 
+    _set_active_license_expiry(expire_date)
     _save_local_license_cache(
         fingerprint,
         expire_date,
     )
 
     return fingerprint
-

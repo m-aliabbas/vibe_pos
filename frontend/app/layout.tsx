@@ -21,6 +21,7 @@ import { AutoBreadcrumb } from "@/components/AutoBreadcrumb";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ConfirmCloseGuard } from "@/components/ConfirmCloseGuard";
+import { LicenseExpiryBanner } from "@/components/LicenseExpiryBanner";
 
 export default function RootLayout({
   children,
@@ -37,6 +38,7 @@ export default function RootLayout({
           <div className="no-print shrink-0">
             <Navbar />
           </div>
+          <LicenseExpiryBanner />
           <div className="no-print shrink-0">
             <AutoBreadcrumb />
           </div>

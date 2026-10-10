@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import Enum
 
 class PurchaseStatus(str, Enum):
@@ -10,8 +10,8 @@ class PurchaseStatus(str, Enum):
 
 class PurchaseItemBase(BaseModel):
     product_id: int
-    quantity: float
-    unit_cost: float
+    quantity: float = Field(gt=0)
+    unit_cost: float = Field(ge=0)
     expiry_date: Optional[datetime] = None
     variation_id: Optional[int] = None  # For products with variations
 
@@ -32,7 +32,8 @@ class PurchaseItem(PurchaseItemBase):
 
 class PurchaseBase(BaseModel):
     vendor_id: int
-    amount_paid: float = 0.0
+    amount_paid: float = Field(default=0.0, ge=0)
+    discount: float = Field(default=0.0, ge=0)
 
 class PurchaseCreate(PurchaseBase):
     items: List[PurchaseItemCreate]
@@ -47,6 +48,7 @@ class PurchasePaymentUpdate(BaseModel):
 class Purchase(PurchaseBase):
     id: int
     created_at: datetime
+    subtotal_amount: float
     total_amount: float
     status: PurchaseStatus
     items: List[PurchaseItem] = []

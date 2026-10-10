@@ -16,6 +16,7 @@ import {
     Download,
     Upload,
     AlertCircle,
+    CalendarClock,
     CheckCircle2,
     Loader2,
     HardDrive,
@@ -33,7 +34,7 @@ import {
     LogOut,
     UserRound,
 } from 'lucide-react';
-import api, { backupApi, WhatsAppReportSettings, whatsappReportSettingsApi, cashRegisterApi, CashRegisterSession, GoogleDriveBackupFile, GoogleDriveBackupStatus, googleDriveBackupApi, InvoiceDesign, InvoiceFormat, LocalBackupFile, PosDatabaseFile, storeSettingsApi } from '@/lib/api';
+import api, { backupApi, WhatsAppReportSettings, whatsappReportSettingsApi, cashRegisterApi, CashRegisterSession, GoogleDriveBackupFile, GoogleDriveBackupStatus, googleDriveBackupApi, InvoiceDesign, InvoiceFormat, LicenseStatus, LocalBackupFile, PosDatabaseFile, storeSettingsApi } from '@/lib/api';
 import axios from 'axios';
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
@@ -106,6 +107,7 @@ const BackupRestorePage: React.FC = () => {
         invoice_terms: 'Return and exchange accepted with invoice.',
     });
     const [storeLoading, setStoreLoading] = useState(false);
+    const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
     const [openCashSessions, setOpenCashSessions] = useState<CashRegisterSession[]>([]);
     const [cashSessionsLoading, setCashSessionsLoading] = useState(false);
     const [storeMessage, setStoreMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -151,6 +153,14 @@ const BackupRestorePage: React.FC = () => {
             setLogoUrl(d.logo_url ? `/api/v1${d.logo_url}?v=${Date.now()}` : null);
         } catch {
             // not critical
+        }
+    };
+
+    const fetchLicenseStatus = async () => {
+        try {
+            setLicenseStatus(await storeSettingsApi.getLicenseStatus());
+        } catch {
+            // License status must not prevent the rest of Settings from loading.
         }
     };
 
@@ -270,6 +280,7 @@ const BackupRestorePage: React.FC = () => {
         fetchDatabaseFiles();
         fetchBackups();
         fetchStoreSettings();
+        fetchLicenseStatus();
         fetchWhatsAppReportSettings();
         fetchOpenCashSessions();
         fetchGoogleDriveStatus();
@@ -491,6 +502,53 @@ const BackupRestorePage: React.FC = () => {
                         <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
                         <p className="text-gray-600 mt-1">Manage store information, WhatsApp reports, and local or Google Drive backups</p>
                     </div>
+
+                    {licenseStatus?.enforced && licenseStatus.days_remaining !== null && (
+                        <div
+                            className={licenseStatus.days_remaining <= 5
+                                ? 'rounded-xl border-2 border-red-600 bg-red-50 p-5 shadow-lg ring-4 ring-red-100'
+                                : 'rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm'}
+                            role={licenseStatus.days_remaining <= 5 ? 'alert' : 'status'}
+                        >
+                            <div className="flex items-start gap-4">
+                                <div className={licenseStatus.days_remaining <= 5
+                                    ? 'rounded-full bg-red-600 p-3 text-white'
+                                    : 'rounded-full bg-blue-600 p-3 text-white'}
+                                >
+                                    {licenseStatus.days_remaining <= 5
+                                        ? <AlertCircle className="h-7 w-7" />
+                                        : <CalendarClock className="h-7 w-7" />}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className={licenseStatus.days_remaining <= 5
+                                        ? 'text-2xl font-extrabold text-red-800'
+                                        : 'text-xl font-bold text-blue-900'}
+                                    >
+                                        {licenseStatus.days_remaining} {licenseStatus.days_remaining === 1 ? 'day' : 'days'} remaining until license expiry
+                                    </p>
+                                    {licenseStatus.days_remaining <= 5 && (
+                                        <p className="mt-2 text-base font-semibold text-red-800">
+                                            If you have already paid, please ignore this message. Otherwise, contact Vibe.exe to renew your license.
+                                        </p>
+                                    )}
+                                    <div className={licenseStatus.days_remaining <= 5
+                                        ? 'mt-3 flex flex-wrap gap-x-4 gap-y-2 font-semibold text-red-900'
+                                        : 'mt-2 flex flex-wrap gap-x-4 gap-y-2 text-sm text-blue-800'}
+                                    >
+                                        <a className="underline underline-offset-2" href="tel:03025114945">03025114945</a>
+                                        <a className="underline underline-offset-2" href="tel:03402040648">03402040648</a>
+                                        <a className="underline underline-offset-2" href="mailto:info@vibeexe.com">info@vibeexe.com</a>
+                                        <a className="underline underline-offset-2" href="https://www.vibeexe.com" target="_blank" rel="noreferrer">www.vibeexe.com</a>
+                                    </div>
+                                    {licenseStatus.expires_at && (
+                                        <p className="mt-2 text-xs opacity-75">
+                                            Expiry date: {new Date(licenseStatus.expires_at).toLocaleString('en-PK')}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Store Information */}
                     <Card>

@@ -54,6 +54,7 @@ export default function PurchaseDetailPage() {
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [savingEdit, setSavingEdit] = useState(false);
     const [editableItems, setEditableItems] = useState<EditablePurchaseItem[]>([]);
+    const [editDiscount, setEditDiscount] = useState(0);
     const [activeProductRow, setActiveProductRow] = useState<number | null>(null);
     const [allowDecimals, setAllowDecimals] = useState(false);
     const [priceChangedItems, setPriceChangedItems] = useState<any[]>([]);
@@ -109,16 +110,20 @@ export default function PurchaseDetailPage() {
 
     const openEditDialog = () => {
         if (!purchase) return;
+        const costFactor = purchase.subtotal_amount > 0
+            ? purchase.total_amount / purchase.subtotal_amount
+            : 1;
         setEditableItems(
             (purchase.items || []).map((item: any) => ({
                 product_id: item.product_id,
                 product_search: item.product_name || item.product?.name || getProductName(item.product_id),
                 variation_id: item.variation_id || null,
                 quantity: item.quantity,
-                unit_cost: item.unit_cost,
+                unit_cost: costFactor > 0 ? item.unit_cost / costFactor : item.unit_cost,
                 expiry_date: item.expiry_date ? new Date(item.expiry_date).toISOString().slice(0, 10) : null,
             }))
         );
+        setEditDiscount(purchase.discount || 0);
         setEditDialogOpen(true);
     };
 
@@ -164,12 +169,18 @@ export default function PurchaseDetailPage() {
             alert("Please ensure quantity > 0 and unit cost >= 0 for all items.");
             return;
         }
+        const editSubtotal = editableItems.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0);
+        if (editDiscount < 0 || editDiscount > editSubtotal) {
+            alert("Discount must be between zero and the purchase subtotal.");
+            return;
+        }
 
         try {
             setSavingEdit(true);
             const response = await api.put(`/purchases/${id}`, {
                 vendor_id: purchase.vendor_id,
                 amount_paid: purchase.amount_paid,
+                discount: editDiscount,
                 items: editableItems.map((item) => ({
                     product_id: item.product_id,
                     variation_id: item.variation_id || null,
@@ -319,8 +330,8 @@ export default function PurchaseDetailPage() {
                             <TableRow className="bg-gray-50/50">
                                 <TableHead>Product</TableHead>
                                 <TableHead className="text-right">Quantity</TableHead>
-                                <TableHead className="text-right">Unit Cost</TableHead>
-                                <TableHead className="text-right">Total Cost</TableHead>
+                                <TableHead className="text-right">Effective Unit Cost</TableHead>
+                                <TableHead className="text-right">Net Line Total</TableHead>
                                 <TableHead>Batch</TableHead>
                                 <TableHead>Expiry Date</TableHead>
                             </TableRow>
@@ -351,7 +362,15 @@ export default function PurchaseDetailPage() {
                     <div className="space-y-2">
                         <div className="flex justify-between text-lg">
                             <span className="text-gray-600">Subtotal:</span>
-                            <span className="font-medium">Rs {purchase.total_amount.toFixed(2)}</span>
+                            <span className="font-medium">Rs {(purchase.subtotal_amount ?? purchase.total_amount).toFixed(2)}</span>
+                        </div>
+                        {(purchase.discount || 0) > 0 && <div className="flex justify-between text-lg text-green-700">
+                            <span>Discount:</span>
+                            <span className="font-medium">-Rs {purchase.discount.toFixed(2)}</span>
+                        </div>}
+                        <div className="flex justify-between text-lg border-t pt-2">
+                            <span className="text-gray-600">Total payable:</span>
+                            <span className="font-semibold">Rs {purchase.total_amount.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between text-lg border-t pt-2">
                             <span className="text-gray-600">Paid at Purchase:</span>
@@ -366,7 +385,7 @@ export default function PurchaseDetailPage() {
                     <DialogHeader>
                         <DialogTitle>Edit Purchase #{purchase.id}</DialogTitle>
                         <DialogDescription>
-                            Changes will update stock, vendor accounting, and payable balances.
+                            Changes will update stock, vendor accounting, and payable balances. Item costs are entered before the invoice discount.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -498,6 +517,12 @@ export default function PurchaseDetailPage() {
                                 </div>
 
                             ))}
+                        </div>
+                        <div className="ml-auto max-w-sm space-y-2 rounded-lg border p-4">
+                            <Label htmlFor="edit-purchase-discount">Vendor Discount (Rs)</Label>
+                            <Input id="edit-purchase-discount" type="number" min="0" step="0.01" value={editDiscount} onChange={(event) => setEditDiscount(Math.max(0, Number.parseFloat(event.target.value) || 0))} />
+                            <div className="flex justify-between text-sm"><span>Subtotal</span><span>Rs {editableItems.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0).toFixed(2)}</span></div>
+                            <div className="flex justify-between font-semibold"><span>Total</span><span>Rs {Math.max(0, editableItems.reduce((sum, item) => sum + item.quantity * item.unit_cost, 0) - editDiscount).toFixed(2)}</span></div>
                         </div>
                     </div>
 

@@ -54,6 +54,12 @@ export interface StoreSettings {
 
 export type StoreSettingsUpdate = Omit<StoreSettings, 'id' | 'logo_url'>;
 
+export interface LicenseStatus {
+    enforced: boolean;
+    expires_at: string | null;
+    days_remaining: number | null;
+}
+
 export const storeSettingsApi = {
     get: async (): Promise<StoreSettings> => {
         const response = await api.get('/settings/store');
@@ -71,6 +77,10 @@ export const storeSettingsApi = {
     },
     deleteLogo: async (): Promise<StoreSettings> => {
         const response = await api.delete('/settings/logo');
+        return response.data;
+    },
+    getLicenseStatus: async (): Promise<LicenseStatus> => {
+        const response = await api.get('/settings/license-status');
         return response.data;
     },
 };
@@ -414,6 +424,7 @@ export interface HoldPurchasePayload {
     vendorId: string;
     vendorSearch: string;
     amountPaid: string;
+    discount?: string;
     items: Array<{
         product_id: number;
         product_name: string;
@@ -443,6 +454,10 @@ export const customerApi = {
         skip?: number;
         limit?: number;
         search?: string;
+        balance_status?: 'udhar' | 'credit' | 'settled';
+        udhar_min?: number;
+        udhar_max?: number;
+        sales_status?: 'with_sales' | 'without_sales';
     }): Promise<CustomerListResponse[]> => {
         const response = await api.get('/customers/', { params });
         return response.data;
@@ -451,6 +466,10 @@ export const customerApi = {
     // Count customers with optional search
     countCustomers: async (params?: {
         search?: string;
+        balance_status?: 'udhar' | 'credit' | 'settled';
+        udhar_min?: number;
+        udhar_max?: number;
+        sales_status?: 'with_sales' | 'without_sales';
     }): Promise<{ total: number }> => {
         const response = await api.get('/customers/count', { params });
         return response.data;
@@ -709,6 +728,8 @@ export interface ProductSalesHistoryItem {
     product_id: number;
     product_name: string;
     sku?: string | null;
+    category?: string | null;
+    company?: string | null;
     base_unit: string;
     purchased_quantity: number;
     sold_quantity: number;
@@ -718,6 +739,14 @@ export interface ProductSalesHistoryItem {
     profit_loss: number;
     purchase_orders: number;
     sales_transactions: number;
+}
+
+export interface ProductReportOption {
+    id: number;
+    name: string;
+    sku?: string | null;
+    category?: string | null;
+    company?: string | null;
 }
 
 export interface ProductSalesHistoryReport {
@@ -732,6 +761,11 @@ export interface ProductSalesHistoryReport {
         profit_loss: number;
     };
     search: string;
+    product_id?: number | null;
+    category?: string | null;
+    company?: string | null;
+    total_matching_products: number;
+    truncated: boolean;
     period_start: string;
     period_end: string;
 }
@@ -782,6 +816,23 @@ export interface AnalyticsOverviewReport {
     months: number;
     low_stock: AnalyticsStockItem[];
     out_of_stock: AnalyticsStockItem[];
+    expired_batches: Array<{
+        batch_id: number;
+        batch_number: string;
+        product_id: number;
+        product_name: string;
+        sku?: string | null;
+        category?: string | null;
+        company?: string | null;
+        quantity_remaining: number;
+        base_unit: string;
+        expiry_date: string;
+        days_expired: number;
+        stock_value: number;
+    }>;
+    low_stock_count: number;
+    out_of_stock_count: number;
+    expired_batch_count: number;
     most_selling: AnalyticsProductSale[];
     least_selling: AnalyticsProductSale[];
     monthly_sales: Array<{ month: string; quantity_sold: number; revenue: number }>;
@@ -830,6 +881,14 @@ export const reportsApi = {
         start_date?: string;
         end_date?: string;
         search?: string;
+        product_id?: number;
+        category?: string;
+        company?: string;
+        product_ids?: string;
+        categories?: string;
+        companies?: string;
+        skip?: number;
+        max_products?: number;
     }): Promise<ProductSalesHistoryReport> => {
         const response = await api.get('/reports/sales/product-history', { params });
         return response.data;
@@ -838,11 +897,27 @@ export const reportsApi = {
         start_date?: string;
         end_date?: string;
         search?: string;
+        product_id?: number;
+        category?: string;
+        company?: string;
+        product_ids?: string;
+        categories?: string;
+        companies?: string;
+        skip?: number;
+        max_products?: number;
     }): Promise<Blob> => {
         const response = await api.get('/reports/sales/product-history', {
             params: { ...params, export: true },
             responseType: 'blob',
         });
+        return response.data;
+    },
+    getProductFilterOptions: async (): Promise<{ categories: string[]; companies: string[] }> => {
+        const response = await api.get('/reports/sales/product-filter-options');
+        return response.data;
+    },
+    getProductOptions: async (search: string, limit = 50): Promise<ProductReportOption[]> => {
+        const response = await api.get('/reports/sales/product-options', { params: { search, limit } });
         return response.data;
     },
     getVendorLedger: async (id: number, params?: { start_date?: string; end_date?: string }): Promise<LedgerReport> => {

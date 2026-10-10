@@ -46,6 +46,7 @@ function PurchasePageContent() {
     
     const [items, setItems] = useState<any[]>([]);
     const [amountPaid, setAmountPaid] = useState<string>('');
+    const [discount, setDiscount] = useState<string>('');
     const [heldPurchases, setHeldPurchases] = useState<HoldPurchaseResponse[]>([]);
     const [heldOpen, setHeldOpen] = useState(false);
     const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
@@ -60,6 +61,8 @@ function PurchasePageContent() {
         vendorId?: string;
         vendorName: string;
         total: number;
+        subtotal: number;
+        discount: number;
         paid: number;
         date: string;
         status: string;
@@ -83,6 +86,7 @@ function PurchasePageContent() {
     const [newProductName, setNewProductName] = useState('');
     const [newProductSku, setNewProductSku] = useState('');
     const [newProductCategory, setNewProductCategory] = useState('');
+    const [newProductCompany, setNewProductCompany] = useState('');
     const [newProductSellingPrice, setNewProductSellingPrice] = useState('');
     const [newProductCostPrice, setNewProductCostPrice] = useState('');
     const [savingProduct, setSavingProduct] = useState(false);
@@ -90,12 +94,14 @@ function PurchasePageContent() {
         vendorId: string;
         vendorSearch: string;
         amountPaid: string;
+        discount: string;
         items: any[];
         token: string | null;
     }>({
         vendorId: '',
         vendorSearch: '',
         amountPaid: '',
+        discount: '',
         items: [],
         token: null,
     });
@@ -155,10 +161,11 @@ function PurchasePageContent() {
             vendorId,
             vendorSearch,
             amountPaid,
+            discount,
             items,
             token,
         };
-    }, [vendorId, vendorSearch, amountPaid, items, token]);
+    }, [vendorId, vendorSearch, amountPaid, discount, items, token]);
 
     // Auto-hold draft on tab close/navigation/visibility changes
     useEffect(() => {
@@ -166,6 +173,7 @@ function PurchasePageContent() {
             vendorId: string;
             vendorSearch: string;
             amountPaid: string;
+            discount: string;
             items: any[];
             token: string | null;
         }) => {
@@ -174,6 +182,7 @@ function PurchasePageContent() {
                 vendorId: snapshot.vendorId,
                 vendorSearch: snapshot.vendorSearch,
                 amountPaid: snapshot.amountPaid,
+                discount: snapshot.discount,
                 items: snapshot.items,
             };
             const signature = JSON.stringify(payload);
@@ -186,7 +195,8 @@ function PurchasePageContent() {
                 (snapshot.items || []).length > 0 ||
                 !!snapshot.vendorId.trim() ||
                 !!snapshot.vendorSearch.trim() ||
-                !!snapshot.amountPaid.trim();
+                !!snapshot.amountPaid.trim() ||
+                !!snapshot.discount.trim();
             if (!hasDraft || autoHoldInFlightRef.current) return;
 
             const { label, payload, signature } = buildHoldRequest(snapshot);
@@ -209,7 +219,8 @@ function PurchasePageContent() {
                 (snapshot.items || []).length > 0 ||
                 !!snapshot.vendorId.trim() ||
                 !!snapshot.vendorSearch.trim() ||
-                !!snapshot.amountPaid.trim();
+                !!snapshot.amountPaid.trim() ||
+                !!snapshot.discount.trim();
             if (!snapshot.token || !hasDraft) return;
 
             const { label, payload, signature } = buildHoldRequest(snapshot);
@@ -316,6 +327,7 @@ function PurchasePageContent() {
         setNewProductName(productSearch);
         setNewProductSku('');
         setNewProductCategory('');
+        setNewProductCompany('');
         setNewProductSellingPrice('');
         setNewProductCostPrice('');
         setShowNewProductDialog(true);
@@ -334,6 +346,7 @@ function PurchasePageContent() {
                 name: newProductName,
                 sku: newProductSku.trim() || null,
                 category: newProductCategory || 'General',
+                company: newProductCompany.trim() || null,
                 selling_price: parseFloat(newProductSellingPrice),
                 cost_price: newProductCostPrice ? parseFloat(newProductCostPrice) : parseFloat(newProductSellingPrice),
                 quantity: 0,
@@ -448,13 +461,16 @@ function PurchasePageContent() {
         setItems(items.filter((_, i) => i !== index));
     };
 
-    const totalAmount = items.reduce((acc, item) => acc + item.total_cost, 0);
+    const subtotalAmount = items.reduce((acc, item) => acc + item.total_cost, 0);
+    const discountAmount = Math.max(0, Number.parseFloat(discount) || 0);
+    const totalAmount = Math.max(0, subtotalAmount - discountAmount);
 
     const clearPurchaseForm = () => {
         setVendorId('');
         setVendorSearch('');
         setItems([]);
         setAmountPaid('');
+        setDiscount('');
         setSelectedProduct(null);
         setProductSearch('');
         setQty('');
@@ -465,7 +481,8 @@ function PurchasePageContent() {
     };
 
     const calculateHeldPurchaseTotal = (hold: HoldPurchaseResponse) => {
-        return (hold.payload.items || []).reduce((sum, item) => sum + (item.total_cost || 0), 0);
+        const heldSubtotal = (hold.payload.items || []).reduce((sum, item) => sum + (item.total_cost || 0), 0);
+        return Math.max(0, heldSubtotal - (Number.parseFloat(hold.payload.discount || '') || 0));
     };
 
     const holdCurrentPurchase = async () => {
@@ -479,6 +496,7 @@ function PurchasePageContent() {
             vendorId,
             vendorSearch,
             amountPaid,
+            discount,
             items,
         };
 
@@ -498,6 +516,7 @@ function PurchasePageContent() {
         setVendorId(payload.vendorId || '');
         setVendorSearch(payload.vendorSearch || '');
         setAmountPaid(payload.amountPaid || '');
+        setDiscount(payload.discount || '');
         setItems(payload.items || []);
 
         try {
@@ -522,6 +541,10 @@ function PurchasePageContent() {
             alert("Please select a vendor and add at least one item");
             return;
         }
+        if (discountAmount > subtotalAmount) {
+            alert("Discount cannot exceed the purchase subtotal");
+            return;
+        }
 
         if (purchaseSubmissionRef.current) return;
         purchaseSubmissionRef.current = true;
@@ -531,6 +554,7 @@ function PurchasePageContent() {
                         const response = await api.post('/purchases/', {
                 vendor_id: parseInt(vendorId),
                 amount_paid: amountPaid ? parseFloat(amountPaid) : 0,
+                discount: discountAmount,
                 items: items.map(i => ({
                     product_id: i.product_id,
                     quantity: i.quantity,
@@ -546,6 +570,8 @@ function PurchasePageContent() {
                             vendorId,
                                 vendorName: vendor?.name || "Vendor",
                                 total: response.data.total_amount || totalAmount,
+                                subtotal: response.data.subtotal_amount || subtotalAmount,
+                                discount: response.data.discount || discountAmount,
                                 paid: response.data.amount_paid || (amountPaid ? parseFloat(amountPaid) : 0),
                                 date: response.data.created_at || new Date().toISOString(),
                                 status: response.data.status || "unpaid",
@@ -673,6 +699,14 @@ function PurchasePageContent() {
                                         <div><span className="font-medium">Date:</span> {new Date(receiptData.date).toLocaleString()}</div>
                                     </div>
                                     <div className="border-t border-b border-dashed py-2">
+                                        <div className="flex justify-between">
+                                            <span>Subtotal</span>
+                                            <span>rs {receiptData.subtotal.toFixed(2)}</span>
+                                        </div>
+                                        {receiptData.discount > 0 && <div className="flex justify-between text-green-700">
+                                            <span>Discount</span>
+                                            <span>-rs {receiptData.discount.toFixed(2)}</span>
+                                        </div>}
                                         <div className="flex justify-between">
                                             <span>Total</span>
                                             <span className="font-semibold">rs {receiptData.total.toFixed(2)}</span>
@@ -915,6 +949,22 @@ function PurchasePageContent() {
                         </div>
 
                         <div>
+                            <Label className="mb-2 block">Vendor Discount (Rs)</Label>
+                            <Input
+                                type="number"
+                                min="0"
+                                max={subtotalAmount}
+                                step="0.01"
+                                value={discount}
+                                onChange={(e) => setDiscount(e.target.value)}
+                                placeholder="0.00"
+                                disabled={items.length === 0}
+                                className="text-base"
+                            />
+                            {discountAmount > 0 && <p className="mt-2 text-sm text-green-700">Subtotal Rs {subtotalAmount.toFixed(2)} − discount Rs {discountAmount.toFixed(2)}</p>}
+                        </div>
+
+                        <div>
                             <Label className="mb-2 block">Amount Paid Now ($)</Label>
                             <Input
                                 type="number"
@@ -1057,6 +1107,16 @@ function PurchasePageContent() {
                                 value={newProductCategory}
                                 onChange={(e) => setNewProductCategory(e.target.value)}
                                 placeholder="e.g., Beverages, Grocery, Electronics"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="productCompany">Company / Brand</Label>
+                            <Input
+                                id="productCompany"
+                                value={newProductCompany}
+                                onChange={(e) => setNewProductCompany(e.target.value)}
+                                placeholder="e.g., Nestlé"
                             />
                         </div>
 

@@ -81,12 +81,19 @@ def read_products(
     limit: int = 100,
     search: Optional[str] = None,
     category: Optional[str] = None,
+    company: Optional[str] = None,
 ) -> Any:
     query = db.query(Product)
     if search:
-        query = query.filter(Product.name.ilike(f"%{search}%") | Product.sku.ilike(f"%{search}%"))
+        query = query.filter(
+            Product.name.ilike(f"%{search}%")
+            | Product.sku.ilike(f"%{search}%")
+            | Product.company.ilike(f"%{search}%")
+        )
     if category and category != "All":
         query = query.filter(Product.category == category)
+    if company and company != "All":
+        query = query.filter(Product.company == company)
 
     products = query.offset(skip).limit(limit).all()
     changed = False
@@ -102,12 +109,19 @@ def count_products(
     db: Session = Depends(deps.get_db),
     search: Optional[str] = None,
     category: Optional[str] = None,
+    company: Optional[str] = None,
 ) -> Any:
     query = db.query(Product)
     if search:
-        query = query.filter(Product.name.ilike(f"%{search}%") | Product.sku.ilike(f"%{search}%"))
+        query = query.filter(
+            Product.name.ilike(f"%{search}%")
+            | Product.sku.ilike(f"%{search}%")
+            | Product.company.ilike(f"%{search}%")
+        )
     if category and category != "All":
         query = query.filter(Product.category == category)
+    if company and company != "All":
+        query = query.filter(Product.company == company)
 
     return {"total": query.count()}
 
@@ -159,6 +173,7 @@ def export_products_csv(
         "name",
         "sku",
         "category",
+        "company",
         "description",
         "selling_price",
         "cost_price",
@@ -178,6 +193,7 @@ def export_products_csv(
                 "name": product.name or "",
                 "sku": product.sku or "",
                 "category": product.category or "",
+                "company": product.company or "",
                 "description": product.description or "",
                 "selling_price": float(product.selling_price or 0),
                 "cost_price": float(product.cost_price or 0),
@@ -427,6 +443,7 @@ async def bulk_import_products(
                 sku = generate_unique_product_sku(db, name)
 
             category = (row.get("category") or "").strip() or "Uncategorized"
+            company = (row.get("company") or "").strip() or None
             description = (row.get("description") or "").strip() or None
             base_unit = (row.get("base_unit") or "").strip() or "piece"
 
@@ -454,6 +471,7 @@ async def bulk_import_products(
                 "name": name,
                 "sku": sku,
                 "category": category,
+                "company": company,
                 "description": description,
                 "selling_price": selling_price,
                 "cost_price": cost_price,

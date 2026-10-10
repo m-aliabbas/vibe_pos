@@ -59,6 +59,7 @@ class ProductBase(BaseModel):
     name: str
     sku: Optional[str] = None
     category: Optional[str] = "Uncategorized"
+    company: Optional[str] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
     selling_price: float = 0.0
@@ -101,6 +102,7 @@ class ProductUpdate(BaseModel):
     name: Optional[str] = None
     sku: Optional[str] = None
     category: Optional[str] = None
+    company: Optional[str] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
     selling_price: Optional[float] = None

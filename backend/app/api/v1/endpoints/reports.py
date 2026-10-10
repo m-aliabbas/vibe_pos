@@ -106,11 +106,18 @@ def get_analytics_overview(
         end = end + timedelta(days=1) - timedelta(microseconds=1)
 
     products = db.query(Product).order_by(Product.name.asc()).all()
+    variation_stock = {
+        row.product_id: float(row.quantity or 0)
+        for row in db.query(
+            ProductVariation.product_id,
+            func.coalesce(func.sum(ProductVariation.quantity), 0).label("quantity"),
+        ).group_by(ProductVariation.product_id).all()
+    }
     stock_rows = []
     for product in products:
         current_stock = float(product.quantity or 0)
         if product.has_variations:
-            current_stock += sum(float(variation.quantity or 0) for variation in product.variations)
+            current_stock += variation_stock.get(product.id, 0.0)
         row = {
             "product_id": product.id,
             "product_name": product.name,
@@ -133,6 +140,33 @@ def get_analytics_overview(
         ),
         key=lambda row: (row["current_stock"] / max(row["threshold"], 1), row["product_name"].lower()),
     )
+
+    expired_query = db.query(StockBatch, Product).join(
+        Product, Product.id == StockBatch.product_id
+    ).filter(
+        StockBatch.status == "active",
+        StockBatch.quantity_remaining > 0,
+        StockBatch.expiry_date.isnot(None),
+        StockBatch.expiry_date <= now_pkt(),
+    )
+    expired_batch_count = expired_query.count()
+    expired_rows = expired_query.order_by(
+        StockBatch.expiry_date.asc(), Product.name.asc()
+    ).limit(100).all()
+    expired_batches = [{
+        "batch_id": batch.id,
+        "batch_number": batch.batch_number,
+        "product_id": product.id,
+        "product_name": product.name,
+        "sku": product.sku,
+        "category": product.category,
+        "company": product.company,
+        "quantity_remaining": float(batch.quantity_remaining or 0),
+        "base_unit": product.base_unit or "piece",
+        "expiry_date": batch.expiry_date.isoformat(),
+        "days_expired": max(0, (now_pkt().date() - batch.expiry_date.date()).days),
+        "stock_value": float(batch.quantity_remaining or 0) * float(batch.unit_cost or 0),
+    } for batch, product in expired_rows]
 
     sales_rows = db.query(
         SaleItem.product_id,
@@ -353,8 +387,12 @@ def get_analytics_overview(
         "period_end": end.isoformat(),
         "top_n": top_n,
         "months": months,
-        "low_stock": low_stock,
-        "out_of_stock": out_of_stock,
+        "low_stock": low_stock[:50],
+        "out_of_stock": out_of_stock[:50],
+        "expired_batches": expired_batches[:100],
+        "low_stock_count": len(low_stock),
+        "out_of_stock_count": len(out_of_stock),
+        "expired_batch_count": expired_batch_count,
         "most_selling": most_selling,
         "least_selling": least_selling,
         "monthly_sales": monthly_sales,
@@ -517,11 +555,86 @@ def get_top_products(
     return result
 
 
+@router.get("/sales/product-filter-options")
+def get_product_filter_options(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Return lightweight distinct values for the on-demand product report filters."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    categories = [
+        row[0] for row in db.query(Product.category).filter(
+            Product.category.isnot(None), Product.category != ""
+        ).distinct().order_by(Product.category.asc()).all()
+    ]
+    companies = [
+        row[0] for row in db.query(Product.company).filter(
+            Product.company.isnot(None), Product.company != ""
+        ).distinct().order_by(Product.company.asc()).all()
+    ]
+    return {"categories": categories, "companies": companies}
+
+
+@router.get("/sales/product-options")
+def get_product_options(
+    search: str = Query("", max_length=200),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Search lightweight product choices without loading full inventory records."""
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    normalized_search = search.strip()
+    if len(normalized_search) < 2:
+        return []
+
+    pattern = f"%{normalized_search}%"
+    matching_variations = db.query(ProductVariation.product_id).filter(
+        or_(
+            ProductVariation.sku.ilike(pattern),
+            ProductVariation.barcode.ilike(pattern),
+        )
+    )
+    rows = db.query(
+        Product.id,
+        Product.name,
+        Product.sku,
+        Product.category,
+        Product.company,
+    ).filter(
+        or_(
+            Product.name.ilike(pattern),
+            Product.sku.ilike(pattern),
+            Product.company.ilike(pattern),
+            Product.id.in_(matching_variations),
+        )
+    ).order_by(Product.name.asc(), Product.id.asc()).limit(limit).all()
+    return [{
+        "id": row.id,
+        "name": row.name,
+        "sku": row.sku,
+        "category": row.category,
+        "company": row.company,
+    } for row in rows]
+
+
 @router.get("/sales/product-history", response_model=ProductSalesHistoryReport)
 def get_product_sales_history(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     search: str = Query("", max_length=200),
+    product_id: Optional[int] = Query(None, ge=1),
+    category: Optional[str] = Query(None, max_length=200),
+    company: Optional[str] = Query(None, max_length=200),
+    product_ids: Optional[str] = Query(None, max_length=4000),
+    categories: Optional[str] = Query(None, max_length=4000),
+    companies: Optional[str] = Query(None, max_length=4000),
+    skip: int = Query(0, ge=0),
+    max_products: int = Query(100, ge=1, le=100),
     export: bool = Query(False),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
@@ -537,6 +650,24 @@ def get_product_sales_history(
 
     normalized_search = search.strip()
     products_query = db.query(Product)
+    selected_product_ids = {
+        int(value) for value in (product_ids or "").split(",")
+        if value.strip().isdigit() and int(value) > 0
+    }
+    selected_categories = {value.strip() for value in (categories or "").split(",") if value.strip()}
+    selected_companies = {value.strip() for value in (companies or "").split(",") if value.strip()}
+    if product_id is not None:
+        selected_product_ids.add(product_id)
+    if selected_product_ids:
+        products_query = products_query.filter(Product.id.in_(selected_product_ids))
+    if category:
+        selected_categories.add(category.strip())
+    if selected_categories:
+        products_query = products_query.filter(Product.category.in_(selected_categories))
+    if company:
+        selected_companies.add(company.strip())
+    if selected_companies:
+        products_query = products_query.filter(Product.company.in_(selected_companies))
     if normalized_search:
         pattern = f"%{normalized_search}%"
         matching_variations = db.query(ProductVariation.product_id).filter(
@@ -550,11 +681,13 @@ def get_product_sales_history(
                 Product.name.ilike(pattern),
                 Product.sku.ilike(pattern),
                 Product.category.ilike(pattern),
+                Product.company.ilike(pattern),
                 Product.id.in_(matching_variations),
             )
         )
 
-    products = products_query.order_by(Product.name.asc(), Product.id.asc()).all()
+    total_matching_products = products_query.count()
+    products = products_query.order_by(Product.name.asc(), Product.id.asc()).offset(skip).limit(max_products).all()
     product_ids = [product.id for product in products]
 
     purchase_map: Dict[int, Dict[str, Any]] = {}
@@ -714,6 +847,8 @@ def get_product_sales_history(
             "product_id": product.id,
             "product_name": product.name,
             "sku": product.sku,
+            "category": product.category,
+            "company": product.company,
             "base_unit": product.base_unit or "piece",
             "purchased_quantity": purchase_data["quantity"],
             "sold_quantity": sales_data["quantity"],
@@ -739,6 +874,8 @@ def get_product_sales_history(
         csv_data = [{
             "Product": item["product_name"],
             "SKU": item["sku"] or "",
+            "Company": item["company"] or "",
+            "Category": item["category"] or "",
             "Base Unit": item["base_unit"],
             "Quantity Purchased": item["purchased_quantity"],
             "Quantity Sold": item["sold_quantity"],
@@ -753,6 +890,11 @@ def get_product_sales_history(
         "products": report_products,
         "summary": summary,
         "search": normalized_search,
+        "product_id": product_id,
+        "category": category.strip() if category else None,
+        "company": company.strip() if company else None,
+        "total_matching_products": total_matching_products,
+        "truncated": skip + len(report_products) < total_matching_products,
         "period_start": start.isoformat(),
         "period_end": end.isoformat(),
     }

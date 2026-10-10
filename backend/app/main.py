@@ -22,7 +22,14 @@ def ensure_schema_columns() -> None:
     table_names = set(inspector.get_table_names())
     with engine.begin() as conn:
         additions = {
-            "products": [("allow_decimal_qty", "BOOLEAN DEFAULT 0")],
+            "products": [
+                ("allow_decimal_qty", "BOOLEAN DEFAULT 0"),
+                ("company", "VARCHAR"),
+            ],
+            "purchases": [
+                ("subtotal_amount", "REAL DEFAULT 0"),
+                ("discount", "REAL DEFAULT 0"),
+            ],
             "sales": [("previous_balance", "REAL DEFAULT 0")],
             "customer_notes": [
                 ("amount", "REAL"),
@@ -55,6 +62,20 @@ def ensure_schema_columns() -> None:
                     conn.exec_driver_sql(
                         f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
                     )
+        if "purchases" in table_names:
+            conn.exec_driver_sql(
+                "UPDATE purchases "
+                "SET subtotal_amount = total_amount "
+                "WHERE subtotal_amount IS NULL "
+                "OR (subtotal_amount = 0 AND COALESCE(total_amount, 0) != 0)"
+            )
+            conn.exec_driver_sql(
+                "UPDATE purchases SET discount = 0 WHERE discount IS NULL"
+            )
+        if "products" in table_names:
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_products_company ON products (company)"
+            )
 
 
 ensure_schema_columns()

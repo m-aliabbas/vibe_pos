@@ -624,6 +624,8 @@ export default function VendorDetailsPage() {
             reference: `#${purchase.id}`,
             status: purchase.status,
             total_amount: Number(purchase.total_amount || 0),
+            subtotal_amount: Number(purchase.subtotal_amount ?? purchase.total_amount ?? 0),
+            discount: Number(purchase.discount || 0),
             amount_paid: Number(purchase.amount_paid || 0),
             balance: Number((purchase.total_amount || 0) - (purchase.amount_paid || 0)),
             description: null as string | null,
@@ -641,6 +643,8 @@ export default function VendorDetailsPage() {
                     reference: entry.source_id ? `#${entry.source_id}` : '-',
                     status: entry.source_type || 'adjustment',
                     total_amount: 0,
+                    subtotal_amount: 0,
+                    discount: 0,
                     amount_paid: 0,
                     balance: 0,
                     description: entry.description || 'Adjustment',
@@ -1235,7 +1239,10 @@ export default function VendorDetailsPage() {
                                                 {row.kind === 'return' ? (
                                                     <span className="text-gray-400">—</span>
                                                 ) : (
-                                                    `Rs ${row.total_amount.toFixed(2)}`
+                                                    <div>
+                                                        <div>Rs {row.total_amount.toFixed(2)}</div>
+                                                        {row.discount > 0 && <div className="text-xs font-normal text-green-700">Discount: Rs {row.discount.toFixed(2)}</div>}
+                                                    </div>
                                                 )}
                                             </TableCell>
                                             <TableCell className="text-right text-gray-500">
