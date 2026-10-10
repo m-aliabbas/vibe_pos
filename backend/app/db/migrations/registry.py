@@ -222,6 +222,40 @@ def migrate_store_settings_extensions_sqlalchemy(connection) -> None:
             )
 
 
+def migrate_product_company_and_purchase_discounts(connection: sqlite3.Connection) -> None:
+    """Add product company metadata and invoice-level purchase discounts."""
+    _add_column_if_missing(connection, "products", "company", "VARCHAR")
+    _add_column_if_missing(connection, "purchases", "subtotal_amount", "REAL DEFAULT 0")
+    _add_column_if_missing(connection, "purchases", "discount", "REAL DEFAULT 0")
+    if "purchases" in _table_names(connection):
+        connection.execute(
+            "UPDATE purchases SET subtotal_amount = total_amount "
+            "WHERE subtotal_amount IS NULL OR subtotal_amount = 0"
+        )
+
+
+def migrate_product_company_and_purchase_discounts_sqlalchemy(connection) -> None:
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(connection)
+    if inspector.has_table("products"):
+        product_columns = {column["name"] for column in inspector.get_columns("products")}
+        if "company" not in product_columns:
+            connection.execute(text('ALTER TABLE products ADD COLUMN company VARCHAR(255)'))
+    if inspector.has_table("purchases"):
+        purchase_columns = {column["name"] for column in inspector.get_columns("purchases")}
+        if "subtotal_amount" not in purchase_columns:
+            connection.execute(text('ALTER TABLE purchases ADD COLUMN subtotal_amount FLOAT DEFAULT 0'))
+        if "discount" not in purchase_columns:
+            connection.execute(text('ALTER TABLE purchases ADD COLUMN discount FLOAT DEFAULT 0'))
+        connection.execute(
+            text(
+                "UPDATE purchases SET subtotal_amount = total_amount "
+                "WHERE subtotal_amount IS NULL OR subtotal_amount = 0"
+            )
+        )
+
+
 def _selected_application_identity() -> tuple[str, str]:
     import os
 
@@ -353,6 +387,13 @@ MIGRATIONS: tuple[Migration, ...] = (
         apply=migrate_store_settings_extensions,
         supported_providers=("sqlite", "postgresql", "mysql"),
         apply_sqlalchemy=migrate_store_settings_extensions_sqlalchemy,
+    ),
+    Migration(
+        migration_id="0007_product_company_and_purchase_discounts",
+        description="Add product company metadata and purchase discount totals",
+        apply=migrate_product_company_and_purchase_discounts,
+        supported_providers=("sqlite", "postgresql", "mysql"),
+        apply_sqlalchemy=migrate_product_company_and_purchase_discounts_sqlalchemy,
     ),
 )
 

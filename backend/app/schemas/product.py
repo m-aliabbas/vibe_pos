@@ -61,6 +61,7 @@ class ProductBase(BaseModel):
     item_type: CatalogItemType = CatalogItemType.STOCK
     sku: Optional[str] = None
     category: Optional[str] = "Uncategorized"
+    company: Optional[str] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
     selling_price: float = 0.0
@@ -104,6 +105,7 @@ class ProductUpdate(BaseModel):
     item_type: Optional[CatalogItemType] = None
     sku: Optional[str] = None
     category: Optional[str] = None
+    company: Optional[str] = None
     description: Optional[str] = None
     image_url: Optional[str] = None
     selling_price: Optional[float] = None

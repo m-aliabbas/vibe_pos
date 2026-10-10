@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import AdminLayout from '@/components/AdminLayout';
 import AdminRouteGuard from '@/components/AdminRouteGuard';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -25,6 +25,7 @@ import {
   compareVersions,
   CURRENT_APP_VERSION,
   detectReleaseTarget,
+  downloadRelease,
   fetchLatestRelease,
   type UpdateManifest,
 } from '@/lib/update';
@@ -43,6 +44,8 @@ export default function UpdatesPage() {
   const [checking, setChecking] = useState(false);
   const [manifest, setManifest] = useState<UpdateManifest | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
 
   const target = detectReleaseTarget();
   const download = target && manifest ? manifest.downloads[target] : undefined;
@@ -50,7 +53,7 @@ export default function UpdatesPage() {
     ? compareVersions(manifest.version, CURRENT_APP_VERSION) > 0
     : false;
 
-  const checkForUpdates = async () => {
+  const checkForUpdates = useCallback(async () => {
     setChecking(true);
     setError(null);
     try {
@@ -65,6 +68,29 @@ export default function UpdatesPage() {
     } finally {
       setChecking(false);
     }
+  }, []);
+
+  useEffect(() => {
+    void checkForUpdates();
+  }, [checkForUpdates]);
+
+  const handleDownload = async () => {
+    if (!download || !manifest) return;
+    setDownloading(true);
+    setDownloadedPath(null);
+    setError(null);
+    try {
+      const savedPath = await downloadRelease(download, manifest.version);
+      if (savedPath) setDownloadedPath(savedPath);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : String(caughtError || 'The installer could not be downloaded.'),
+      );
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -74,7 +100,7 @@ export default function UpdatesPage() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Application Updates</h1>
             <p className="mt-1 text-gray-600">
-              Check for official VibePOS releases and download the latest installer.
+              VibePOS checks GitHub for official releases and securely downloads the latest installer.
             </p>
           </div>
 
@@ -96,7 +122,7 @@ export default function UpdatesPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <Button onClick={checkForUpdates} disabled={checking}>
+              <Button onClick={checkForUpdates} disabled={checking || downloading}>
                 {checking ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -111,6 +137,15 @@ export default function UpdatesPage() {
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {downloadedPath && (
+            <Alert>
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertDescription>
+                The verified installer was saved to {downloadedPath}. Close VibePOS before running it.
+              </AlertDescription>
             </Alert>
           )}
 
@@ -148,11 +183,13 @@ export default function UpdatesPage() {
                       <span>Installer: {formatBytes(download.size)}</span>
                       <span className="font-mono text-xs">SHA-256: {download.sha256}</span>
                     </div>
-                    <Button asChild>
-                      <a href={download.url} target="_blank" rel="noopener noreferrer">
+                    <Button onClick={handleDownload} disabled={downloading}>
+                      {downloading ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
                         <Download className="mr-2 h-4 w-4" />
-                        Download installer
-                      </a>
+                      )}
+                      {downloading ? 'Downloading…' : 'Download installer'}
                     </Button>
                   </div>
                 ) : (

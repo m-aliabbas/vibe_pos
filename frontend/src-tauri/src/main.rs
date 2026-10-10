@@ -218,6 +218,9 @@ use tauri::Manager;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
+mod update_download;
+use update_download::download_update;
+
 const APPLICATION_ID: &str = match option_env!("VIBE_APPLICATION_ID") {
     Some(application_id) => application_id,
     None => "retail",
@@ -514,7 +517,11 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![save_backup_dialog, open_backup_dialog])
+        .invoke_handler(tauri::generate_handler![
+            save_backup_dialog,
+            open_backup_dialog,
+            download_update
+        ])
         .setup(|app| {
             // create log file path early (best-effort)
             let log_path = log_path_fallback(app);

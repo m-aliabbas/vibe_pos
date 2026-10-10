@@ -42,7 +42,12 @@ def create_purchase(
         raise HTTPException(status_code=404, detail="Vendor not found")
     
     # 2. Calculate Totals & Status
-    total_amount = 0.0
+    subtotal_amount = sum(float(item.quantity) * float(item.unit_cost) for item in purchase_in.items)
+    discount = float(purchase_in.discount or 0.0)
+    if discount > subtotal_amount:
+        raise HTTPException(status_code=400, detail="Discount cannot exceed purchase subtotal")
+    total_amount = max(0.0, subtotal_amount - discount)
+    discount_factor = total_amount / subtotal_amount if subtotal_amount > 0 else 1.0
     db_items = []
     price_changed_items = []
 
@@ -71,8 +76,8 @@ def create_purchase(
                     detail=f"Variation {item.variation_id} not found for product {product.name}"
                 )
 
-        item_total = item.quantity * item.unit_cost
-        total_amount += item_total
+        effective_unit_cost = item.unit_cost * discount_factor
+        item_total = item.quantity * effective_unit_cost
 
         # Default expiry 6 months if not set
         expiry = item.expiry_date or (now_pkt() + timedelta(days=180))
@@ -81,7 +86,7 @@ def create_purchase(
             product_id=item.product_id,
             variation_id=item.variation_id,
             quantity=item.quantity,
-            unit_cost=item.unit_cost,
+            unit_cost=effective_unit_cost,
             total_cost=item_total,
             expiry_date=expiry
         )
@@ -89,13 +94,13 @@ def create_purchase(
 
         # Detect cost price change for non-variation products
         old_cost = product.cost_price or 0.0
-        if not item.variation_id and abs(item.unit_cost - old_cost) > 0.001:
-            suggested_selling = round(item.unit_cost * (product.selling_price / old_cost), 2) if old_cost > 0 else product.selling_price
+        if not item.variation_id and abs(effective_unit_cost - old_cost) > 0.001:
+            suggested_selling = round(effective_unit_cost * (product.selling_price / old_cost), 2) if old_cost > 0 else product.selling_price
             price_changed_items.append({
                 "product_id": product.id,
                 "product_name": product.name,
                 "old_cost": old_cost,
-                "new_cost": item.unit_cost,
+                "new_cost": effective_unit_cost,
                 "current_selling_price": product.selling_price,
                 "suggested_selling_price": suggested_selling,
             })
@@ -105,7 +110,7 @@ def create_purchase(
             _inventory(db).receive(product, item.quantity, variation_id=item.variation_id)
         else:
             _inventory(db).receive(product, item.quantity)
-            product.cost_price = item.unit_cost
+            product.cost_price = effective_unit_cost
             if item.update_selling_price and item.selling_price is not None:
                 if item.selling_price < 0:
                     raise HTTPException(
@@ -134,6 +139,8 @@ def create_purchase(
     # 4. Create Purchase Record
     purchase = Purchase(
         vendor_id=purchase_in.vendor_id,
+        subtotal_amount=subtotal_amount,
+        discount=discount,
         total_amount=total_amount,
         amount_paid=total_paid,
         status=status,
@@ -242,7 +249,12 @@ def update_purchase(
         db.delete(existing_item)
 
     # Rebuild purchase items and stock impact
-    total_amount = 0.0
+    subtotal_amount = sum(float(item.quantity) * float(item.unit_cost) for item in purchase_in.items)
+    discount = float(purchase_in.discount or 0.0)
+    if discount > subtotal_amount:
+        raise HTTPException(status_code=400, detail="Discount cannot exceed purchase subtotal")
+    total_amount = max(0.0, subtotal_amount - discount)
+    discount_factor = total_amount / subtotal_amount if subtotal_amount > 0 else 1.0
     db_items = []
 
     for item in purchase_in.items:
@@ -268,8 +280,8 @@ def update_purchase(
                     detail=f"Variation {item.variation_id} not found for product {product.name}"
                 )
 
-        item_total = item.quantity * item.unit_cost
-        total_amount += item_total
+        effective_unit_cost = item.unit_cost * discount_factor
+        item_total = item.quantity * effective_unit_cost
 
         expiry = item.expiry_date or (now_pkt() + timedelta(days=180))
 
@@ -277,7 +289,7 @@ def update_purchase(
             product_id=item.product_id,
             variation_id=item.variation_id,
             quantity=item.quantity,
-            unit_cost=item.unit_cost,
+            unit_cost=effective_unit_cost,
             total_cost=item_total,
             expiry_date=expiry
         )
@@ -287,7 +299,7 @@ def update_purchase(
             _inventory(db).receive(product, item.quantity, variation_id=item.variation_id)
         else:
             _inventory(db).receive(product, item.quantity)
-            product.cost_price = item.unit_cost
+            product.cost_price = effective_unit_cost
             if item.update_selling_price and item.selling_price is not None:
                 if item.selling_price < 0:
                     raise HTTPException(
@@ -304,6 +316,8 @@ def update_purchase(
         status = PurchaseStatus.PARTIAL
 
     purchase.vendor_id = purchase_in.vendor_id
+    purchase.subtotal_amount = subtotal_amount
+    purchase.discount = discount
     purchase.total_amount = total_amount
     purchase.amount_paid = purchase_in.amount_paid
     purchase.status = status

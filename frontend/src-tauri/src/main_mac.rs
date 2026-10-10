@@ -7,6 +7,9 @@ use tauri_plugin_shell::process::CommandEvent;
 use std::time::Duration;
 use std::path::PathBuf;
 
+mod update_download;
+use update_download::download_update;
+
 const APPLICATION_ID: &str = match option_env!("VIBE_APPLICATION_ID") {
     Some(application_id) => application_id,
     None => "retail",
@@ -56,7 +59,11 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![save_backup_dialog, open_backup_dialog])
+        .invoke_handler(tauri::generate_handler![
+            save_backup_dialog,
+            open_backup_dialog,
+            download_update
+        ])
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 

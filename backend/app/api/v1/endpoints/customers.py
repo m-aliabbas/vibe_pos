@@ -197,9 +197,16 @@ def read_customers(
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = Query(None, description="Search by phone, customer_id, or name"),
+    balance_status: Optional[str] = Query(None, pattern="^(udhar|credit|settled)$"),
+    udhar_min: Optional[float] = Query(None, ge=0, description="Minimum outstanding udhar, inclusive"),
+    udhar_max: Optional[float] = Query(None, ge=0, description="Maximum outstanding udhar, inclusive"),
+    sales_status: Optional[str] = Query(None, pattern="^(with_sales|without_sales)$"),
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """Get all customers with optional search"""
+    if udhar_min is not None and udhar_max is not None and udhar_min > udhar_max:
+        raise HTTPException(status_code=400, detail="Minimum udhar cannot exceed maximum udhar")
+
     query = db.query(Customer)
     
     if search:
@@ -212,8 +219,26 @@ def read_customers(
                 *phone_filters,
                 Customer.customer_id.ilike(search_term),
                 Customer.name.ilike(search_term),
+                Customer.email.ilike(search_term),
             )
         )
+
+    if balance_status == "udhar":
+        query = query.filter(Customer.outstanding_balance > 0)
+    elif balance_status == "credit":
+        query = query.filter(Customer.outstanding_balance < 0)
+    elif balance_status == "settled":
+        query = query.filter(Customer.outstanding_balance == 0)
+
+    if udhar_min is not None:
+        query = query.filter(Customer.outstanding_balance >= udhar_min)
+    if udhar_max is not None:
+        query = query.filter(Customer.outstanding_balance <= udhar_max)
+
+    if sales_status == "with_sales":
+        query = query.filter(Customer.sales.any())
+    elif sales_status == "without_sales":
+        query = query.filter(~Customer.sales.any())
     
     customers = query.order_by(Customer.created_at.desc()).offset(skip).limit(limit).all()
     return _reconcile_customers(customers, db)
@@ -223,8 +248,15 @@ def read_customers(
 def count_customers(
     db: Session = Depends(deps.get_db),
     search: Optional[str] = Query(None, description="Search by phone, customer_id, or name"),
+    balance_status: Optional[str] = Query(None, pattern="^(udhar|credit|settled)$"),
+    udhar_min: Optional[float] = Query(None, ge=0, description="Minimum outstanding udhar, inclusive"),
+    udhar_max: Optional[float] = Query(None, ge=0, description="Maximum outstanding udhar, inclusive"),
+    sales_status: Optional[str] = Query(None, pattern="^(with_sales|without_sales)$"),
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
+    if udhar_min is not None and udhar_max is not None and udhar_min > udhar_max:
+        raise HTTPException(status_code=400, detail="Minimum udhar cannot exceed maximum udhar")
+
     query = db.query(Customer)
 
     if search:
@@ -237,8 +269,26 @@ def count_customers(
                 *phone_filters,
                 Customer.customer_id.ilike(search_term),
                 Customer.name.ilike(search_term),
+                Customer.email.ilike(search_term),
             )
         )
+
+    if balance_status == "udhar":
+        query = query.filter(Customer.outstanding_balance > 0)
+    elif balance_status == "credit":
+        query = query.filter(Customer.outstanding_balance < 0)
+    elif balance_status == "settled":
+        query = query.filter(Customer.outstanding_balance == 0)
+
+    if udhar_min is not None:
+        query = query.filter(Customer.outstanding_balance >= udhar_min)
+    if udhar_max is not None:
+        query = query.filter(Customer.outstanding_balance <= udhar_max)
+
+    if sales_status == "with_sales":
+        query = query.filter(Customer.sales.any())
+    elif sales_status == "without_sales":
+        query = query.filter(~Customer.sales.any())
 
     return {"total": query.count()}
 

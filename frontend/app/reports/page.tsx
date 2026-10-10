@@ -8,7 +8,13 @@ import {
   BarChart3,
   Boxes,
   CalendarDays,
+  Check,
+  ChevronsUpDown,
+  Loader2,
   PackageCheck,
+  PackageX,
+  Play,
+  Search,
   RefreshCw,
   ShoppingBag,
   TrendingDown,
@@ -38,9 +44,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AnalyticsOverviewReport, reportsApi } from "@/lib/api";
+import { AnalyticsOverviewReport, ProductSalesHistoryReport, reportsApi } from "@/lib/api";
+
+interface ProductOption {
+  id: number;
+  name: string;
+  sku?: string | null;
+  category?: string | null;
+  company?: string | null;
+}
+
+interface MultiSelectOption {
+  value: string;
+  label: string;
+  description?: string;
+}
 
 const currency = new Intl.NumberFormat("en-PK", {
   style: "currency",
@@ -49,6 +70,7 @@ const currency = new Intl.NumberFormat("en-PK", {
 });
 
 const quantity = new Intl.NumberFormat("en-PK", { maximumFractionDigits: 2 });
+const PRODUCT_REPORT_PAGE_SIZE = 100;
 
 function EmptyState({ message }: { message: string }) {
   return <div className="py-10 text-center text-sm text-slate-500">{message}</div>;
@@ -71,6 +93,20 @@ export default function ReportsPage() {
   const [data, setData] = useState<AnalyticsOverviewReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [productFilterOptions, setProductFilterOptions] = useState<{ categories: string[]; companies: string[] }>({ categories: [], companies: [] });
+  const [productSearch, setProductSearch] = useState("");
+  const [productSuggestions, setProductSuggestions] = useState<ProductOption[]>([]);
+  const [productOptionsLoading, setProductOptionsLoading] = useState(false);
+  const [selectedProducts, setSelectedProducts] = useState<ProductOption[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+  const [productPeriod, setProductPeriod] = useState("30");
+  const [productStartDate, setProductStartDate] = useState(format(subDays(new Date(), 29), "yyyy-MM-dd"));
+  const [productEndDate, setProductEndDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [productReport, setProductReport] = useState<ProductSalesHistoryReport | null>(null);
+  const [productReportLoading, setProductReportLoading] = useState(false);
+  const [productReportError, setProductReportError] = useState<string | null>(null);
+  const [productReportPage, setProductReportPage] = useState(1);
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
@@ -95,8 +131,90 @@ export default function ReportsPage() {
     fetchAnalytics();
   }, [fetchAnalytics]);
 
+  useEffect(() => {
+    reportsApi.getProductFilterOptions()
+      .then(setProductFilterOptions)
+      .catch((requestError) => console.error("Failed to load product filters:", requestError));
+  }, []);
+
+  useEffect(() => {
+    const normalized = productSearch.trim();
+    if (normalized.length < 2) {
+      setProductSuggestions([]);
+      setProductOptionsLoading(false);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setProductOptionsLoading(true);
+      reportsApi.getProductOptions(normalized, 50)
+        .then((options) => {
+          if (active) setProductSuggestions(options);
+        })
+        .catch((requestError) => console.error("Failed to search products:", requestError))
+        .finally(() => { if (active) setProductOptionsLoading(false); });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [productSearch]);
+
+  const loadProductReport = useCallback(async (page: number) => {
+    setProductReportLoading(true);
+    setProductReportError(null);
+    setProductReport(null);
+    try {
+      const report = await reportsApi.getProductSalesHistory({
+        start_date: productStartDate,
+        end_date: productEndDate,
+        product_ids: selectedProducts.map((item) => item.id).join(',') || undefined,
+        categories: selectedCategories.join(',') || undefined,
+        companies: selectedCompanies.join(',') || undefined,
+        skip: (page - 1) * PRODUCT_REPORT_PAGE_SIZE,
+        max_products: PRODUCT_REPORT_PAGE_SIZE,
+      });
+      setProductReport(report);
+      setProductReportPage(page);
+    } catch (requestError) {
+      console.error("Failed to load product report:", requestError);
+      setProductReportError("The product report could not be loaded. Please narrow the filters and try again.");
+    } finally {
+      setProductReportLoading(false);
+    }
+  }, [productEndDate, productStartDate, selectedCategories, selectedCompanies, selectedProducts]);
+
+  const updateProductPeriod = (value: string) => {
+    setProductPeriod(value);
+    setProductReportPage(1);
+    setProductReport(null);
+    setProductReportError(null);
+    if (value === "custom") return;
+    const today = new Date();
+    const start = value === "year"
+      ? new Date(today.getFullYear(), 0, 1)
+      : subDays(today, Math.max(0, Number(value) - 1));
+    setProductStartDate(format(start, "yyyy-MM-dd"));
+    setProductEndDate(format(today, "yyyy-MM-dd"));
+  };
+
+  const selectableProducts = useMemo<MultiSelectOption[]>(() => {
+    const options = new Map<number, ProductOption>();
+    [...selectedProducts, ...productSuggestions].forEach((item) => options.set(item.id, item));
+    return Array.from(options.values()).map((item) => ({
+      value: String(item.id),
+      label: item.name,
+      description: [item.sku, item.company || item.category].filter(Boolean).join(" · "),
+    }));
+  }, [productSuggestions, selectedProducts]);
+
+  const productDatesInvalid = !productStartDate || !productEndDate || productStartDate > productEndDate;
+  const productReportTotalPages = productReport
+    ? Math.max(1, Math.ceil(productReport.total_matching_products / PRODUCT_REPORT_PAGE_SIZE))
+    : 1;
+
   const summary = useMemo(() => ({
-    stockAttention: (data?.low_stock.length || 0) + (data?.out_of_stock.length || 0),
+    stockAttention: (data?.low_stock_count || 0) + (data?.out_of_stock_count || 0),
     vendorPayable: data?.outstanding_vendors.reduce((sum, item) => sum + item.outstanding_amount, 0) || 0,
     customerReceivable: data?.outstanding_customers.reduce((sum, item) => sum + item.outstanding_amount, 0) || 0,
     periodRevenue: data?.monthly_sales.at(-1)?.revenue || 0,
@@ -156,7 +274,7 @@ export default function ReportsPage() {
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
-              { label: "Stock needs attention", value: summary.stockAttention, note: `${data?.out_of_stock.length || 0} out of stock`, icon: AlertTriangle, color: "text-amber-600", bg: "bg-amber-50" },
+              { label: "Stock needs attention", value: summary.stockAttention, note: `${data?.out_of_stock_count || 0} out of stock`, icon: AlertTriangle, color: "text-amber-600", bg: "bg-amber-50" },
               { label: "Vendor payables", value: currency.format(summary.vendorPayable), note: `Top ${topN} outstanding`, icon: WalletCards, color: "text-rose-600", bg: "bg-rose-50" },
               { label: "Customer receivables", value: currency.format(summary.customerReceivable), note: `Top ${topN} outstanding`, icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
               { label: "Latest month sales", value: currency.format(summary.periodRevenue), note: `${months}-month trend`, icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
@@ -181,12 +299,140 @@ export default function ReportsPage() {
 
             <TabsContent value="inventory" className="space-y-5">
               <div className="grid gap-5 xl:grid-cols-2">
-                <StockCard title="Low stock products" description="In stock, but at or below the reorder threshold" icon={AlertTriangle} tone="amber" rows={data?.low_stock || []} loading={loading} />
-                <StockCard title="Out of stock" description="Products with no available stock" icon={PackageCheck} tone="rose" rows={data?.out_of_stock || []} loading={loading} />
+                <StockCard title="Low stock products" description="In stock, but at or below the reorder threshold" icon={AlertTriangle} tone="amber" rows={data?.low_stock || []} total={data?.low_stock_count || 0} loading={loading} />
+                <StockCard title="Out of stock" description="Products with no available stock" icon={PackageCheck} tone="rose" rows={data?.out_of_stock || []} total={data?.out_of_stock_count || 0} loading={loading} />
               </div>
+              <Card className="border-0 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><PackageX className="h-5 w-5 text-rose-600" /> Expired products <Badge variant="destructive" className="ml-auto">{data?.expired_batch_count || 0}</Badge></CardTitle>
+                  <CardDescription>Active batches with stock remaining after their expiry date</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-sm">
+                      <thead><tr className="border-b text-left text-xs uppercase tracking-wide text-slate-500"><th className="pb-3">Product</th><th className="pb-3">Batch</th><th className="pb-3">Expiry</th><th className="pb-3 text-right">Expired by</th><th className="pb-3 text-right">Remaining</th><th className="pb-3 text-right">Stock value</th></tr></thead>
+                      <tbody>{data?.expired_batches.map((item) => <tr key={item.batch_id} className="border-b border-slate-100 last:border-0"><td className="py-3"><p className="font-medium">{item.product_name}</p><p className="text-xs text-slate-500">{item.company || item.category || item.sku || "—"}</p></td><td className="py-3 font-mono text-xs">{item.batch_number}</td><td className="py-3">{format(new Date(item.expiry_date), "dd MMM yyyy")}</td><td className="py-3 text-right text-rose-700">{item.days_expired} days</td><td className="py-3 text-right font-semibold">{quantity.format(item.quantity_remaining)} {item.base_unit}</td><td className="py-3 text-right">{currency.format(item.stock_value)}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                  {!loading && !data?.expired_batches.length && <EmptyState message="No expired stock is currently on hand." />}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="products" className="space-y-5">
+              <Card className="border-0 shadow-sm">
+                <CardHeader>
+                  <CardTitle>Per-product sales report</CardTitle>
+                  <CardDescription>All companies, categories, and products are included by default. Choose specific filters to narrow the report.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 lg:grid-cols-3">
+                    <ReportMultiSelect
+                      label="Companies / brands"
+                      allLabel="All companies"
+                      options={productFilterOptions.companies.map((item) => ({ value: item, label: item }))}
+                      selected={selectedCompanies}
+                      onSelectedChange={(values) => { setSelectedCompanies(values); setProductReportPage(1); setProductReport(null); setProductReportError(null); }}
+                    />
+                    <ReportMultiSelect
+                      label="Categories"
+                      allLabel="All categories"
+                      options={productFilterOptions.categories.map((item) => ({ value: item, label: item }))}
+                      selected={selectedCategories}
+                      onSelectedChange={(values) => { setSelectedCategories(values); setProductReportPage(1); setProductReport(null); setProductReportError(null); }}
+                    />
+                    <ReportMultiSelect
+                      label="Products"
+                      allLabel="All products"
+                      options={selectableProducts}
+                      selected={selectedProducts.map((item) => String(item.id))}
+                      searchValue={productSearch}
+                      onSearchValueChange={setProductSearch}
+                      loading={productOptionsLoading}
+                      searchHint="Type at least 2 characters"
+                      onSelectedChange={(values) => {
+                        const available = new Map([...selectedProducts, ...productSuggestions].map((item) => [String(item.id), item]));
+                        setSelectedProducts(values.flatMap((value) => available.get(value) || []));
+                        setProductReportPage(1);
+                        setProductReport(null);
+                        setProductReportError(null);
+                      }}
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="grid gap-4 md:grid-cols-[220px_1fr_auto] md:items-end">
+                      <div className="space-y-2">
+                        <Label>Time period</Label>
+                        <Select value={productPeriod} onValueChange={updateProductPeriod}>
+                          <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">Today</SelectItem>
+                            <SelectItem value="7">Last 7 days</SelectItem>
+                            <SelectItem value="30">Last 30 days</SelectItem>
+                            <SelectItem value="90">Last 90 days</SelectItem>
+                            <SelectItem value="year">This year</SelectItem>
+                            <SelectItem value="custom">Custom dates</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label htmlFor="product-report-from">From</Label>
+                          <Input id="product-report-from" type="date" value={productStartDate} disabled={productPeriod !== "custom"} onChange={(event) => { setProductStartDate(event.target.value); setProductReportPage(1); setProductReport(null); setProductReportError(null); }} className="bg-white" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="product-report-to">To</Label>
+                          <Input id="product-report-to" type="date" value={productEndDate} disabled={productPeriod !== "custom"} onChange={(event) => { setProductEndDate(event.target.value); setProductReportPage(1); setProductReport(null); setProductReportError(null); }} className="bg-white" />
+                        </div>
+                      </div>
+                      <Button onClick={() => loadProductReport(1)} disabled={productDatesInvalid || productReportLoading} className="min-w-36">
+                        {productReportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                        {productReportLoading ? "Loading…" : "Load Report"}
+                      </Button>
+                    </div>
+                    {productDatesInvalid && <p className="mt-3 text-xs text-rose-700">Choose a valid date range.</p>}
+                  </div>
+
+                  {productReportError && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertTitle>Unable to load product report</AlertTitle><AlertDescription>{productReportError}</AlertDescription></Alert>}
+
+                  {!productReport && !productReportLoading && !productReportError && (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white py-12 text-center">
+                      <Play className="mx-auto mb-3 h-8 w-8 text-slate-400" />
+                      <p className="font-medium text-slate-700">Your report has not been loaded yet</p>
+                      <p className="mt-1 text-sm text-slate-500">Review the filters and time period, then click Load Report.</p>
+                    </div>
+                  )}
+
+                  {productReport && (
+                    <>
+                      {productReportTotalPages > 1 && (
+                        <p className="text-xs text-slate-500">Summary values cover the {productReport.products.length} products shown on this page.</p>
+                      )}
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <ReportMetric label="Sales revenue" value={currency.format(productReport.summary.sales_revenue)} />
+                        <ReportMetric label="Quantity sold" value={quantity.format(productReport.summary.sold_quantity)} />
+                        <ReportMetric label="Purchase cost" value={currency.format(productReport.summary.purchase_cost)} />
+                        <ReportMetric label="Gross profit / loss" value={currency.format(productReport.summary.profit_loss)} tone={productReport.summary.profit_loss >= 0 ? "positive" : "negative"} />
+                      </div>
+                      <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><thead><tr className="border-b text-left text-xs uppercase tracking-wide text-slate-500"><th className="pb-3">Product</th><th className="pb-3">Company / category</th><th className="pb-3 text-right">Purchased</th><th className="pb-3 text-right">Sold</th><th className="pb-3 text-right">Sales</th><th className="pb-3 text-right">COGS</th><th className="pb-3 text-right">Profit / loss</th><th className="pb-3 text-right">Transactions</th></tr></thead><tbody>{productReport.products.map((item) => <tr key={item.product_id} className="border-b border-slate-100 last:border-0"><td className="py-3"><p className="font-medium">{item.product_name}</p><p className="text-xs text-slate-500">{item.sku || "No SKU"}</p></td><td className="py-3"><p>{item.company || "—"}</p><p className="text-xs text-slate-500">{item.category || "Uncategorized"}</p></td><td className="py-3 text-right">{quantity.format(item.purchased_quantity)} {item.base_unit}</td><td className="py-3 text-right">{quantity.format(item.sold_quantity)} {item.base_unit}</td><td className="py-3 text-right">{currency.format(item.sales_revenue)}</td><td className="py-3 text-right">{currency.format(item.cost_of_goods_sold)}</td><td className={`py-3 text-right font-bold ${item.profit_loss >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{currency.format(item.profit_loss)}</td><td className="py-3 text-right">{item.sales_transactions}</td></tr>)}</tbody></table></div>
+                      {!productReport.products.length && <EmptyState message="No products match the selected filters." />}
+                      {productReport.total_matching_products > 0 && (
+                        <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-sm text-slate-500">
+                            Showing {(productReportPage - 1) * PRODUCT_REPORT_PAGE_SIZE + 1}–{Math.min(productReportPage * PRODUCT_REPORT_PAGE_SIZE, productReport.total_matching_products)} of {productReport.total_matching_products} products
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => loadProductReport(productReportPage - 1)} disabled={productReportPage <= 1 || productReportLoading}>Previous</Button>
+                            <span className="min-w-24 text-center text-sm font-medium">Page {productReportPage} of {productReportTotalPages}</span>
+                            <Button variant="outline" size="sm" onClick={() => loadProductReport(productReportPage + 1)} disabled={productReportPage >= productReportTotalPages || productReportLoading}>Next</Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
               <Card className="border-0 shadow-sm">
                 <CardHeader><CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5 text-blue-600" /> Sales over the last {months} months</CardTitle><CardDescription>Revenue and units sold across all products</CardDescription></CardHeader>
                 <CardContent className="h-[320px]">
@@ -255,8 +501,104 @@ export default function ReportsPage() {
   );
 }
 
-function StockCard({ title, description, icon: Icon, tone, rows, loading }: { title: string; description: string; icon: typeof AlertTriangle; tone: "amber" | "rose"; rows: AnalyticsOverviewReport["low_stock"]; loading: boolean }) {
-  return <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Icon className={`h-5 w-5 ${tone === "amber" ? "text-amber-600" : "text-rose-600"}`} />{title}<Badge variant="secondary" className="ml-auto">{rows.length}</Badge></CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="space-y-2">{rows.slice(0, 20).map((item) => <div key={item.product_id} className="flex items-center justify-between rounded-lg border border-slate-100 p-3"><div className="min-w-0"><p className="truncate font-medium">{item.product_name}</p><p className="text-xs text-slate-500">{item.sku || item.category || "No SKU"}</p></div><div className="text-right"><p className={`font-bold ${tone === "amber" ? "text-amber-700" : "text-rose-700"}`}>{quantity.format(item.current_stock)} {item.base_unit}</p><p className="text-xs text-slate-500">Reorder at {item.threshold}</p></div></div>)}{!loading && !rows.length && <EmptyState message={tone === "amber" ? "No products are running low." : "No products are out of stock."} />}</CardContent></Card>;
+function ReportMetric({ label, value, tone }: { label: string; value: string; tone?: "positive" | "negative" }) {
+  return <div className="rounded-xl border border-slate-100 bg-slate-50 p-4"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-1 text-xl font-bold ${tone === "positive" ? "text-emerald-700" : tone === "negative" ? "text-rose-700" : "text-slate-950"}`}>{value}</p></div>;
+}
+
+function ReportMultiSelect({
+  label,
+  options,
+  selected,
+  onSelectedChange,
+  allLabel,
+  searchValue,
+  onSearchValueChange,
+  loading = false,
+  searchHint = "Search options",
+}: {
+  label: string;
+  options: MultiSelectOption[];
+  selected: string[];
+  onSelectedChange: (values: string[]) => void;
+  allLabel: string;
+  searchValue?: string;
+  onSearchValueChange?: (value: string) => void;
+  loading?: boolean;
+  searchHint?: string;
+}) {
+  const toggle = (value: string) => {
+    onSelectedChange(selected.includes(value)
+      ? selected.filter((item) => item !== value)
+      : [...selected, value]);
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" role="combobox" className="h-auto min-h-10 w-full justify-between bg-white px-3 font-normal">
+            <span className="truncate text-slate-900">
+              {selected.length ? `${selected.length} selected` : allLabel}
+            </span>
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-slate-400" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
+          {onSearchValueChange && (
+            <div className="border-b p-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                <Input
+                  value={searchValue || ""}
+                  onChange={(event) => onSearchValueChange(event.target.value)}
+                  placeholder={searchHint}
+                  className="pl-8"
+                />
+              </div>
+            </div>
+          )}
+          <div className="max-h-64 overflow-y-auto p-1">
+            <button
+              type="button"
+              onClick={() => onSelectedChange([])}
+              className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-100"
+            >
+              <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${selected.length === 0 ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>
+                {selected.length === 0 && <Check className="h-3 w-3" />}
+              </span>
+              <span className="text-sm font-medium text-slate-900">{allLabel}</span>
+            </button>
+            {options.map((option) => {
+              const isSelected = selected.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => toggle(option.value)}
+                  className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-100"
+                >
+                  <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${isSelected ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300"}`}>
+                    {isSelected && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm text-slate-900">{option.label}</span>
+                    {option.description && <span className="block truncate text-xs text-slate-500">{option.description}</span>}
+                  </span>
+                </button>
+              );
+            })}
+            {loading && <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Searching…</div>}
+            {!loading && !options.length && <div className="px-3 py-6 text-center text-sm text-slate-500">{onSearchValueChange && (searchValue || "").trim().length < 2 ? searchHint : "No options found"}</div>}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function StockCard({ title, description, icon: Icon, tone, rows, total, loading }: { title: string; description: string; icon: typeof AlertTriangle; tone: "amber" | "rose"; rows: AnalyticsOverviewReport["low_stock"]; total: number; loading: boolean }) {
+  return <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Icon className={`h-5 w-5 ${tone === "amber" ? "text-amber-600" : "text-rose-600"}`} />{title}<Badge variant="secondary" className="ml-auto">{total}</Badge></CardTitle><CardDescription>{description}</CardDescription></CardHeader><CardContent className="space-y-2">{rows.slice(0, 20).map((item) => <div key={item.product_id} className="flex items-center justify-between rounded-lg border border-slate-100 p-3"><div className="min-w-0"><p className="truncate font-medium">{item.product_name}</p><p className="text-xs text-slate-500">{item.sku || item.category || "No SKU"}</p></div><div className="text-right"><p className={`font-bold ${tone === "amber" ? "text-amber-700" : "text-rose-700"}`}>{quantity.format(item.current_stock)} {item.base_unit}</p><p className="text-xs text-slate-500">Reorder at {item.threshold}</p></div></div>)}{!loading && !rows.length && <EmptyState message={tone === "amber" ? "No products are running low." : "No products are out of stock."} />}</CardContent></Card>;
 }
 
 function ProductRanking({ title, description, icon: Icon, rows, tone, loading }: { title: string; description: string; icon: typeof TrendingUp; rows: AnalyticsOverviewReport["most_selling"]; tone: "blue" | "amber"; loading: boolean }) {

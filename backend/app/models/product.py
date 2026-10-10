@@ -13,6 +13,7 @@ class Product(Base):
     name = Column(String, index=True)
     sku = Column(String, index=True, unique=True, nullable=True) # Barcode
     category = Column(String, index=True, default="Uncategorized")
+    company = Column(String, index=True, nullable=True)
     description = Column(Text, nullable=True)
     image_url = Column(String, nullable=True)
     

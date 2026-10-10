@@ -72,6 +72,7 @@ interface Product {
     item_type?: CatalogItemType;
     sku: string | null;
     category: string;
+    company?: string | null;
     selling_price: number;
     cost_price: number;
     quantity: number;
@@ -197,6 +198,7 @@ export default function InventoryPage() {
     const [name, setName] = useState('');
     const [sku, setSku] = useState('');
     const [category, setCategory] = useState('');
+    const [company, setCompany] = useState('');
     const [sellingPrice, setSellingPrice] = useState('');
     const [itemType, setItemType] = useState<CatalogItemType>('stock');
     const [hasVariations, setHasVariations] = useState(false);
@@ -277,6 +279,7 @@ export default function InventoryPage() {
                 name,
                 sku: sku.trim() || null,
                 category: category || "Uncategorized",
+                company: company.trim() || null,
                 selling_price: parseFloat(sellingPrice),
                 item_type: itemType,
                 has_variations: hasVariations,
@@ -299,6 +302,7 @@ export default function InventoryPage() {
         setName('');
         setSku('');
         setCategory('');
+        setCompany('');
         setSellingPrice('');
         setItemType('stock');
         setHasVariations(false);
@@ -342,6 +346,7 @@ export default function InventoryPage() {
         setName(product.name);
         setSku(product.sku || '');
         setCategory(product.category);
+        setCompany(product.company || '');
         setSellingPrice(product.selling_price.toString());
         setItemType(product.item_type || 'stock');
         setHasVariations(product.has_variations);
@@ -362,6 +367,7 @@ export default function InventoryPage() {
                 name,
                 sku: sku.trim() || null,
                 category: category || "Uncategorized",
+                company: company.trim() || null,
                 selling_price: parseFloat(sellingPrice),
                 item_type: itemType,
                 has_variations: hasVariations,
@@ -643,7 +649,7 @@ export default function InventoryPage() {
                             <DialogHeader>
                                 <DialogTitle>Bulk Import Products</DialogTitle>
                                 <DialogDescription>
-                                    Upload a CSV file with columns: name, sku, category, description, selling_price, cost_price, quantity, base_unit, has_variations, allow_decimal_qty, variation_attributes, selling_units_json
+                                    Upload a CSV file with columns: name, sku, category, company, description, selling_price, cost_price, quantity, base_unit, has_variations, allow_decimal_qty, variation_attributes, selling_units_json
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="grid gap-4 py-4">
@@ -712,6 +718,10 @@ export default function InventoryPage() {
                                         <Label htmlFor="category">Category</Label>
                                         <Input id="category" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Beverages" />
                                     </div>
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="company">Company / Brand</Label>
+                                    <Input id="company" value={company} onChange={e => setCompany(e.target.value)} placeholder="e.g. Nestlé" />
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="price">Selling Price (rs)</Label>
@@ -832,7 +842,10 @@ export default function InventoryPage() {
                                     </TableCell>
                                     <TableCell className="font-mono text-xs text-gray-500">{product.sku || '-'}</TableCell>
                                     <TableCell>
-                                        <Badge variant="secondary" className="font-normal">{product.category}</Badge>
+                                        <div className="flex flex-wrap gap-1">
+                                            <Badge variant="secondary" className="font-normal">{product.category}</Badge>
+                                            {product.company && <Badge variant="outline" className="font-normal">{product.company}</Badge>}
+                                        </div>
                                     </TableCell>
                                     <TableCell className="text-right font-medium text-orange-600">
                                         rs {product.cost_price > 0 ? product.cost_price.toFixed(2) : '-'}
@@ -986,6 +999,10 @@ export default function InventoryPage() {
                                 <Label htmlFor="edit-category">Category</Label>
                                 <Input id="edit-category" value={category} onChange={e => setCategory(e.target.value)} />
                             </div>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="edit-company">Company / Brand</Label>
+                            <Input id="edit-company" value={company} onChange={e => setCompany(e.target.value)} />
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="edit-price">Selling Price (rs)</Label>

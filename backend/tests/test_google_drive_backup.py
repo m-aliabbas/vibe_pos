@@ -108,6 +108,22 @@ class GoogleDriveBackupTests(unittest.TestCase):
             {"pos_backup_1.db", "pos_backup_2.dump", "pos_backup_3.sql"},
         )
 
+    def test_oauth_settings_use_a_loopback_ip_literal(self) -> None:
+        client = {
+            "client_id": "synthetic-client",
+            "client_secret": "synthetic-secret",
+            "auth_uri": "https://accounts.example.test/auth",
+            "token_uri": "https://accounts.example.test/token",
+            "redirect_uris": ["http://localhost:8080/"],
+        }
+
+        auth_settings = google_drive_backup._auth_settings(client, {})
+
+        self.assertEqual(
+            auth_settings["client_config"]["redirect_uri"],
+            "http://127.0.0.1:8080/",
+        )
+
     def test_upload_rejects_non_database_artifacts_before_authentication(self) -> None:
         with tempfile.TemporaryDirectory(prefix="vibepos-drive-test-") as root_value:
             archive_path = Path(root_value) / "backup.zip"

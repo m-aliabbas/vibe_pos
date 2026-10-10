@@ -28,6 +28,8 @@ class ProductSalesHistoryItem(BaseModel):
     product_id: int
     product_name: str
     sku: Optional[str]
+    category: Optional[str]
+    company: Optional[str]
     base_unit: str
     purchased_quantity: float
     sold_quantity: float
@@ -51,6 +53,11 @@ class ProductSalesHistoryReport(BaseModel):
     products: List[ProductSalesHistoryItem]
     summary: ProductSalesHistorySummary
     search: str
+    product_id: Optional[int]
+    category: Optional[str]
+    company: Optional[str]
+    total_matching_products: int
+    truncated: bool
     period_start: str
     period_end: str
 
@@ -64,6 +71,21 @@ class AnalyticsStockItem(BaseModel):
     current_stock: float
     threshold: int
     base_unit: str
+
+
+class AnalyticsExpiredBatch(BaseModel):
+    batch_id: int
+    batch_number: str
+    product_id: int
+    product_name: str
+    sku: Optional[str]
+    category: Optional[str]
+    company: Optional[str]
+    quantity_remaining: float
+    base_unit: str
+    expiry_date: str
+    days_expired: int
+    stock_value: float
 
 
 class AnalyticsProductSale(BaseModel):
@@ -127,6 +149,10 @@ class AnalyticsOverviewReport(BaseModel):
     months: int
     low_stock: List[AnalyticsStockItem]
     out_of_stock: List[AnalyticsStockItem]
+    expired_batches: List[AnalyticsExpiredBatch]
+    low_stock_count: int
+    out_of_stock_count: int
+    expired_batch_count: int
     most_selling: List[AnalyticsProductSale]
     least_selling: List[AnalyticsProductSale]
     monthly_sales: List[AnalyticsMonthlySale]

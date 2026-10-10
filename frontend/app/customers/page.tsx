@@ -6,6 +6,7 @@ import { useAuthStore } from "@/store/authStore";
 import { ToWords } from "to-words";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -79,6 +80,12 @@ export default function CustomersPage() {
   }, [toWords]);
   const [customers, setCustomers] = useState<CustomerListResponse[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [balanceFilter, setBalanceFilter] = useState("all");
+  const [udharFrom, setUdharFrom] = useState("1");
+  const [udharTo, setUdharTo] = useState("100000");
+  const [appliedUdharRange, setAppliedUdharRange] = useState<{ min: number; max: number } | null>(null);
+  const [udharRangeError, setUdharRangeError] = useState("");
+  const [salesFilter, setSalesFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(100);
@@ -122,11 +129,11 @@ export default function CustomersPage() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, page]);
+  }, [searchQuery, balanceFilter, appliedUdharRange, salesFilter, page]);
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, balanceFilter, appliedUdharRange, salesFilter]);
 
   const fetchCustomers = async () => {
     const requestId = ++fetchRequestIdRef.current;
@@ -137,8 +144,18 @@ export default function CustomersPage() {
           skip: (page - 1) * pageSize,
           limit: pageSize,
           search: searchQuery || undefined,
+          balance_status: balanceFilter === "all" ? undefined : balanceFilter as "udhar" | "credit" | "settled",
+          udhar_min: appliedUdharRange?.min,
+          udhar_max: appliedUdharRange?.max,
+          sales_status: salesFilter === "all" ? undefined : salesFilter as "with_sales" | "without_sales",
         }),
-        customerApi.countCustomers({ search: searchQuery || undefined }),
+        customerApi.countCustomers({
+          search: searchQuery || undefined,
+          balance_status: balanceFilter === "all" ? undefined : balanceFilter as "udhar" | "credit" | "settled",
+          udhar_min: appliedUdharRange?.min,
+          udhar_max: appliedUdharRange?.max,
+          sales_status: salesFilter === "all" ? undefined : salesFilter as "with_sales" | "without_sales",
+        }),
       ]);
 
       if (requestId !== fetchRequestIdRef.current) {
@@ -153,6 +170,37 @@ export default function CustomersPage() {
         setLoading(false);
       }
     }
+  };
+
+  const handleBalanceFilterChange = (value: string) => {
+    setBalanceFilter(value);
+    if (value !== "udhar") {
+      setAppliedUdharRange(null);
+      setUdharRangeError("");
+    }
+  };
+
+  const handleApplyUdharRange = () => {
+    const min = Number(udharFrom.replaceAll(",", "").trim());
+    const max = Number(udharTo.replaceAll(",", "").trim());
+
+    if (!udharFrom.trim() || !udharTo.trim() || !Number.isFinite(min) || !Number.isFinite(max)) {
+      setUdharRangeError("Enter valid amounts for both fields.");
+      return;
+    }
+    if (min < 0 || max < 0) {
+      setUdharRangeError("Udhar amounts cannot be negative.");
+      return;
+    }
+    if (min > max) {
+      setUdharRangeError("From amount cannot exceed to amount.");
+      return;
+    }
+
+    setUdharRangeError("");
+    setBalanceFilter("udhar");
+    setAppliedUdharRange({ min, max });
+    setPage(1);
   };
 
   const handleSendAllReminders = async () => {
@@ -472,7 +520,8 @@ export default function CustomersPage() {
       <div className="shrink-0">
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center space-x-2">
+          <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_170px_minmax(360px,auto)_170px]">
+            <div className="flex items-center space-x-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search customers by name, phone, ID, or email..."
@@ -483,6 +532,52 @@ export default function CustomersPage() {
             {loading && (
               <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-primary" />
             )}
+            </div>
+            <Select value={balanceFilter} onValueChange={handleBalanceFilterChange}>
+              <SelectTrigger><SelectValue placeholder="Balance" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All balances</SelectItem>
+                <SelectItem value="udhar">Has udhar</SelectItem>
+                <SelectItem value="credit">Has prepaid credit</SelectItem>
+                <SelectItem value="settled">Settled balance</SelectItem>
+              </SelectContent>
+            </Select>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-sm font-medium">Udhar</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Udhar from amount"
+                  placeholder="From"
+                  value={udharFrom}
+                  onChange={(e) => setUdharFrom(e.target.value)}
+                />
+                <span className="text-sm text-muted-foreground">to</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Udhar to amount"
+                  placeholder="To"
+                  value={udharTo}
+                  onChange={(e) => setUdharTo(e.target.value)}
+                />
+                <Button type="button" onClick={handleApplyUdharRange} disabled={loading}>
+                  Load
+                </Button>
+              </div>
+              {udharRangeError && (
+                <p className="mt-1 text-xs text-destructive">{udharRangeError}</p>
+              )}
+            </div>
+            <Select value={salesFilter} onValueChange={setSalesFilter}>
+              <SelectTrigger><SelectValue placeholder="Sales activity" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All customers</SelectItem>
+                <SelectItem value="with_sales">With sales</SelectItem>
+                <SelectItem value="without_sales">Without sales</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

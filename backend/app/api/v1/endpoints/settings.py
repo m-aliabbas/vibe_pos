@@ -12,12 +12,14 @@ from app.core.config import settings
 from app.models.settings import StoreSettings
 from app.models.user import User
 from app.schemas.settings import (
+    LicenseStatusResponse,
     StoreSettingsBase,
     StoreSettingsResponse,
     StoreSettingsUpdate,
     WhatsAppReportSettingsResponse,
     WhatsAppReportSettingsUpdate,
 )
+from app.services.license import get_active_license_status
 
 router = APIRouter()
 
@@ -59,6 +61,14 @@ def get_or_create_store_settings(db: Session) -> StoreSettings:
 def get_store_settings(db: Session = Depends(deps.get_db)):
     """Return the current store information (public — used by receipts/invoices)."""
     return _store_response(get_or_create_store_settings(db))
+
+
+@router.get("/license-status", response_model=LicenseStatusResponse)
+def get_license_status(
+    _current_user: User = Depends(deps.get_current_active_admin),
+):
+    """Return the active license expiry summary without exposing license secrets."""
+    return get_active_license_status()
 
 
 @router.put("/store", response_model=StoreSettingsResponse)

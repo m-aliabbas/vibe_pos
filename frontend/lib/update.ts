@@ -156,3 +156,37 @@ export async function fetchLatestRelease(): Promise<UpdateManifest> {
 
   return validateManifest(await response.json());
 }
+
+function installerFileName(downloadUrl: string, version: string): string {
+  try {
+    const fileName = new URL(downloadUrl).pathname.split('/').pop();
+    if (fileName && /\.(exe|msi|dmg|pkg)$/i.test(fileName)) {
+      return decodeURIComponent(fileName);
+    }
+  } catch {
+    // Manifest validation reports malformed URLs before this helper is called.
+  }
+  return `VibePOS_${version}_installer.exe`;
+}
+
+export async function downloadRelease(
+  download: ReleaseDownload,
+  version: string,
+): Promise<string | null> {
+  const isTauri =
+    typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  if (!isTauri) {
+    const anchor = document.createElement('a');
+    anchor.href = download.url;
+    anchor.rel = 'noopener noreferrer';
+    anchor.click();
+    return null;
+  }
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<string | null>('download_update', {
+    url: download.url,
+    expectedSha256: download.sha256,
+    fileName: installerFileName(download.url, version),
+  });
+}

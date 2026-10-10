@@ -19,6 +19,8 @@ class Purchase(Base):
     vendor_id = Column(Integer, ForeignKey("vendors.id"))
     created_at = Column(DateTime, default=now_pkt)
     
+    subtotal_amount = Column(Float, default=0.0)
+    discount = Column(Float, default=0.0)
     total_amount = Column(Float, default=0.0)
     amount_paid = Column(Float, default=0.0)
     status = Column(String, default=PurchaseStatus.UNPAID)

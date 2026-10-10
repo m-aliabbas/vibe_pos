@@ -17,6 +17,7 @@ DEFAULT_SESSION_FILENAME = "google_drive_session.enc"
 DRIVE_FOLDER_NAME = "VibePOS Backups"
 DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 LOGIN_TIMEOUT_SECONDS = 120
+LOOPBACK_HOST = "127.0.0.1"
 MAX_DRIVE_BACKUP_BYTES = 1024 * 1024 * 1024
 SUPPORTED_BACKUP_SUFFIXES = {".db", ".dump", ".sql"}
 _auth_lock = threading.Lock()
@@ -150,12 +151,6 @@ def _save_session(credentials_json: str, account: dict[str, str | None]) -> None
 def _auth_settings(
     client: dict[str, Any], credential_store: dict[str, str]
 ) -> dict[str, Any]:
-    redirect_uris = client.get("redirect_uris")
-    redirect_uri = (
-        redirect_uris[0]
-        if isinstance(redirect_uris, list) and redirect_uris
-        else "http://localhost:8080/"
-    )
     return {
         "client_config_backend": "settings",
         "client_config": {
@@ -163,7 +158,9 @@ def _auth_settings(
             "client_secret": client["client_secret"],
             "auth_uri": client["auth_uri"],
             "token_uri": client["token_uri"],
-            "redirect_uri": redirect_uri,
+            # Installed applications must use a loopback IP literal. Google no
+            # longer accepts localhost hostnames for this desktop OAuth flow.
+            "redirect_uri": f"http://{LOOPBACK_HOST}:8080/",
             "revoke_uri": client.get("revoke_uri"),
         },
         "save_credentials": True,
@@ -229,7 +226,7 @@ def _authorize_in_browser(auth: GoogleAuth) -> None:
     for port in (8080, 8090):
         try:
             redirect_server = ClientRedirectServer(
-                ("127.0.0.1", port), ClientRedirectHandler
+                (LOOPBACK_HOST, port), ClientRedirectHandler
             )
             port_number = port
             break
@@ -243,7 +240,7 @@ def _authorize_in_browser(auth: GoogleAuth) -> None:
 
     try:
         auth.GetFlow()
-        auth.flow.redirect_uri = f"http://localhost:{port_number}/"
+        auth.flow.redirect_uri = f"http://{LOOPBACK_HOST}:{port_number}/"
         authorization_url = auth.GetAuthUrl()
         if not webbrowser.open(authorization_url, new=1, autoraise=True):
             raise GoogleDriveBackupError(

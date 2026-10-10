@@ -314,6 +314,35 @@ class RetailCharacterizationTests(unittest.TestCase):
         self.assertAlmostEqual(accounting_service.get_vendor_balance(self.db, vendor.id), 30.0)
         self.assert_all_journals_balanced()
 
+    def test_purchase_discount_reduces_payable_and_effective_inventory_cost(self) -> None:
+        product = self.add_product(name="Discounted item", price=20.0, quantity=2.0)
+        vendor = Vendor(name="Discount Vendor", opening_balance=0.0, prepaid_credit=0.0)
+        self.db.add(vendor)
+        self.db.commit()
+        self.db.refresh(vendor)
+
+        result = purchases.create_purchase(
+            db=self.db,
+            purchase_in=PurchaseCreate(
+                vendor_id=vendor.id,
+                amount_paid=15.0,
+                discount=10.0,
+                items=[PurchaseItemCreate(product_id=product.id, quantity=5.0, unit_cost=10.0)],
+            ),
+            current_user=self.user,
+        )
+
+        batch = self.db.query(StockBatch).filter(StockBatch.purchase_item_id == result.items[0].id).one()
+        self.assertAlmostEqual(result.subtotal_amount, 50.0)
+        self.assertAlmostEqual(result.discount, 10.0)
+        self.assertAlmostEqual(result.total_amount, 40.0)
+        self.assertAlmostEqual(result.items[0].unit_cost, 8.0)
+        self.assertAlmostEqual(result.items[0].total_cost, 40.0)
+        self.assertAlmostEqual(batch.unit_cost, 8.0)
+        self.assertAlmostEqual(product.cost_price, 8.0)
+        self.assertAlmostEqual(accounting_service.get_vendor_balance(self.db, vendor.id), 25.0)
+        self.assert_all_journals_balanced()
+
     def test_sale_issues_stock_batches_in_fifo_order(self) -> None:
         product = self.add_product(name="FIFO item", price=5.0, quantity=10.0)
         oldest = StockBatch(

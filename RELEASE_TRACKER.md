@@ -6,6 +6,30 @@ This file is the source-of-truth summary for application releases. Add user-visi
 
 No changes recorded yet.
 
+## v1.0.26 - 2026-10-10
+
+### Inventory and purchasing
+
+- Added company/brand details to products, including inventory editing and CSV import/export support.
+- Added invoice-level purchase discounts and applied them consistently to payable balances and effective inventory cost.
+
+### Customers and reports
+
+- Added customer filters for balance status, udhar range, and sales activity.
+- Added company, category, and product filters to the per-product sales report.
+- Added expired-batch reporting and complete low-stock/out-of-stock totals to the analytics dashboard.
+
+### Licensing, backup, and updates
+
+- Added administrator warnings when a license is within five days of expiry.
+- Fixed Google Drive desktop sign-in to use Google's required loopback IP redirect handling.
+- Added automatic GitHub release checks and checksum-verified in-app installer downloads.
+
+### Data and migration notes
+
+- Added the `products.company`, `purchases.subtotal_amount`, and `purchases.discount` fields through an automatic idempotent migration.
+- Existing purchase totals are preserved and backfilled as subtotals; no manual upgrade steps are required.
+
 ## v1.0.25 - 2026-10-03
 
 ### Backup
@@ -59,6 +83,7 @@ No changes recorded yet.
 
 | Version | Release date | Notes |
 |---|---|---|
+| `v1.0.26` | 2026-10-10 | Purchasing, inventory, customer filtering, reporting, licensing, backup, and update improvements. |
 | `v1.0.25` | 2026-10-03 | Added Google Drive backup support. |
 | `v1.0.24` | 2026-09-26 | License expiration and local-cache validation updates. |
 | `v1.0.23` | 2026-09-24 | Version synchronization and release checkpoint. |
