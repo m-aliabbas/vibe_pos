@@ -11,6 +11,9 @@ def test_purchase_discount_migration_is_idempotent(tmp_path: Path) -> None:
             "CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT NOT NULL)"
         )
         connection.execute(
+            "INSERT INTO products (id, name) VALUES (1, 'Existing product')"
+        )
+        connection.execute(
             "CREATE TABLE purchases ("
             "id INTEGER PRIMARY KEY, total_amount REAL NOT NULL"
             ")"
@@ -25,12 +28,18 @@ def test_purchase_discount_migration_is_idempotent(tmp_path: Path) -> None:
     with sqlite3.connect(db_path) as connection:
         product_columns = _column_names(connection, "products")
         purchase_columns = _column_names(connection, "purchases")
+        # The packaged server performs this ORM-equivalent read while seeding,
+        # before app.main gets a chance to run its fallback schema repair.
+        product_row = connection.execute(
+            "SELECT id, name, company FROM products WHERE id = 1"
+        ).fetchone()
         row = connection.execute(
             "SELECT total_amount, subtotal_amount, discount FROM purchases WHERE id = 1"
         ).fetchone()
 
     assert "company" in product_columns
     assert {"subtotal_amount", "discount"}.issubset(purchase_columns)
+    assert product_row == (1, "Existing product", None)
     assert row == (125.5, 125.5, 0.0)
 
 

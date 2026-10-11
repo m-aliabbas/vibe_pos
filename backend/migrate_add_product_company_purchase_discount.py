@@ -32,9 +32,9 @@ def migrate(db_path: Path) -> None:
             product_columns = _columns(connection, "products")
             if "company" not in product_columns:
                 connection.execute("ALTER TABLE products ADD COLUMN company TEXT")
-                connection.execute(
-                    "CREATE INDEX IF NOT EXISTS ix_products_company ON products (company)"
-                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_products_company ON products (company)"
+            )
 
         if _table_exists(connection, "purchases"):
             purchase_columns = _columns(connection, "purchases")

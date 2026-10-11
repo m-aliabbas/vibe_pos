@@ -104,6 +104,9 @@ import threading
 import multiprocessing
 import uvicorn
 from dotenv import load_dotenv
+from migrate_add_product_company_purchase_discount import (
+    migrate as migrate_product_company_purchase_discount,
+)
 
 
 def log(message: str) -> None:
@@ -475,6 +478,10 @@ if __name__ == "__main__":
     db_path = ensure_schema_ready()
     ensure_legacy_product_columns(db_path)
     ensure_legacy_store_settings_columns(db_path)
+    # v1.0.27's seed check queries the full Product model, including `company`.
+    # Run this release migration before seeding so databases from older clients
+    # cannot fail before app.main's fallback schema repair is imported.
+    migrate_product_company_purchase_discount(db_path)
 
     # 4) Now seed safely
     from seed import ensure_seeded
