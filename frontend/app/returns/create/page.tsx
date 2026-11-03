@@ -715,7 +715,18 @@ export default function CreateReturnPage() {
                     {selectedSale?.source_type === "purchase" ? "Removing from Stock:" : "Adding to Stock:"}
                   </span>
                   <span className="font-semibold">
-                    {returnLines.filter((line) => line.selected && line.restocked).length} items
+                    {/* Sum the actual quantity per unit (e.g. 0.5 kg), not the number of lines. */}
+                    {Object.entries(
+                      returnLines
+                        .filter((line) => line.selected && line.restocked)
+                        .reduce<Record<string, number>>((byUnit, line) => {
+                          const unit = line.sale_item.unit || "unit";
+                          byUnit[unit] = roundQty((byUnit[unit] || 0) + line.quantity);
+                          return byUnit;
+                        }, {})
+                    )
+                      .map(([unit, qty]) => `${qty} ${unit}`)
+                      .join(", ") || "0"}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
