@@ -8,7 +8,7 @@ python-jose[cryptography]
 python-multipart
 apscheduler
 reportlab==4.0.9
-pillow==12.1.0
+pillow==12.3.0
 requests
 neonize==0.9.0
 python-dotenv
