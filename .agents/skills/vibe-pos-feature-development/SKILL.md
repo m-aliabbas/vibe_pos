@@ -82,6 +82,8 @@ At minimum:
 
 Do not mutate the user's real database to test. Create a temporary data directory or disposable database.
 
+Then run the app and test the UI flow by entering data, as described in "Mandatory UI and flow testing" in `AGENTS.md`. A change that touches a screen or workflow is not done until it has been clicked through in the browser with realistic data, including one invalid input.
+
 ## Review the finished diff
 
 Before handing off:

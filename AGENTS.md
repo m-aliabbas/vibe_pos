@@ -33,6 +33,24 @@ cd frontend && npm run build
 python3 -m compileall -q backend/app backend/run_server.py
 ```
 
+## Mandatory UI and flow testing
+
+Compiling and building is not enough. For every change that affects a screen or a user workflow, run the app and use it like a cashier before handing off:
+
+1. Use a disposable data directory, never the user's real database:
+   ```bash
+   cd backend && DATA_DIR=<temp dir> uv run python run_server.py   # API on 127.0.0.1:8000, seeds admin/admin123
+   cd frontend && npm run dev                                       # UI on http://localhost:4321
+   ```
+2. Open the UI in the browser, log in, and enter realistic data through the screens: create the products/customers the flow needs, then perform the changed workflow (e.g. make a sale, then return part of it).
+3. Check the result on screen and in its side effects: totals, stock, balances, receipts, and reports touched by the change. Also try one invalid input (zero, over-limit, empty) and confirm it is rejected clearly.
+4. Report exactly which flows were exercised and what was observed. If something could not be run (license gate, hardware, WhatsApp phone pairing, installer build), say so explicitly as an untested gap.
+
+## Session git workflow
+
+- At session start: if `git status --short` is clean, run `git pull` on the current branch first. If there are local changes, do not pull; work on top of them.
+- At session end: commit the finished work and `git push -u origin <branch>`. Never push secrets, databases, or build artifacts.
+
 Run narrower checks during iteration. A production Tauri build is required only when Rust, sidecar startup, packaging, or Tauri configuration changes. If a check cannot run because of missing dependencies, licensing, credentials, or platform constraints, report that explicitly.
 
 ## Definition of done
