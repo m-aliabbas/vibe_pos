@@ -20,4 +20,4 @@ protobuf==7.36.2
 PyDrive2==1.21.1
 
 # Windows packaging tool. Keep this pinned because its bootloader is part of the EXE.
-pyinstaller==6.16.0
+pyinstaller==6.22.3
