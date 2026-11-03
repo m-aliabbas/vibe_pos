@@ -12,12 +12,12 @@ apscheduler==3.11.3
 reportlab==4.0.9
 pillow==12.1.0
 requests==2.34.2
-neonize==0.4.3.post0
+neonize==0.9.0
 python-dotenv==1.2.3
 zeroconf==0.151.3
 firebase-admin==7.6.0
-protobuf==6.32.1
-PyDrive2==1.21.3
+protobuf==7.36.2
+PyDrive2==1.21.1
 
 # Windows packaging tool. Keep this pinned because its bootloader is part of the EXE.
 pyinstaller==6.16.0

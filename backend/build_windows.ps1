@@ -35,6 +35,31 @@ if (-not $SkipInstall) {
     }
 }
 
+# neonize loads a bundled Go DLL and protobuf gencode that must match the
+# installed runtime. Fail here instead of shipping a sidecar whose WhatsApp
+# client crashes or tries to download the DLL on a customer's machine.
+Write-Host "Verifying the neonize WhatsApp runtime..."
+$env:PYTHONIOENCODING = "utf-8"
+& python -c @"
+from importlib.metadata import version
+from pathlib import Path
+import neonize
+from neonize.download import __GONEONIZE_VERSION__
+from neonize.utils.platform import generated_name
+dll = Path(neonize.__file__).parent / generated_name()
+if not dll.is_file():
+    raise SystemExit(f'Missing neonize native library: {dll}')
+from neonize._binder import gocode
+loaded = gocode.GetVersion().decode()
+if loaded != __GONEONIZE_VERSION__:
+    raise SystemExit(f'neonize DLL {loaded} does not match package {__GONEONIZE_VERSION__}')
+import neonize.client
+print('neonize', version('neonize'), 'protobuf', version('protobuf'), 'DLL', loaded)
+"@
+if ($LASTEXITCODE -ne 0) {
+    throw "neonize runtime verification failed. Reinstall requirements-windows.lock."
+}
+
 New-Item -ItemType Directory -Force -Path $tauriBinDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $tauriBinDir "data") | Out-Null
 

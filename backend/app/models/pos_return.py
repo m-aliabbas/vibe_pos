@@ -56,7 +56,9 @@ class ReturnItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     variation_id = Column(Integer, ForeignKey("product_variations.id"), nullable=True)
     
-    quantity_returned = Column(Integer, nullable=False)  # Quantity being returned
+    # Float so weighed goods can be partially returned (e.g. 0.25 kg). Existing
+    # INTEGER-declared SQLite columns store these values as REAL without migration.
+    quantity_returned = Column(Float, nullable=False)
     unit = Column(String, default="piece")  # Unit (must match sale item unit)
     unit_price = Column(Float, nullable=True, default=0.0)  # Original unit price from sale (optional now)
     total_refund = Column(Float, nullable=True, default=0.0)  # quantity_returned * unit_price (optional now)

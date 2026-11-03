@@ -79,6 +79,8 @@ The workflow currently produces an unsigned installer and publishes its SHA-256 
 
 Normal releases install `backend/requirements-windows.lock`, so package versions cannot change during a build. When intentionally upgrading a direct dependency, update `backend/win_requirements.txt`, regenerate the lock, test it, and commit both files together:
 
+When upgrading `neonize`, also check its bundled protobuf gencode version: neonize 0.9.0 declares `protobuf>=6.32.1` but its generated code needs protobuf 7.34.1 or newer, so `protobuf` is pinned to 7.x. `PyDrive2` is pinned to 1.21.1 because 1.21.3 caps `cryptography<44`, which conflicts with neonize. `build_windows.ps1` verifies the neonize DLL and imports before building and stops if they do not match.
+
 ```bash
 python -m pip install uv==0.8.22
 uv pip compile backend/win_requirements.txt \

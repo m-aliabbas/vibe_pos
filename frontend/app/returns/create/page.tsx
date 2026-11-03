@@ -66,6 +66,8 @@ interface PurchaseApi {
 interface ReturnLine {
   sale_item: SaleItem;
   quantity: number;
+  // Raw input text so partial decimals like "0." can be typed (e.g. 0.25 kg).
+  quantityInput: string;
   restocked: boolean;
   selected: boolean;
   remaining: number;
@@ -81,6 +83,14 @@ interface ReturnApiItem {
 interface ReturnApiRecord {
   items?: ReturnApiItem[];
 }
+
+// Quantities are fractional for weighed goods; round away float noise (1 - 0.75).
+const roundQty = (value: number) => Math.round(value * 10000) / 10000;
+
+const defaultReturnQty = (soldQty: number, alreadyReturned: number) => {
+  const remaining = roundQty(Math.max(0, soldQty - alreadyReturned));
+  return Math.min(1, remaining);
+};
 
 const getLineAmounts = (line: ReturnLine) => {
   const qty = line.quantity || 0;
@@ -174,10 +184,11 @@ export default function CreateReturnPage() {
       setCustomerPhone(sale.customer_phone || "");
       setReturnLines(
         (sale.items || []).map((item) => ({
-          returned: returnedMap[item.id] || 0,
-          remaining: Math.max(0, item.quantity - (returnedMap[item.id] || 0)),
+          returned: roundQty(returnedMap[item.id] || 0),
+          remaining: roundQty(Math.max(0, item.quantity - (returnedMap[item.id] || 0))),
           sale_item: item,
-          quantity: Math.max(1, Math.min(item.quantity, Math.max(0, item.quantity - (returnedMap[item.id] || 0)))),
+          quantity: defaultReturnQty(item.quantity, returnedMap[item.id] || 0),
+          quantityInput: String(defaultReturnQty(item.quantity, returnedMap[item.id] || 0)),
           restocked: true,
           selected: false,
         }))
@@ -243,10 +254,11 @@ export default function CreateReturnPage() {
       setCustomerPhone(vendor?.phone || "");
       setReturnLines(
         (purchaseAsSale.items || []).map((item) => ({
-          returned: returnedMap[item.id] || 0,
-          remaining: Math.max(0, item.quantity - (returnedMap[item.id] || 0)),
+          returned: roundQty(returnedMap[item.id] || 0),
+          remaining: roundQty(Math.max(0, item.quantity - (returnedMap[item.id] || 0))),
           sale_item: item,
-          quantity: Math.max(1, Math.min(item.quantity, Math.max(0, item.quantity - (returnedMap[item.id] || 0)))),
+          quantity: defaultReturnQty(item.quantity, returnedMap[item.id] || 0),
+          quantityInput: String(defaultReturnQty(item.quantity, returnedMap[item.id] || 0)),
           restocked: true,
           selected: false,
         }))
@@ -269,13 +281,18 @@ export default function CreateReturnPage() {
     );
   };
 
-  const updateReturnQuantity = (saleItemId: number, quantity: number) => {
+  const updateReturnQuantity = (saleItemId: number, rawValue: string) => {
     setReturnLines((prev) =>
       prev.map((line) => {
         if (line.sale_item.id !== saleItemId) return line;
-        const maxQty = line.remaining;
-        const nextQty = Math.max(1, Math.min(maxQty, quantity));
-        return { ...line, quantity: nextQty };
+        const parsed = Number.parseFloat(rawValue);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          return { ...line, quantity: 0, quantityInput: rawValue };
+        }
+        if (parsed > line.remaining) {
+          return { ...line, quantity: line.remaining, quantityInput: String(line.remaining) };
+        }
+        return { ...line, quantity: roundQty(parsed), quantityInput: rawValue };
       })
     );
   };
@@ -293,6 +310,11 @@ export default function CreateReturnPage() {
   const processReturn = async () => {
     if (!selectedSale) {
       alert("Please select a sale/invoice");
+      return;
+    }
+
+    if (returnLines.some((line) => line.selected && line.remaining > 0 && !(line.quantity > 0))) {
+      alert("Enter a return quantity greater than 0 for every selected item (e.g. 0.25)");
       return;
     }
 
@@ -564,16 +586,15 @@ export default function CreateReturnPage() {
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
-                              min={1}
+                              inputMode="decimal"
+                              min={0}
+                              step="any"
                               max={line.remaining}
-                              value={line.quantity}
+                              value={line.quantityInput}
                               onChange={(e) =>
-                                updateReturnQuantity(
-                                  line.sale_item.id,
-                                  parseInt(e.target.value) || 1
-                                )
+                                updateReturnQuantity(line.sale_item.id, e.target.value)
                               }
-                              className="h-9 w-20"
+                              className="h-9 w-24"
                               disabled={line.remaining === 0 || !line.selected}
                             />
                             <label className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -686,7 +707,7 @@ export default function CreateReturnPage() {
                   <span className="font-semibold">
                     {returnLines
                       .filter((line) => line.selected)
-                      .reduce((sum, line) => sum + line.quantity, 0)}
+                      .reduce((sum, line) => roundQty(sum + line.quantity), 0)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">

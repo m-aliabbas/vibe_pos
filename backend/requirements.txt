@@ -10,11 +10,11 @@ apscheduler
 reportlab==4.0.9
 pillow==12.1.0
 requests
-neonize==0.3.12
+neonize==0.9.0
 python-dotenv
 zeroconf
 firebase-admin
 passlib[argon2]
 argon2-cffi
 cryptography
-PyDrive2==1.21.3
+PyDrive2==1.21.1

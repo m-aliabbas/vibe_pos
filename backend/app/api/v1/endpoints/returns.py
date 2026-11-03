@@ -247,6 +247,16 @@ router = APIRouter()
 
 _PURCHASE_META_RE = re.compile(r"\[PURCHASE_RETURN:(\d+)\]")
 
+# Return quantities may be fractional (0.25 kg of a 1 kg sale). Round to a fixed
+# precision and compare with a tolerance so repeated partial returns can use up
+# exactly the sold quantity despite float representation error.
+QTY_DECIMALS = 4
+QTY_EPSILON = 1e-6
+
+
+def _normalize_qty(value) -> float:
+    return round(float(value or 0), QTY_DECIMALS)
+
 
 def parse_json_field(value):
     """Parse JSON string field to Python object"""
@@ -351,7 +361,7 @@ def create_return(
                     detail=f"Sale item {item.sale_item_id} does not belong to sale {return_in.sale_id}"
                 )
             
-            quantity = item.quantity_returned or item.quantity
+            quantity = _normalize_qty(item.quantity_returned or item.quantity)
             
             # Check if return quantity is valid
             if quantity <= 0:
@@ -360,10 +370,10 @@ def create_return(
                     detail=f"Return quantity must be positive"
                 )
             
-            already_returned = returned_map.get(sale_item.id, 0)
-            remaining_qty = max(0, sale_item.quantity - already_returned)
+            already_returned = float(returned_map.get(sale_item.id, 0) or 0)
+            remaining_qty = _normalize_qty(max(0.0, (sale_item.quantity or 0) - already_returned))
 
-            if quantity > remaining_qty:
+            if quantity > remaining_qty + QTY_EPSILON:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Cannot return {quantity} {sale_item.unit} - only {remaining_qty} {sale_item.unit} remaining after previous returns"
@@ -439,14 +449,14 @@ def create_return(
                     detail=f"Purchase item {item.purchase_item_id} not found in purchase {purchase_record.id}",
                 )
 
-            quantity = item.quantity_returned or item.quantity
-            if not quantity or quantity <= 0:
+            quantity = _normalize_qty(item.quantity_returned or item.quantity)
+            if quantity <= 0:
                 raise HTTPException(status_code=400, detail="Return quantity must be positive")
 
             key = (purchase_item.product_id, purchase_item.variation_id)
-            already_returned = returned_map.get(key, 0)
-            remaining_qty = max(0, (purchase_item.quantity or 0) - already_returned)
-            if quantity > remaining_qty:
+            already_returned = float(returned_map.get(key, 0) or 0)
+            remaining_qty = _normalize_qty(max(0.0, (purchase_item.quantity or 0) - already_returned))
+            if quantity > remaining_qty + QTY_EPSILON:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Cannot return {quantity} - only {remaining_qty} remaining for purchase item {purchase_item.id}",
@@ -491,8 +501,8 @@ def create_return(
             if not product:
                 raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
             
-            quantity = item.quantity or item.quantity_returned
-            if not quantity or quantity <= 0:
+            quantity = _normalize_qty(item.quantity or item.quantity_returned)
+            if quantity <= 0:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Return quantity must be positive"
@@ -586,14 +596,14 @@ def create_return(
                 variation = db.query(ProductVariation).filter(ProductVariation.id == variation_id).first()
                 if not variation:
                     raise HTTPException(status_code=404, detail=f"Variation {variation_id} not found")
-                if (variation.quantity or 0) < quantity_in_base_units:
+                if (variation.quantity or 0) + QTY_EPSILON < quantity_in_base_units:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Insufficient stock for variation {variation_id}: available {variation.quantity}, requested {quantity_in_base_units}",
                     )
                 variation.quantity -= quantity_in_base_units
             else:
-                if (product.quantity or 0) < quantity_in_base_units:
+                if (product.quantity or 0) + QTY_EPSILON < quantity_in_base_units:
                     raise HTTPException(
                         status_code=400,
                         detail=f"Insufficient stock for product {product.id}: available {product.quantity}, requested {quantity_in_base_units}",

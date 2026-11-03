@@ -213,6 +213,8 @@ export default function SalesTerminal() {
   const quantityForVariationInputRef = useRef<HTMLInputElement>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>("piece");
   const [quantityForVariation, setQuantityForVariation] = useState<string>("1");
+  // Optional "sell rs X worth" entry; when set, quantity is derived from the rate.
+  const [amountForVariation, setAmountForVariation] = useState<string>("");
   const [variationDiscount, setVariationDiscount] = useState<number>(0);
   const [variationUnitPrice, setVariationUnitPrice] = useState<string>("");
   const [variationPriceOverrideEnabled, setVariationPriceOverrideEnabled] = useState(false);
@@ -251,9 +253,21 @@ export default function SalesTerminal() {
   }, []);
 
   // Parse quantity from search query (e.g., "milk x 3", "milk 3", "3 milk")
+  // or a rupee amount (e.g., "sugar rs100", "rs 100 sugar") meaning "sell rs 100 worth".
   const parseQuantityFromSearch = useCallback(
-    (query: string): { searchTerm: string; quantity: number } => {
+    (query: string): { searchTerm: string; quantity: number; amount?: number } => {
       const trimmed = (query || "").trim();
+
+      // Amount must be checked first: "sugar rs 100" would otherwise parse as qty 100.
+      const amountAtEnd = trimmed.match(/^(.+?)\s+rs\.?\s*(\d+(?:\.\d+)?)$/i);
+      const amountAtStart = trimmed.match(/^rs\.?\s*(\d+(?:\.\d+)?)\s+(.+)$/i);
+      if (amountAtEnd || amountAtStart) {
+        const amount = parseFloat(amountAtEnd ? amountAtEnd[2] : amountAtStart![1]);
+        const searchTerm = (amountAtEnd ? amountAtEnd[1] : amountAtStart![2]).trim();
+        if (Number.isFinite(amount) && amount > 0 && searchTerm) {
+          return { searchTerm, quantity: 1, amount };
+        }
+      }
 
       // Pattern 1: "milk x 3" or "milk * 3" (with x, *, or ×)
       const pattern1 = /^(.+?)\s*[x*×]\s*([\d\.]+)$/i;
@@ -851,11 +865,12 @@ export default function SalesTerminal() {
   }, []);
 
   const addToCartWithQuantity = useCallback(
-    (product: Product, quantity: number) => {
+    (product: Product, quantity: number, amount?: number) => {
       const normalizedQuantity = normalizeQuantityForProduct(product, quantity);
       // Open variation picker dialog for all products
       setSelectedProductForVariation(product);
       setQuantityForVariation(String(normalizedQuantity));
+      setAmountForVariation(amount && amount > 0 ? String(amount) : "");
       setSelectedUnit(product.base_unit);
       setVariationPriceOverrideEnabled(false);
       setSelectedVariation(null);
@@ -1338,10 +1353,10 @@ export default function SalesTerminal() {
         const trimmedQuery = searchQuery.trim();
         if (trimmedQuery) {
           // Extract quantity if present (e.g., "BARCODE123 x 5" or "3 BARCODE123")
-          const { searchTerm, quantity } = parseQuantityFromSearch(trimmedQuery);
+          const { searchTerm, quantity, amount } = parseQuantityFromSearch(trimmedQuery);
           
-          // Try barcode lookup first
-          const handled = await lookupAndAddByBarcode(searchTerm, quantity);
+          // Try barcode lookup first (amount entries go through the item dialog below)
+          const handled = amount ? false : await lookupAndAddByBarcode(searchTerm, quantity);
           
           if (handled) {
             // Barcode found and added to cart
@@ -1355,8 +1370,8 @@ export default function SalesTerminal() {
         if (showAutocomplete && filteredProducts.length > 0) {
           const selectedProduct = filteredProducts[selectedProductIndex];
           if (selectedProduct) {
-            const { quantity } = parseQuantityFromSearch(searchQuery);
-            addToCartWithQuantity(selectedProduct, quantity);
+            const { quantity, amount } = parseQuantityFromSearch(searchQuery);
+            addToCartWithQuantity(selectedProduct, quantity, amount);
             setSearchQuery("");
             setShowAutocomplete(false);
           }
@@ -1606,6 +1621,18 @@ export default function SalesTerminal() {
     if (!selectedProductForVariation) return;
     setVariationPriceOverrideEnabled(false);
   }, [selectedProductForVariation]);
+
+  useEffect(() => {
+    if (!variationDialogOpen) setAmountForVariation("");
+  }, [variationDialogOpen]);
+
+  // "Rs 100 ki de do": derive quantity from amount ÷ current rate (unit/variation/override aware).
+  useEffect(() => {
+    const amount = parseFloat(amountForVariation);
+    const rate = parseFloat(variationUnitPrice);
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(rate) || rate <= 0) return;
+    setQuantityForVariation(String(Math.round((amount / rate) * 10000) / 10000));
+  }, [amountForVariation, variationUnitPrice]);
 
   // Unit price auto-fill
   useEffect(() => {
@@ -2875,6 +2902,7 @@ export default function SalesTerminal() {
                     const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
                     const current = parseDraftQuantity(quantityForVariation) ?? 0;
                     const next = Math.max(0, current - step);
+                    setAmountForVariation("");
                     setQuantityForVariation(String(next));
                   }}
                 >
@@ -2886,7 +2914,10 @@ export default function SalesTerminal() {
                   min="0"
                   step={selectedProductForVariation?.allow_decimal_qty ? "0.25" : "1"}
                   value={quantityForVariation}
-                  onChange={(e) => setQuantityForVariation(e.target.value)}
+                  onChange={(e) => {
+                    setAmountForVariation("");
+                    setQuantityForVariation(e.target.value);
+                  }}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
                   className="text-center"
                   autoFocus
@@ -2900,12 +2931,57 @@ export default function SalesTerminal() {
                   onClick={() => {
                     const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
                     const current = parseDraftQuantity(quantityForVariation) ?? 0;
+                    setAmountForVariation("");
                     setQuantityForVariation(String(current + step));
                   }}
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="variationAmount">Or sell by Amount (rs)</Label>
+              <Input
+                id="variationAmount"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                placeholder="e.g. 100 → quantity calculated from rate"
+                value={amountForVariation}
+                onChange={(e) => setAmountForVariation(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
+              />
+              {(() => {
+                const amount = parseFloat(amountForVariation);
+                const rate = parseFloat(variationUnitPrice);
+                const qty = parseDraftQuantity(quantityForVariation);
+                if (!selectedProductForVariation || !Number.isFinite(amount) || amount <= 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      Customer asks for &quot;rs 100 ki&quot;? Enter the amount here. Tip: type &quot;sugar rs100&quot; in search.
+                    </p>
+                  );
+                }
+                if (!Number.isFinite(rate) || rate <= 0 || qty === null) {
+                  return <p className="text-xs text-red-600">Set a selling price to calculate quantity.</p>;
+                }
+                const finalQty = normalizeQuantityForProduct(selectedProductForVariation, qty);
+                return (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      = {finalQty} {selectedUnit} × rs {rate.toFixed(2)} = rs {(finalQty * rate).toFixed(2)}
+                    </p>
+                    {!selectedProductForVariation.allow_decimal_qty && (
+                      <p className="text-xs text-amber-600">
+                        Decimal quantity is off for this product, so quantity is rounded to a whole number. Enable it in Inventory to sell exact amounts.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             <div className="grid gap-2">
