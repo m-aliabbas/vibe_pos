@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import JsBarcode from 'jsbarcode';
 import { ToWords } from 'to-words';
 import { Button } from "@/components/ui/button";
-import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download, Barcode, Printer, Layers } from "lucide-react";
+import { Plus, Search, Tag, Package, Edit, Trash2, Grid3x3, TrendingUp, Filter, Download, Barcode, Printer, Layers, Ban, CircleCheck } from "lucide-react";
 import {
     Dialog,
     DialogContent,
@@ -73,6 +73,7 @@ interface Product {
     cost_price: number;
     quantity: number;
     allow_decimal_qty: boolean;
+    sale_blocked?: boolean;
     has_variations: boolean;
     variation_attributes: string[];
     base_unit: string;
@@ -217,6 +218,37 @@ export default function InventoryPage() {
         setPage(1);
     }, [search, categoryFilter, stockFilter]);
 
+    const searchInputRef = useRef<HTMLInputElement | null>(null);
+    const [saleBlockBusyId, setSaleBlockBusyId] = useState<number | null>(null);
+
+    // "/" focuses product search from anywhere on the page (unless typing in a field).
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            const el = e.target as HTMLElement | null;
+            const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+            if (e.key === '/' && !typing) {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+                searchInputRef.current?.select();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    const toggleSaleBlocked = async (product: Product) => {
+        const next = !product.sale_blocked;
+        setSaleBlockBusyId(product.id);
+        try {
+            await api.put(`/products/${product.id}`, { sale_blocked: next });
+            setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, sale_blocked: next } : p)));
+        } catch (error) {
+            alert((error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to update product');
+        } finally {
+            setSaleBlockBusyId(null);
+        }
+    };
+
     const fetchProducts = async () => {
         const requestId = ++fetchRequestIdRef.current;
         try {
@@ -251,6 +283,8 @@ export default function InventoryPage() {
                 filtered = data.filter((p: Product) => p.quantity <= 0);
             } else if (stockFilter === 'in') {
                 filtered = data.filter((p: Product) => p.quantity > 0);
+            } else if (stockFilter === 'blocked') {
+                filtered = data.filter((p: Product) => p.sale_blocked);
             }
 
             setProducts(filtered);
@@ -862,7 +896,8 @@ export default function InventoryPage() {
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                         <Input
-                            placeholder="Search products by name or SKU..."
+                            ref={searchInputRef}
+                            placeholder="Search products by name or SKU...  ( / )"
                             className="pl-10"
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
@@ -889,6 +924,7 @@ export default function InventoryPage() {
                             <SelectItem value="in">In Stock</SelectItem>
                             <SelectItem value="low">Low Stock (≤10)</SelectItem>
                             <SelectItem value="out">Out of Stock</SelectItem>
+                            <SelectItem value="blocked">Blocked from Sale</SelectItem>
                         </SelectContent>
                     </Select>
                 </div>
@@ -908,9 +944,15 @@ export default function InventoryPage() {
                         </TableHeader>
                         <TableBody>
                             {products.map((product) => (
-                                <TableRow key={product.id} className="hover:bg-gray-50/50 transition-colors">
-                                    <TableCell className="font-medium text-gray-900">
+                                <TableRow key={product.id} className={`hover:bg-gray-50/50 transition-colors ${product.sale_blocked ? 'bg-red-50/40' : ''}`}>
+                                    <TableCell className={`font-medium ${product.sale_blocked ? 'text-gray-500' : 'text-gray-900'}`}>
                                         {product.name}
+                                        {product.sale_blocked && (
+                                            <Badge variant="outline" className="ml-2 text-xs border-red-300 bg-red-50 text-red-700">
+                                                <Ban className="h-3 w-3 mr-1" />
+                                                Not for sale
+                                            </Badge>
+                                        )}
                                         {product.has_variations && (
                                             <Badge variant="outline" className="ml-2 text-xs">
                                                 <Grid3x3 className="h-3 w-3 mr-1" />
@@ -938,6 +980,17 @@ export default function InventoryPage() {
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                disabled={saleBlockBusyId === product.id}
+                                                onClick={() => void toggleSaleBlocked(product)}
+                                                className={product.sale_blocked ? 'text-red-600 hover:bg-emerald-50 hover:text-emerald-600' : 'hover:bg-red-50 hover:text-red-600'}
+                                                title={product.sale_blocked ? 'Allow selling this product again' : 'Stop selling this product'}
+                                                aria-label={product.sale_blocked ? `Allow selling ${product.name}` : `Stop selling ${product.name}`}
+                                            >
+                                                {product.sale_blocked ? <CircleCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
+                                            </Button>
                                             <Button
                                                 variant="ghost"
                                                 size="sm"

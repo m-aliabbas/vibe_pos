@@ -20,6 +20,8 @@ class Product(Base):
     quantity = Column(Float, default=0.0)
     low_stock_threshold = Column(Integer, default=10)
     allow_decimal_qty = Column(Boolean, default=False)
+    # When true the product stays in inventory but cannot be sold at the POS.
+    sale_blocked = Column(Boolean, default=False, nullable=False)
     
     # Variation fields
     has_variations = Column(Boolean, default=False)

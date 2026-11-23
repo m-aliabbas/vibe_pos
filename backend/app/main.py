@@ -25,6 +25,7 @@ def ensure_schema_columns() -> None:
             "products": [
                 ("allow_decimal_qty", "BOOLEAN DEFAULT 0"),
                 ("company", "VARCHAR"),
+                ("sale_blocked", "BOOLEAN DEFAULT 0 NOT NULL"),
             ],
             "purchases": [
                 ("subtotal_amount", "REAL DEFAULT 0"),

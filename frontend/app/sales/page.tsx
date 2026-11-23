@@ -46,6 +46,10 @@ import {
   Printer,
   Settings,
   X,
+  Ban,
+  CircleCheck,
+  Keyboard,
+  Calculator,
 } from "lucide-react";
 import { ToWords } from "to-words";
 import { storeConfig, fetchStoreConfig, StoreInfo } from "@/lib/store-config";
@@ -77,6 +81,7 @@ interface Product {
   cost_price: number;
   quantity: number;
   allow_decimal_qty: boolean;
+  sale_blocked?: boolean;
   vendor_id: number;
   has_variations: boolean;
   variation_attributes: string[];
@@ -84,6 +89,61 @@ interface Product {
   selling_units: SellingUnit[];
   variations?: ProductVariation[];
 }
+
+const PAYMENT_METHODS = [
+  { value: "cash", label: "Cash" },
+  { value: "card", label: "Card" },
+  { value: "mobile", label: "Mobile" },
+  { value: "other", label: "Other" },
+] as const;
+
+const SHORTCUT_GROUPS: { title: string; rows: [string, string][] }[] = [
+  {
+    title: "Anywhere on the sales screen",
+    rows: [
+      ["F2", "Search / scan products"],
+      ["F3", "Go to cart lines"],
+      ["F7", "Show / hide held bills"],
+      ["F8 or Ctrl+H", "Hold this bill"],
+      ["F9 or Ctrl+M", "Checkout"],
+      ["Ctrl+E", "Quotation"],
+      ["F1", "This help"],
+    ],
+  },
+  {
+    title: "Search box",
+    rows: [
+      ["Up / Down", "Choose product"],
+      ["Enter", "Add chosen product"],
+      ["milk 3 · 3 milk · milk x3", "Add with quantity"],
+      ["sugar rs100", "Sell rs 100 worth"],
+      ["Ctrl+B", "Stop / allow selling chosen product"],
+    ],
+  },
+  {
+    title: "Cart (after F3)",
+    rows: [
+      ["Up / Down · Home / End", "Move between lines"],
+      ["+ / -", "Increase / decrease quantity"],
+      ["D", "Type line discount (Enter returns)"],
+      ["Enter", "Edit line"],
+      ["Delete", "Remove line"],
+      ["Esc", "Back to search"],
+    ],
+  },
+  {
+    title: "Product window & checkout",
+    rows: [
+      ["Enter / F4", "Add to cart"],
+      ["Tab", "Quantity → Discount → Price"],
+      ["F6", "Sell by amount (rs → quantity)"],
+      ["Ctrl+B", "Stop selling this product"],
+      ["Alt+1 … Alt+4", "Cash / Card / Mobile / Other"],
+      ["Enter in Amount Paid", "Complete sale"],
+      ["Enter after sale", "Start new sale"],
+    ],
+  },
+];
 
 interface CartItem {
   product: Product;
@@ -145,6 +205,15 @@ export default function SalesTerminal() {
   const [completedChange, setCompletedChange] = useState<number>(0);
 
   const [summaryOpen, setSummaryOpen] = useState<boolean>(false);
+  // Keyboard-first helpers
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [sellByAmountOpen, setSellByAmountOpen] = useState(false);
+  const [activeCartIndex, setActiveCartIndex] = useState(-1);
+  const [cartFocused, setCartFocused] = useState(false);
+  const cartContainerRef = useRef<HTMLDivElement | null>(null);
+  const amountForVariationInputRef = useRef<HTMLInputElement | null>(null);
+  const quantityForUnitInputRef = useRef<HTMLInputElement | null>(null);
+  const newSaleButtonRef = useRef<HTMLButtonElement | null>(null);
   const [heldSales, setHeldSales] = useState<HoldSaleResponse[]>([]);
   const [heldOpen, setHeldOpen] = useState(false);
   const [productsListOpen, setProductsListOpen] = useState(false);
@@ -336,6 +405,48 @@ export default function SalesTerminal() {
     },
     []
   );
+
+  // Stop / allow selling a product. The product stays in inventory; the backend rejects sales of it.
+  const toggleSaleBlocked = useCallback(
+    async (product: Product) => {
+      const next = !product.sale_blocked;
+      if (
+        next &&
+        !confirm(
+          `Stop selling "${product.name}"?
+
+It stays in inventory but cannot be added to a bill until you allow it again. Any lines of it in the current bill are removed.`
+        )
+      ) {
+        return;
+      }
+      try {
+        await api.put(
+          `/products/${product.id}`,
+          { sale_blocked: next },
+          { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+        );
+        updateLocalProduct(product.id, (p) => ({ ...p, sale_blocked: next }));
+        if (next) {
+          setCart((prev) => prev.filter((item) => item.product.id !== product.id));
+          setVariationDialogOpen(false);
+          setUnitDialogOpen(false);
+          setTimeout(() => productSearchInputRef.current?.focus(), 50);
+        }
+      } catch (error) {
+        alert((error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Failed to update product");
+      }
+    },
+    [token, updateLocalProduct]
+  );
+
+  // Returns true (and tells the cashier) when a product must not be sold.
+  const rejectIfSaleBlocked = useCallback((product: Product) => {
+    if (!product.sale_blocked) return false;
+    alert(`"${product.name}" is stopped from sale.
+Allow it again with Ctrl+B in the product list or from Inventory.`);
+    return true;
+  }, []);
 
   const buildSummary = useCallback((sales: any[]): SaleSummary => {
     const summary: SaleSummary = {
@@ -866,30 +977,34 @@ export default function SalesTerminal() {
 
   const addToCartWithQuantity = useCallback(
     (product: Product, quantity: number, amount?: number) => {
+      if (rejectIfSaleBlocked(product)) return;
       const normalizedQuantity = normalizeQuantityForProduct(product, quantity);
       // Open variation picker dialog for all products
       setSelectedProductForVariation(product);
       setQuantityForVariation(String(normalizedQuantity));
       setAmountForVariation(amount && amount > 0 ? String(amount) : "");
+      setSellByAmountOpen(Boolean(amount && amount > 0));
       setSelectedUnit(product.base_unit);
       setVariationPriceOverrideEnabled(false);
       setSelectedVariation(null);
       setVariationDialogOpen(true);
       return;
     },
-    [cart, normalizeQuantityForProduct, shouldShowUnitDialog]
+    [cart, normalizeQuantityForProduct, shouldShowUnitDialog, rejectIfSaleBlocked]
   );
 
   const addToCart = useCallback(
     (product: Product) => {
+      if (rejectIfSaleBlocked(product)) return;
       // Open variation picker dialog for all products
       setSelectedProductForVariation(product);
       setQuantityForVariation("1");
+      setSellByAmountOpen(false);
       setSelectedUnit(product.base_unit);
       setSelectedVariation(null);
       setVariationDialogOpen(true);
     },
-    []
+    [rejectIfSaleBlocked]
   );
 
   const addVariationToCart = useCallback(async () => {
@@ -897,6 +1012,7 @@ export default function SalesTerminal() {
       alert("Please select a product");
       return;
     }
+    if (editingCartIndex === null && rejectIfSaleBlocked(selectedProductForVariation)) return;
 
     // For products with variations, require a variation to be selected
     if (selectedProductForVariation.has_variations && !selectedVariation) {
@@ -1080,6 +1196,7 @@ export default function SalesTerminal() {
     variationPriceOverrideEnabled,
     updateLocalProduct,
     editingCartIndex,
+    rejectIfSaleBlocked,
   ]);
 
   // Keep ref in sync so the keydown listener always has the latest version
@@ -1251,6 +1368,9 @@ export default function SalesTerminal() {
           variations: product.variations || [],
         };
 
+        if (rejectIfSaleBlocked(frontendProduct)) return true;
+        setSellByAmountOpen(false);
+
         const normalizedQuantity = normalizeQuantityForProduct(frontendProduct, quantity);
 
         if (variation) {
@@ -1329,7 +1449,7 @@ export default function SalesTerminal() {
         return false;
       }
     },
-    [cart, normalizeQuantityForProduct, shouldShowUnitDialog]
+    [cart, normalizeQuantityForProduct, shouldShowUnitDialog, rejectIfSaleBlocked]
   );
 
   const handleSearchKeyDown = useCallback(
@@ -1917,6 +2037,197 @@ export default function SalesTerminal() {
     setTimeout(() => productSearchInputRef.current?.focus(), 100);
   }, [clearCart]);
 
+  // ───────────── Keyboard-first operation ─────────────
+  const focusProductSearch = useCallback(() => {
+    productSearchInputRef.current?.focus();
+    productSearchInputRef.current?.select();
+  }, []);
+
+  const focusCart = useCallback(() => {
+    if (cart.length === 0) {
+      focusProductSearch();
+      return;
+    }
+    setActiveCartIndex((prev) => (prev < 0 || prev >= cart.length ? cart.length - 1 : prev));
+    cartContainerRef.current?.focus();
+  }, [cart.length, focusProductSearch]);
+
+  const openCartItemEditor = useCallback(
+    (index: number) => {
+      const item = cart[index];
+      if (!item) return;
+      setEditingCartIndex(index);
+      setSelectedProductForVariation(item.product);
+      setSelectedVariation(item.variation || null);
+      setQuantityForVariation(String(item.quantity));
+      setSelectedUnit(item.unit);
+      setVariationDiscount(item.item_discount || 0);
+      setVariationUnitPrice(typeof item.unit_price === "number" ? String(item.unit_price) : "");
+      setVariationPriceOverrideEnabled(typeof item.unit_price === "number");
+      setSellByAmountOpen(false);
+      setVariationDialogOpen(true);
+    },
+    [cart]
+  );
+
+  const toggleSellByAmount = useCallback(() => {
+    setSellByAmountOpen((open) => {
+      const next = !open;
+      if (next) {
+        setTimeout(() => {
+          amountForVariationInputRef.current?.focus();
+          amountForVariationInputRef.current?.select();
+        }, 30);
+      } else {
+        setAmountForVariation("");
+        setTimeout(() => quantityForVariationInputRef.current?.focus(), 30);
+      }
+      return next;
+    });
+  }, []);
+
+  // Keep the cart cursor valid when lines are added/removed.
+  useEffect(() => {
+    setActiveCartIndex((prev) => (cart.length === 0 ? -1 : Math.min(prev, cart.length - 1)));
+  }, [cart.length]);
+
+  useEffect(() => {
+    if (activeCartIndex < 0) return;
+    cartContainerRef.current
+      ?.querySelector<HTMLElement>(`[data-cart-row="${activeCartIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeCartIndex]);
+
+  // Cart mode (F3): arrows move, +/- change qty, D discount, Enter edit, Del remove, Esc back to search.
+  const handleCartKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.target !== e.currentTarget || cart.length === 0) return;
+      const i = Math.min(Math.max(activeCartIndex, 0), cart.length - 1);
+      const item = cart[i];
+      const step = item.product.allow_decimal_qty ? 0.25 : 1;
+      switch (e.key) {
+        case "ArrowDown":
+          setActiveCartIndex(Math.min(i + 1, cart.length - 1));
+          break;
+        case "ArrowUp":
+          setActiveCartIndex(Math.max(i - 1, 0));
+          break;
+        case "Home":
+          setActiveCartIndex(0);
+          break;
+        case "End":
+          setActiveCartIndex(cart.length - 1);
+          break;
+        case "+":
+        case "=":
+          updateQuantity(i, item.quantity + step);
+          break;
+        case "-":
+        case "_":
+          updateQuantity(i, item.quantity - step);
+          break;
+        case "Delete":
+        case "Backspace":
+          removeFromCart(i);
+          break;
+        case "Enter":
+          openCartItemEditor(i);
+          break;
+        case "d":
+        case "D": {
+          const input = cartContainerRef.current?.querySelector<HTMLInputElement>(`[data-cart-discount="${i}"]`);
+          input?.focus();
+          input?.select();
+          break;
+        }
+        case "Escape":
+          focusProductSearch();
+          break;
+        default:
+          return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    [cart, activeCartIndex, updateQuantity, removeFromCart, openCartItemEditor, focusProductSearch]
+  );
+
+  // Global F-keys. They work even while the cursor is inside a text box.
+  useEffect(() => {
+    const otherDialogOpen = checkoutOpen || variationDialogOpen || unitDialogOpen || successOpen;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "F1") {
+        e.preventDefault();
+        if (!otherDialogOpen || shortcutsOpen) setShortcutsOpen((open) => !open);
+        return;
+      }
+      if (shortcutsOpen) return;
+
+      if (variationDialogOpen) {
+        if (e.key === "F6") {
+          e.preventDefault();
+          toggleSellByAmount();
+        } else if (e.ctrlKey && e.code === "KeyB" && selectedProductForVariation) {
+          e.preventDefault();
+          void toggleSaleBlocked(selectedProductForVariation);
+        }
+        return;
+      }
+
+      if (checkoutOpen && !quotationMode && e.altKey && /^Digit[1-4]$/.test(e.code)) {
+        e.preventDefault();
+        setPaymentMethod(PAYMENT_METHODS[Number(e.code.slice(5)) - 1].value);
+        return;
+      }
+
+      if (otherDialogOpen) return;
+
+      if (e.key === "F2") {
+        e.preventDefault();
+        focusProductSearch();
+      } else if (e.key === "F3") {
+        e.preventDefault();
+        focusCart();
+      } else if (e.key === "F7") {
+        e.preventDefault();
+        setHeldOpen((open) => !open);
+      } else if (e.key === "F8") {
+        e.preventDefault();
+        void holdCurrentSale();
+      } else if (e.key === "F9") {
+        e.preventDefault();
+        handleCheckout();
+      } else if (e.ctrlKey && e.code === "KeyB") {
+        e.preventDefault();
+        const product = showAutocomplete ? filteredProducts[selectedProductIndex] : undefined;
+        if (product) {
+          void toggleSaleBlocked(product);
+        } else {
+          alert("Highlight a product first: type its name in search and use the arrow keys, then press Ctrl+B.");
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    checkoutOpen,
+    variationDialogOpen,
+    unitDialogOpen,
+    successOpen,
+    shortcutsOpen,
+    quotationMode,
+    selectedProductForVariation,
+    showAutocomplete,
+    filteredProducts,
+    selectedProductIndex,
+    toggleSellByAmount,
+    toggleSaleBlocked,
+    focusProductSearch,
+    focusCart,
+    holdCurrentSale,
+    handleCheckout,
+  ]);
+
   // Get unique categories
   const categories = useMemo(() => {
     return ["All", ...Array.from(new Set(products.map((p) => p.category)))];
@@ -1936,6 +2247,9 @@ export default function SalesTerminal() {
           <p className="text-xs text-muted-foreground">Cashier: {user?.username}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShortcutsOpen(true)} title="Keyboard shortcuts (F1)">
+            <Keyboard className="h-4 w-4 mr-1" /> Shortcuts <kbd className="ml-1 rounded border bg-muted px-1 text-[10px]">F1</kbd>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setSummaryOpen((prev) => !prev)}>
             {summaryOpen ? "Hide Summary" : "Show Summary"}
           </Button>
@@ -2034,12 +2348,29 @@ export default function SalesTerminal() {
             </Button>
           </div>
 
-          {/* Cart rows — scrollable 80% */}
-          <div className="overflow-y-auto bg-white" style={{ flex: 4 }}>
+          {/* Cart rows — scrollable 80%. Focusable for keyboard cart mode (F3). */}
+          <div
+            ref={cartContainerRef}
+            tabIndex={0}
+            aria-label="Cart lines. Arrow keys move, plus and minus change quantity, D discount, Enter edit, Delete remove, Escape back to search."
+            onKeyDown={handleCartKeyDown}
+            onFocus={(e) => {
+              if (e.target === e.currentTarget) {
+                setCartFocused(true);
+                if (cart.length > 0 && activeCartIndex < 0) setActiveCartIndex(cart.length - 1);
+              }
+            }}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setCartFocused(false);
+            }}
+            className={`overflow-y-auto bg-white outline-none ${cartFocused ? "ring-2 ring-inset ring-amber-400" : ""}`}
+            style={{ flex: 4 }}
+          >
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2">
                 <ShoppingCart className="h-10 w-10 opacity-20" />
-                <p className="text-sm">Cart is empty — search or click a product</p>
+                <p className="text-sm">Cart is empty — type a product name or scan a barcode, then press Enter</p>
+                <p className="text-xs">Tips: <b>milk 3</b> = 3 milk · <b>sugar rs100</b> = rs 100 worth · <b>F1</b> all shortcuts</p>
               </div>
             ) : (
               <table className="w-full text-sm border-collapse">
@@ -2055,7 +2386,9 @@ export default function SalesTerminal() {
                     return (
                       <tr
                         key={`${item.product.id}-${item.variation?.id || "base"}-${item.unit}`}
-                        className="border-b hover:bg-blue-50/40 transition-colors"
+                        data-cart-row={index}
+                        onClick={() => setActiveCartIndex(index)}
+                        className={`border-b transition-colors ${cartFocused && index === activeCartIndex ? "bg-amber-100" : "hover:bg-blue-50/40"}`}
                       >
                         <td className="px-2 py-2 text-center text-muted-foreground w-8">{index + 1}</td>
                         <td className="px-3 py-2">
@@ -2092,6 +2425,16 @@ export default function SalesTerminal() {
                             value={item.item_discount || ""}
                             placeholder="0"
                             min="0"
+                            data-cart-discount={index}
+                            aria-label={`Discount for ${item.product.name}`}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === "Escape") {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setActiveCartIndex(index);
+                                cartContainerRef.current?.focus();
+                              }
+                            }}
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => {
                               const val = parseFloat(e.target.value) || 0;
@@ -2105,18 +2448,8 @@ export default function SalesTerminal() {
                         <td className="px-1 py-2 text-center w-14">
                           <div className="flex flex-col gap-0.5 items-center">
                             <Button size="icon" variant="ghost" className="h-6 w-6 text-blue-500 hover:text-blue-700"
-                              title="Edit"
-                              onClick={() => {
-                                setEditingCartIndex(index);
-                                setSelectedProductForVariation(item.product);
-                                setSelectedVariation(item.variation || null);
-                                setQuantityForVariation(String(item.quantity));
-                                setSelectedUnit(item.unit);
-                                setVariationDiscount(item.item_discount || 0);
-                                setVariationUnitPrice(typeof item.unit_price === "number" ? String(item.unit_price) : "");
-                                setVariationPriceOverrideEnabled(typeof item.unit_price === "number");
-                                setVariationDialogOpen(true);
-                              }}>
+                              title="Edit (Enter in cart mode)"
+                              onClick={() => openCartItemEditor(index)}>
                               <Settings className="h-3 w-3" />
                             </Button>
                             <Button size="icon" variant="ghost" className="h-6 w-6 text-red-500 hover:text-red-700"
@@ -2134,7 +2467,7 @@ export default function SalesTerminal() {
           </div>
 
           {/* ── Totals + Action buttons ── */}
-          <div className="border-t bg-gray-50 overflow-y-auto" style={{ flex: 1, minHeight: 110 }}>
+          <div className="border-t bg-gray-50 overflow-y-auto" style={{ flex: 1, minHeight: 136 }}>
             <div className="flex gap-3 p-3 items-start">
               {/* Totals */}
               <div className="flex-1 flex flex-col gap-1 text-sm">
@@ -2179,13 +2512,13 @@ export default function SalesTerminal() {
               {/* Action buttons */}
               <div className="flex flex-col gap-2 w-40 shrink-0">
                 <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-bold text-xs" size="sm" onClick={handleCheckout}>
-                  <DollarSign className="h-3.5 w-3.5 mr-1 shrink-0" />Checkout (Ctrl+M)
+                  <DollarSign className="h-3.5 w-3.5 mr-1 shrink-0" />Checkout (F9)
                 </Button>
                 <Button size="sm" className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold text-xs" onClick={() => void holdCurrentSale()}>
-                  Hold (Ctrl+H)
+                  Hold (F8)
                 </Button>
                 <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleQuotation}>
-                  <FileText className="h-3.5 w-3.5 mr-1 shrink-0" />Quotation
+                  <FileText className="h-3.5 w-3.5 mr-1 shrink-0" />Quotation (Ctrl+E)
                 </Button>
               </div>
             </div>
@@ -2212,7 +2545,8 @@ export default function SalesTerminal() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 ref={productSearchInputRef}
-                placeholder="Search name, SKU, barcode..."
+                placeholder="Search / scan (F2) — e.g. milk 3, sugar rs100"
+                aria-label="Product search. Enter adds, arrow keys choose, Ctrl+B stops selling the highlighted product."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
@@ -2247,12 +2581,31 @@ export default function SalesTerminal() {
                       return (
                         <tr
                           key={product.id}
-                          className={`autocomplete-item border-b cursor-pointer transition-colors ${isKeyboardSelected ? "bg-amber-100 hover:bg-amber-100" : inCart ? "bg-blue-50 hover:bg-blue-100" : product.quantity <= 0 ? "opacity-60 hover:bg-red-50/40" : "hover:bg-green-50/50"}`}
+                          className={`group autocomplete-item border-b cursor-pointer transition-colors ${isKeyboardSelected ? "bg-amber-100 hover:bg-amber-100" : product.sale_blocked ? "bg-red-50/60 text-muted-foreground" : inCart ? "bg-blue-50 hover:bg-blue-100" : product.quantity <= 0 ? "opacity-60 hover:bg-red-50/40" : "hover:bg-green-50/50"}`}
                           onClick={() => addToCart(product)}
                         >
                           <td className="px-3 py-1.5">
-                            <p className="font-medium leading-tight text-sm">{product.name}</p>
-                            <p className="text-xs text-muted-foreground">{product.category}</p>
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="min-w-0">
+                                <p className={`font-medium leading-tight text-sm ${product.sale_blocked ? "line-through decoration-red-400" : ""}`}>{product.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {product.sale_blocked ? <span className="font-semibold text-red-600">Not for sale</span> : product.category}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void toggleSaleBlocked(product);
+                                }}
+                                title={product.sale_blocked ? "Allow selling again (Ctrl+B)" : "Stop selling this product (Ctrl+B)"}
+                                aria-label={product.sale_blocked ? `Allow selling ${product.name}` : `Stop selling ${product.name}`}
+                                className={`shrink-0 rounded p-1 transition-opacity ${product.sale_blocked ? "text-emerald-600 hover:bg-emerald-50" : `text-red-500 hover:bg-red-50 group-hover:opacity-100 ${isKeyboardSelected ? "opacity-100" : "opacity-0"}`}`}
+                              >
+                                {product.sale_blocked ? <CircleCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                              </button>
+                            </div>
                           </td>
                           <td className="px-2 py-1.5 text-right font-semibold text-primary tabular-nums text-sm whitespace-nowrap">
                             {product.selling_price.toFixed(2)}
@@ -2311,8 +2664,60 @@ export default function SalesTerminal() {
           </div>
         </div>
       </div>{/* end POS grid */}
+
+      {/* Shortcut strip — always visible so cashiers learn the keys */}
+      <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground select-none">
+        {[
+          ["F1", "Help"],
+          ["F2", "Search"],
+          ["F3", "Cart"],
+          ["F6", "Sell by amount"],
+          ["F7", "Held bills"],
+          ["F8", "Hold"],
+          ["F9", "Checkout"],
+          ["Ctrl+E", "Quotation"],
+          ["Ctrl+B", "Stop selling"],
+        ].map(([key, label]) => (
+          <span key={key} className="whitespace-nowrap">
+            <kbd className="rounded border bg-muted px-1 py-px font-mono text-[10px] text-foreground">{key}</kbd> {label}
+          </span>
+        ))}
+      </div>
+
+      {/* Keyboard shortcuts help */}
+      <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Keyboard className="h-5 w-5" /> Keyboard shortcuts</DialogTitle>
+            <DialogDescription>Everything on this screen can be done without the mouse.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2 text-sm">
+            {SHORTCUT_GROUPS.map((group) => (
+              <div key={group.title} className="rounded-md border p-3">
+                <p className="mb-2 font-semibold">{group.title}</p>
+                <dl className="space-y-1">
+                  {group.rows.map(([key, label]) => (
+                    <div key={key} className="flex items-baseline justify-between gap-3">
+                      <dt><kbd className="rounded border bg-muted px-1.5 py-px font-mono text-xs">{key}</kbd></dt>
+                      <dd className="text-right text-muted-foreground">{label}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogContent
+          className="sm:max-w-2xl max-h-[90vh] flex flex-col"
+          onOpenAutoFocus={(e) => {
+            if (quotationMode) return;
+            e.preventDefault();
+            amountPaidInputRef.current?.focus();
+            amountPaidInputRef.current?.select();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{quotationMode ? "Create Quotation" : "Complete Sale"}</DialogTitle>
             <DialogDescription>
@@ -2323,6 +2728,85 @@ export default function SalesTerminal() {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 py-4 px-1 relative">
+            {!quotationMode && (
+              <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-3 space-y-3">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm font-semibold">Payable</span>
+                  <span className="text-2xl font-bold text-primary tabular-nums">rs {calculateTotal().toFixed(2)}</span>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="amountPaid" className="flex items-center justify-between text-sm">
+                    <span>Amount Paid (rs)</span>
+                    <span className="text-xs font-normal text-muted-foreground">Enter = complete sale</span>
+                  </Label>
+                  <Input
+                    ref={amountPaidInputRef}
+                    id="amountPaid"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={amountPaid}
+                    onChange={(e) => setAmountPaid(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !loading) {
+                        e.preventDefault();
+                        void completeSale();
+                      }
+                    }}
+                    className="h-12 text-right text-2xl font-bold"
+                  />
+                  {amountPaidInWords && (
+                    <p className="text-xs font-medium text-primary">In words: {amountPaidInWords}</p>
+                  )}
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {(() => {
+                      const total = Math.max(0, Math.round(calculateTotal() * 100) / 100);
+                      const options = [total, ...[100, 500, 1000, 5000].map((n) => Math.ceil(total / n) * n)]
+                        .filter((v, idx, arr) => v > 0 && arr.indexOf(v) === idx)
+                        .slice(0, 4);
+                      return options.map((value, idx) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs tabular-nums"
+                          tabIndex={-1}
+                          onClick={() => {
+                            setAmountPaid(String(value));
+                            amountPaidInputRef.current?.focus();
+                          }}
+                        >
+                          {idx === 0 ? `Exact ${value}` : value}
+                        </Button>
+                      ));
+                    })()}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-sm">Payment Method</Label>
+                  <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="Payment method">
+                    {PAYMENT_METHODS.map((method, idx) => (
+                      <Button
+                        key={method.value}
+                        type="button"
+                        size="sm"
+                        role="radio"
+                        aria-checked={paymentMethod === method.value}
+                        variant={paymentMethod === method.value ? "default" : "outline"}
+                        className="h-8 text-xs"
+                        onClick={() => setPaymentMethod(method.value)}
+                      >
+                        {method.label} <span className="ml-1 opacity-60">Alt+{idx + 1}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="customerPhone">Phone Number</Label>
               <Input
@@ -2521,23 +3005,6 @@ export default function SalesTerminal() {
               />
             </div>
 
-            {!quotationMode && <div className="space-y-1">
-              <Label htmlFor="payment" className="text-sm">
-                Payment Method
-              </Label>
-              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger id="payment" className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash</SelectItem>
-                  <SelectItem value="card">Card</SelectItem>
-                  <SelectItem value="mobile">Mobile Payment</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>}
-
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label htmlFor="discount" className="text-sm">
@@ -2568,26 +3035,6 @@ export default function SalesTerminal() {
                 />
               </div>
             </div>
-
-            {!quotationMode && <div className="space-y-1">
-              <Label htmlFor="amountPaid" className="text-sm">
-                Amount Paid (rs)
-              </Label>
-              <Input
-                ref={amountPaidInputRef}
-                id="amountPaid"
-                type="number"
-                min="0"
-                step="0.01"
-                value={amountPaid}
-                onChange={(e) => setAmountPaid(e.target.value)}
-                className="text-sm font-semibold h-8"
-              />
-              <p className="text-xs text-muted-foreground">Amount received from customer</p>
-              {amountPaidInWords && (
-                <p className="text-xs font-medium text-primary">In words: {amountPaidInWords}</p>
-              )}
-            </div>}
 
             <div className="border-t pt-2 space-y-1 text-xs">
               <div className="flex justify-between">
@@ -2676,7 +3123,7 @@ export default function SalesTerminal() {
               </>
             ) : (
               <Button onClick={() => void completeSale()} disabled={loading}>
-                {loading ? "Processing..." : "Complete Sale"}
+                {loading ? "Processing..." : "Complete Sale"} <span className="ml-2 text-xs opacity-70">(Enter)</span>
               </Button>
             )}
           </DialogFooter>
@@ -2685,7 +3132,7 @@ export default function SalesTerminal() {
 
       {/* Success Dialog */}
       <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" onOpenAutoFocus={(e) => { e.preventDefault(); newSaleButtonRef.current?.focus(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
               <CheckCircle2 className="h-6 w-6" />
@@ -2763,286 +3210,340 @@ export default function SalesTerminal() {
               <FileText className="mr-2 h-4 w-4" />
               View Invoice
             </Button>
-            <Button onClick={handleNewSale} className="w-full sm:w-auto">
-              New Sale
+            <Button ref={newSaleButtonRef} onClick={handleNewSale} className="w-full sm:w-auto">
+              New Sale <span className="ml-2 text-xs opacity-70">(Enter)</span>
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Variation Picker Dialog */}
+      {/* Variation Picker Dialog — keyboard first: Quantity → Discount → Price. Sell-by-amount lives in a side panel (F6). */}
       <Dialog open={variationDialogOpen} onOpenChange={setVariationDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className={sellByAmountOpen ? "sm:max-w-4xl" : "sm:max-w-xl"}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            const target = sellByAmountOpen ? amountForVariationInputRef.current : quantityForVariationInputRef.current;
+            target?.focus();
+            target?.select();
+          }}
+        >
           <DialogHeader>
-            <DialogTitle>
-              {selectedProductForVariation?.has_variations ? "Select Variation" : "Product Details"} - {selectedProductForVariation?.name}
+            <DialogTitle className="flex flex-wrap items-center gap-2">
+              {selectedProductForVariation?.name}
+              {selectedProductForVariation?.sale_blocked && (
+                <Badge variant="destructive" className="text-xs">Not for sale</Badge>
+              )}
             </DialogTitle>
             <DialogDescription>
-              {selectedProductForVariation?.has_variations 
-                ? "Choose the specific variation and quantity (Press F4 or Space to add to cart)"
-                : "Configure quantity and options (Press F4 or Space to add to cart)"}
+              {selectedProductForVariation && (
+                <span className="mr-2 font-medium text-foreground">
+                  rs {selectedProductForVariation.selling_price.toFixed(2)} · Stock {selectedProductForVariation.quantity} {selectedProductForVariation.base_unit}
+                </span>
+              )}
+              Enter to add · Tab to move · F6 sell by amount
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Product Info */}
-            {selectedProductForVariation && (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <div className="text-sm font-medium text-blue-900 mb-1">Product Info</div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted-foreground">Base Price:</span>
-                  <span className="font-semibold text-blue-900">
-                    rs {selectedProductForVariation.selling_price.toFixed(2)}
-                  </span>
+          <div className={sellByAmountOpen ? "grid gap-5 md:grid-cols-[1fr_17rem]" : ""}>
+            {/* ── Main column: the things a cashier touches every time ── */}
+            <div className="space-y-4">
+              {selectedProductForVariation?.has_variations && selectedProductForVariation?.variations && selectedProductForVariation.variations.length > 0 ? (
+                <div className="grid gap-2">
+                  <Label>Select Variation</Label>
+                  <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+                    {selectedProductForVariation.variations.map((variation) => {
+                      const finalPrice = selectedProductForVariation.selling_price + variation.price_adjustment;
+                      return (
+                        <button
+                          key={variation.id}
+                          onClick={() => { setSelectedVariation(variation); setTimeout(() => quantityForVariationInputRef.current?.focus(), 0); }}
+                          className={`p-3 border rounded text-left transition-all ${selectedVariation?.id === variation.id ? "border-blue-500 bg-blue-50" : "hover:border-gray-400"
+                            } ${variation.quantity <= 0 ? "opacity-50" : ""}`}
+                          disabled={variation.quantity <= 0}
+                        >
+                          <div className="font-medium">
+                            {Object.entries(variation.attributes)
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join(", ")}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            rs {finalPrice.toFixed(2)} • Stock: {variation.quantity > 0 ? variation.quantity : "0 - Out of Stock"}
+                          </div>
+                          {variation.quantity <= 0 && <div className="text-xs text-red-600">Out of stock</div>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-sm mt-1">
-                  <span className="text-muted-foreground">Stock:</span>
-                  <span className="font-medium">
-                    {selectedProductForVariation.quantity} {selectedProductForVariation.base_unit}
-                  </span>
+              ) : selectedProductForVariation?.has_variations ? (
+                <div className="text-center text-muted-foreground py-4">
+                  No variations available. Please add variations in inventory management.
                 </div>
-              </div>
-            )}
+              ) : null}
 
-            {selectedProductForVariation?.has_variations && selectedProductForVariation?.variations && selectedProductForVariation.variations.length > 0 ? (
-              <div className="grid gap-2">
-                <Label>Select Variation</Label>
-                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                  {selectedProductForVariation.variations.map((variation) => {
-                    const finalPrice = selectedProductForVariation.selling_price + variation.price_adjustment;
-                    return (
-                      <button
-                        key={variation.id}
-                        onClick={() => { setSelectedVariation(variation); setTimeout(() => quantityForVariationInputRef.current?.focus(), 0); }}
-                        className={`p-3 border rounded text-left transition-all ${selectedVariation?.id === variation.id ? "border-blue-500 bg-blue-50" : "hover:border-gray-400"
-                          } ${variation.quantity <= 0 ? "opacity-50" : ""}`}
-                        disabled={variation.quantity <= 0}
-                      >
-                        <div className="font-medium">
-                          {Object.entries(variation.attributes)
-                            .map(([k, v]) => `${k}: ${v}`)
-                            .join(", ")}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          rs {finalPrice.toFixed(2)} • Stock: {variation.quantity > 0 ? variation.quantity : "0 - Out of Stock"}
-                        </div>
-                        {variation.quantity <= 0 && <div className="text-xs text-red-600">Out of stock</div>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : selectedProductForVariation?.has_variations ? (
-              <div className="text-center text-muted-foreground py-4">
-                No variations available. Please add variations in inventory management.
-              </div>
-            ) : null}
-
-            {selectedProductForVariation && (selectedVariation || !selectedProductForVariation.has_variations) && (
-              <>
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md group">
-                  <div className="text-sm font-medium text-blue-900 mb-1">Pricing Information</div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-muted-foreground">Buying Price:</span>
-                    <span className="font-medium text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                      rs {selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}
+              {/* Quantity + Discount side by side, always first */}
+              <div className="grid grid-cols-[1fr_9rem] gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="variationQuantity">
+                    Quantity{" "}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({selectedUnit}{selectedProductForVariation?.allow_decimal_qty ? ", decimals ok" : ""})
                     </span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm mt-1">
-                    <span className="text-muted-foreground">Selling Price:</span>
-                    <span className="font-semibold text-primary">
-                      rs {selectedVariation 
-                        ? (selectedProductForVariation.selling_price + selectedVariation.price_adjustment).toFixed(2)
-                        : selectedProductForVariation.selling_price.toFixed(2)}
-                    </span>
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      tabIndex={-1}
+                      aria-label="Decrease quantity"
+                      onClick={() => {
+                        const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
+                        const current = parseDraftQuantity(quantityForVariation) ?? 0;
+                        const next = Math.max(0, current - step);
+                        setAmountForVariation("");
+                        setQuantityForVariation(String(next));
+                      }}
+                    >
+                      <Minus className="h-4 w-4" />
+                    </Button>
+
+                    <Input
+                      id="variationQuantity"
+                      type="number"
+                      min="0"
+                      step={selectedProductForVariation?.allow_decimal_qty ? "0.25" : "1"}
+                      value={quantityForVariation}
+                      onChange={(e) => {
+                        setAmountForVariation("");
+                        setQuantityForVariation(e.target.value);
+                      }}
+                      onFocus={(e) => e.target.select()}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
+                      className="h-11 text-center text-lg font-semibold"
+                      ref={quantityForVariationInputRef}
+                    />
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      tabIndex={-1}
+                      aria-label="Increase quantity"
+                      onClick={() => {
+                        const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
+                        const current = parseDraftQuantity(quantityForVariation) ?? 0;
+                        setAmountForVariation("");
+                        setQuantityForVariation(String(current + step));
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
 
-                {selectedProductForVariation.selling_units && selectedProductForVariation.selling_units.length > 0 && (
-                  <div className="grid gap-2">
-                    <Label>Selling Unit</Label>
-                    <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={selectedProductForVariation.base_unit}>
-                          {selectedProductForVariation.base_unit} (Base unit)
-                        </SelectItem>
-                        {selectedProductForVariation.selling_units.map((unit) => (
-                          <SelectItem key={unit.unit} value={unit.unit}>
-                            {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </>
-            )}
-
-            <div className="grid gap-2">
-              <Label>Quantity</Label>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="variationDecimalEnabled"
-                  checked={Boolean(selectedProductForVariation?.allow_decimal_qty)}
-                  disabled
-                />
-                <Label htmlFor="variationDecimalEnabled" className="text-xs text-muted-foreground">
-                  Points/decimal quantity enabled for this product
-                </Label>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="variationDiscount">Discount (rs)</Label>
+                  <Input
+                    id="variationDiscount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0"
+                    value={variationDiscount || ""}
+                    onChange={(e) => setVariationDiscount(parseFloat(e.target.value) || 0)}
+                    onFocus={(e) => e.target.select()}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
+                    className="h-11 text-right text-lg"
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
-                    const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
-                    const current = parseDraftQuantity(quantityForVariation) ?? 0;
-                    const next = Math.max(0, current - step);
-                    setAmountForVariation("");
-                    setQuantityForVariation(String(next));
-                  }}
-                >
-                  <Minus className="h-4 w-4" />
-                </Button>
 
-                <Input
-                  type="number"
-                  min="0"
-                  step={selectedProductForVariation?.allow_decimal_qty ? "0.25" : "1"}
-                  value={quantityForVariation}
-                  onChange={(e) => {
-                    setAmountForVariation("");
-                    setQuantityForVariation(e.target.value);
-                  }}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
-                  className="text-center"
-                  autoFocus
-                  ref={quantityForVariationInputRef}
-                />
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => {
-                    const step = selectedProductForVariation?.allow_decimal_qty ? 0.25 : 1;
-                    const current = parseDraftQuantity(quantityForVariation) ?? 0;
-                    setAmountForVariation("");
-                    setQuantityForVariation(String(current + step));
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="variationAmount">Or sell by Amount (rs)</Label>
-              <Input
-                id="variationAmount"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="any"
-                placeholder="e.g. 100 → quantity calculated from rate"
-                value={amountForVariation}
-                onChange={(e) => setAmountForVariation(e.target.value)}
-                onFocus={(e) => e.target.select()}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
-              />
-              {(() => {
-                const amount = parseFloat(amountForVariation);
-                const rate = parseFloat(variationUnitPrice);
-                const qty = parseDraftQuantity(quantityForVariation);
-                if (!selectedProductForVariation || !Number.isFinite(amount) || amount <= 0) {
-                  return (
-                    <p className="text-xs text-muted-foreground">
-                      Customer asks for &quot;rs 100 ki&quot;? Enter the amount here. Tip: type &quot;sugar rs100&quot; in search.
-                    </p>
-                  );
-                }
-                if (!Number.isFinite(rate) || rate <= 0 || qty === null) {
-                  return <p className="text-xs text-red-600">Set a selling price to calculate quantity.</p>;
-                }
-                const finalQty = normalizeQuantityForProduct(selectedProductForVariation, qty);
+              {/* Live line total so the cashier sees what will be charged */}
+              {selectedProductForVariation && (() => {
+                const qty = parseDraftQuantity(quantityForVariation) ?? 0;
+                const parsedRate = parseFloat(variationUnitPrice);
+                const fallbackRate = selectedProductForVariation.selling_price + (selectedVariation?.price_adjustment || 0);
+                const rate = Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : fallbackRate;
+                const total = qty * rate - (variationDiscount || 0);
                 return (
-                  <>
-                    <p className="text-xs text-muted-foreground">
-                      = {finalQty} {selectedUnit} × rs {rate.toFixed(2)} = rs {(finalQty * rate).toFixed(2)}
-                    </p>
-                    {!selectedProductForVariation.allow_decimal_qty && (
-                      <p className="text-xs text-amber-600">
-                        Decimal quantity is off for this product, so quantity is rounded to a whole number. Enable it in Inventory to sell exact amounts.
-                      </p>
-                    )}
-                  </>
+                  <div className="flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+                    <span className="text-sm text-muted-foreground tabular-nums">
+                      {qty} × rs {rate.toFixed(2)}{variationDiscount ? ` − rs ${variationDiscount.toFixed(2)}` : ""}
+                    </span>
+                    <span className="text-xl font-bold text-primary tabular-nums">rs {total.toFixed(2)}</span>
+                  </div>
                 );
               })()}
+
+              {selectedProductForVariation && (selectedVariation || !selectedProductForVariation.has_variations) && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {selectedProductForVariation.selling_units && selectedProductForVariation.selling_units.length > 0 && (
+                    <div className="grid gap-1.5">
+                      <Label>Selling Unit</Label>
+                      <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={selectedProductForVariation.base_unit}>
+                            {selectedProductForVariation.base_unit} (Base unit)
+                          </SelectItem>
+                          {selectedProductForVariation.selling_units.map((unit) => (
+                            <SelectItem key={unit.unit} value={unit.unit}>
+                              {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="grid gap-1.5 group">
+                    <Label htmlFor="variationUnitPrice" className="flex items-center justify-between">
+                      <span>Selling Price (rs)</span>
+                      <span className="text-xs font-normal text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                        cost {selectedProductForVariation.cost_price?.toFixed(2) || "0.00"}
+                      </span>
+                    </Label>
+                    <Input
+                      id="variationUnitPrice"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={variationUnitPrice}
+                      onChange={(e) => setVariationUnitPrice(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
+                      disabled={!variationPriceOverrideEnabled}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="variationPriceOverrideEnabled"
+                        checked={variationPriceOverrideEnabled}
+                        onCheckedChange={(checked) => setVariationPriceOverrideEnabled(Boolean(checked))}
+                      />
+                      <Label htmlFor="variationPriceOverrideEnabled" className="text-xs text-muted-foreground">
+                        Change price (also saves to database)
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="variationDiscount">Item Discount (rs)</Label>
-              <Input
-                id="variationDiscount"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={variationDiscount || ""}
-                onChange={(e) => setVariationDiscount(parseFloat(e.target.value) || 0)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
-              />
-              <p className="text-xs text-muted-foreground">Discount to apply on this item</p>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="variationUnitPrice">Selling Price (rs)</Label>
-              <Input
-                id="variationUnitPrice"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={variationUnitPrice}
-                onChange={(e) => setVariationUnitPrice(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
-                disabled={!variationPriceOverrideEnabled}
-              />
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="variationPriceOverrideEnabled"
-                  checked={variationPriceOverrideEnabled}
-                  onCheckedChange={(checked) => setVariationPriceOverrideEnabled(Boolean(checked))}
-                />
-                <Label htmlFor="variationPriceOverrideEnabled" className="text-xs text-muted-foreground">
-                  Update price in database
+            {/* ── Side panel: price → quantity (only when needed) ── */}
+            {sellByAmountOpen && (
+              <aside className="rounded-lg border border-amber-300 bg-amber-50/60 p-3 space-y-2 h-fit" aria-label="Sell by amount">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-900">
+                    <Calculator className="h-4 w-4" /> Sell by amount
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={toggleSellByAmount}
+                    aria-label="Close sell by amount (F6)"
+                    title="Close (F6)"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Label htmlFor="variationAmount" className="text-xs text-muted-foreground">
+                  Customer says &quot;rs 100 ki de do&quot;? Type the rupees:
                 </Label>
-              </div>
-              <p className="text-xs text-muted-foreground">Override price for the selected unit</p>
-            </div>
+                <Input
+                  id="variationAmount"
+                  ref={amountForVariationInputRef}
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  placeholder="e.g. 100"
+                  value={amountForVariation}
+                  onChange={(e) => setAmountForVariation(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addVariationToCart(); } }}
+                  className="h-11 text-right text-lg font-semibold bg-white"
+                />
+                {(() => {
+                  const amount = parseFloat(amountForVariation);
+                  const rate = parseFloat(variationUnitPrice);
+                  const qty = parseDraftQuantity(quantityForVariation);
+                  if (!selectedProductForVariation || !Number.isFinite(amount) || amount <= 0) {
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        Quantity is calculated from the rate. Tip: type &quot;sugar rs100&quot; in search to open this directly.
+                      </p>
+                    );
+                  }
+                  if (!Number.isFinite(rate) || rate <= 0 || qty === null) {
+                    return <p className="text-xs text-red-600">Set a selling price to calculate quantity.</p>;
+                  }
+                  const finalQty = normalizeQuantityForProduct(selectedProductForVariation, qty);
+                  return (
+                    <>
+                      <p className="text-sm font-medium tabular-nums">
+                        = {finalQty} {selectedUnit} × rs {rate.toFixed(2)} = rs {(finalQty * rate).toFixed(2)}
+                      </p>
+                      {!selectedProductForVariation.allow_decimal_qty && (
+                        <p className="text-xs text-amber-700">
+                          Decimal quantity is off for this product, so quantity is rounded to a whole number. Enable it in Inventory to sell exact amounts.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </aside>
+            )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setVariationDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => void addVariationToCart()} 
-              disabled={selectedProductForVariation?.has_variations && !selectedVariation}
-            >
-              Add to Cart <span className="ml-2 text-xs opacity-70">(F4/Space)</span>
-            </Button>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={sellByAmountOpen ? "secondary" : "outline"}
+                size="sm"
+                onClick={toggleSellByAmount}
+                aria-pressed={sellByAmountOpen}
+              >
+                <Calculator className="mr-1 h-4 w-4" /> Sell by amount <kbd className="ml-1 rounded border bg-muted px-1 text-[10px]">F6</kbd>
+              </Button>
+              {selectedProductForVariation && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={selectedProductForVariation.sale_blocked ? "text-emerald-700 hover:bg-emerald-50" : "text-red-600 hover:bg-red-50 hover:text-red-700"}
+                  onClick={() => void toggleSaleBlocked(selectedProductForVariation)}
+                >
+                  {selectedProductForVariation.sale_blocked ? <CircleCheck className="mr-1 h-4 w-4" /> : <Ban className="mr-1 h-4 w-4" />}
+                  {selectedProductForVariation.sale_blocked ? "Allow selling" : "Stop selling"}
+                  <kbd className="ml-1 rounded border bg-muted px-1 text-[10px]">Ctrl+B</kbd>
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setVariationDialogOpen(false)}>
+                Cancel <span className="ml-1 text-xs opacity-60">(Esc)</span>
+              </Button>
+              <Button
+                onClick={() => void addVariationToCart()}
+                disabled={selectedProductForVariation?.has_variations && !selectedVariation}
+              >
+                {editingCartIndex !== null ? "Update line" : "Add to Cart"} <span className="ml-2 text-xs opacity-70">(Enter)</span>
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Unit Picker Dialog */}
       <Dialog open={unitDialogOpen} onOpenChange={setUnitDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md" onOpenAutoFocus={(e) => { e.preventDefault(); quantityForUnitInputRef.current?.focus(); quantityForUnitInputRef.current?.select(); }}>
           <DialogHeader>
             <DialogTitle>Select Unit - {selectedProductForUnit?.name}</DialogTitle>
             <DialogDescription>Choose how you want to sell this product (Press F4 or Space to add to cart)</DialogDescription>
@@ -3119,7 +3620,10 @@ export default function SalesTerminal() {
                   step={selectedProductForUnit?.allow_decimal_qty ? "0.25" : "1"}
                   value={quantityForUnit}
                   onChange={(e) => setQuantityForUnit(e.target.value)}
-                  className="text-center"
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addUnitToCart(); } }}
+                  ref={quantityForUnitInputRef}
+                  className="text-center h-11 text-lg font-semibold"
                 />
 
                 <Button
@@ -3147,6 +3651,8 @@ export default function SalesTerminal() {
                 placeholder="0.00"
                 value={unitDiscount || ""}
                 onChange={(e) => setUnitDiscount(parseFloat(e.target.value) || 0)}
+                onFocus={(e) => e.target.select()}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void addUnitToCart(); } }}
               />
               <p className="text-xs text-muted-foreground">Discount to apply on this item</p>
             </div>

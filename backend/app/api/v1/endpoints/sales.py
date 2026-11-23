@@ -1023,6 +1023,11 @@ def create_sale(
                 status_code=404, 
                 detail=f"Product with id {item.product_id} not found"
             )
+        if getattr(product, "sale_blocked", False):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{product.name} is blocked from sale. Unblock it in Inventory to sell.",
+            )
         
         products_dict[item.product_id] = product
         validate_item_quantity_rules(product, item.quantity)

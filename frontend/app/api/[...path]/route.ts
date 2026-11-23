@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
-const BACKEND_ORIGIN = "http://127.0.0.1:8000";
+// Dev/test override (e.g. when port 8000 is busy); packaged builds use the default.
+const BACKEND_ORIGIN = process.env.VIBEPOS_BACKEND_ORIGIN || "http://127.0.0.1:8000";
 const BODYLESS_METHODS = new Set(["GET", "HEAD"]);
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;

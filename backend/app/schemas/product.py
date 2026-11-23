@@ -65,6 +65,7 @@ class ProductBase(BaseModel):
     selling_price: float = 0.0
     low_stock_threshold: Optional[int] = 10
     allow_decimal_qty: bool = False
+    sale_blocked: bool = False
     
     # Variation fields
     has_variations: bool = False
@@ -108,6 +109,7 @@ class ProductUpdate(BaseModel):
     selling_price: Optional[float] = None
     low_stock_threshold: Optional[int] = None
     allow_decimal_qty: Optional[bool] = None
+    sale_blocked: Optional[bool] = None
     has_variations: Optional[bool] = None
     variation_attributes: Optional[List[str]] = None
     base_unit: Optional[str] = None
