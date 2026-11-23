@@ -754,6 +754,7 @@ export default function CreateReturnPage() {
                 <Button
                   className="flex-1"
                   onClick={processReturn}
+                  data-hotkey="c"
                   disabled={!selectedSale || returnLines.filter((line) => line.selected).length === 0 || processing}
                 >
                   {processing ? "Processing..." : "Process Return"}

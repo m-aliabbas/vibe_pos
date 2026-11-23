@@ -108,6 +108,7 @@ const SHORTCUT_GROUPS: { title: string; rows: [string, string][] }[] = [
       ["F9 or Ctrl+M", "Checkout"],
       ["Ctrl+E", "Quotation"],
       ["F1", "This help"],
+      ["Alt (hold) · Ctrl+K", "Show keys · go to any screen"],
     ],
   },
   {
@@ -2795,6 +2796,7 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
                         size="sm"
                         role="radio"
                         aria-checked={paymentMethod === method.value}
+                        data-hotkey={String(idx + 1)}
                         variant={paymentMethod === method.value ? "default" : "outline"}
                         className="h-8 text-xs"
                         onClick={() => setPaymentMethod(method.value)}

@@ -46,39 +46,72 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+
+/* Remap the app's blue/indigo utility classes to the Odoo plum scale so every
+   screen picks up the theme without per-page edits. */
+@theme {
+  --color-blue-50: #f8f3f7;
+  --color-blue-100: #f0e4ed;
+  --color-blue-200: #dfc7d8;
+  --color-blue-300: #c7a1bc;
+  --color-blue-400: #a67899;
+  --color-blue-500: #875a7b;
+  --color-blue-600: #714b67;
+  --color-blue-700: #5f3e56;
+  --color-blue-800: #4d3246;
+  --color-blue-900: #3f2a3a;
+  --color-blue-950: #261821;
+  --color-indigo-50: #f8f3f7;
+  --color-indigo-100: #f0e4ed;
+  --color-indigo-200: #dfc7d8;
+  --color-indigo-300: #c7a1bc;
+  --color-indigo-400: #9a6a8d;
+  --color-indigo-500: #7d5372;
+  --color-indigo-600: #66435d;
+  --color-indigo-700: #56384e;
+  --color-indigo-800: #462d40;
+  --color-indigo-900: #382433;
+  --color-indigo-950: #23161f;
+  --color-teal-odoo: #017e84;
+}
+
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Odoo-inspired palette: plum primary (#714B67), teal accent (#017E84), quiet grays */
+  --radius: 0.375rem;
+  --app-bg: #f6f7f9;
+  --background: #ffffff;
+  --foreground: #1f2328;
+  --card: #ffffff;
+  --card-foreground: #1f2328;
+  --popover: #ffffff;
+  --popover-foreground: #1f2328;
+  --primary: #714b67;
+  --primary-foreground: #ffffff;
+  --secondary: #e7e9ed;
+  --secondary-foreground: #1f2328;
+  --muted: #f3f4f6;
+  --muted-foreground: #5f6670;
+  --accent: #f3eef2;
+  --accent-foreground: #3f2a3a;
+  --odoo-teal: #017e84;
+  --destructive: #d23f3a;
+  --border: #dee2e6;
+  --input: #ced4da;
+  --ring: #714b67;
+  --row-active: #efe6ed;
+  --chart-1: #714b67;
+  --chart-2: #017e84;
+  --chart-3: #e49b0f;
+  --chart-4: #3f8fd2;
+  --chart-5: #d23f3a;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #1f2328;
+  --sidebar-primary: #714b67;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f3eef2;
+  --sidebar-accent-foreground: #3f2a3a;
+  --sidebar-border: #dee2e6;
+  --sidebar-ring: #714b67;
 }
 
 .dark {
@@ -122,6 +155,63 @@
   body {
     @apply bg-background text-foreground;
   }
+  main {
+    background: var(--app-bg);
+  }
+  /* Clear, consistent keyboard focus everywhere */
+  a:focus-visible,
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+  /* Odoo-style list views */
+  [data-slot="table-head"] {
+    font-weight: 600;
+    color: #374151;
+  }
+  [data-slot="table-header"] tr {
+    border-bottom-width: 2px;
+  }
+  [data-slot="table-row"]:hover {
+    background-color: var(--accent);
+  }
+}
+
+/* Keyboard row cursor (↑/↓ on any list) */
+main tr[data-kbd-active] {
+  background-color: var(--row-active) !important;
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+/* Small key caps */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--muted);
+  padding: 0 5px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+/* Alt-held hotkey badges (like Odoo) */
+.kbd-hint {
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--odoo-teal);
+  color: #fff;
+  font: 700 11px/18px var(--font-geist-mono), ui-monospace, monospace;
+  text-align: center;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
 }
 
 /* Print Styles for Invoice Pages */

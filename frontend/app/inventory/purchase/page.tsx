@@ -651,6 +651,7 @@ function PurchasePageContent() {
                         <Label className="mb-2 block">Vendor</Label>
                         <Input
                             placeholder="Search vendor by name..."
+                            data-hotkey="v"
                             value={vendorSearch}
                             onChange={(e) => {
                                 setVendorSearch(e.target.value);
@@ -750,6 +751,7 @@ function PurchasePageContent() {
                             <Input
                                 ref={productInputRef}
                                 placeholder="Type name or SKU..."
+                                data-hotkey="i"
                                 value={productSearch}
                                 onChange={(e) => setProductSearch(e.target.value)}
                                 onKeyDown={handleProductKeyDown}
@@ -985,6 +987,7 @@ function PurchasePageContent() {
                             size="lg"
                             onClick={holdCurrentPurchase}
                             disabled={!vendorId || items.length === 0}
+                            data-hotkey="h"
                         >
                             Hold Purchase
                         </Button>
@@ -993,6 +996,7 @@ function PurchasePageContent() {
                             variant="outline"
                             size="lg"
                             onClick={() => setHeldOpen((prev) => !prev)}
+                            data-hotkey="o"
                         >
                             {heldOpen ? 'Hide Held' : `Show Held (${heldPurchases.length})`}
                         </Button>
@@ -1001,6 +1005,7 @@ function PurchasePageContent() {
                             className="w-full"
                             size="lg"
                             onClick={() => setPurchaseConfirmOpen(true)}
+                            data-hotkey="c"
                             disabled={!vendorId || items.length === 0 || purchaseSubmitting}
                         >
                             {purchaseSubmitting ? 'Saving Purchase...' : 'Confirm Purchase Order'}

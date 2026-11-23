@@ -717,7 +717,7 @@ export default function InventoryPage() {
 
                     <Dialog open={open} onOpenChange={setOpen}>
                         <DialogTrigger asChild>
-                            <Button className="bg-emerald-600 hover:bg-emerald-700 shadow-sm">
+                            <Button data-hotkey="n" className="bg-emerald-600 hover:bg-emerald-700 shadow-sm">
                                 <Plus className="mr-2 h-4 w-4" /> Define New Product
                             </Button>
                         </DialogTrigger>

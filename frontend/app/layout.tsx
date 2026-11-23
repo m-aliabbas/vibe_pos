@@ -22,6 +22,7 @@ import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ConfirmCloseGuard } from "@/components/ConfirmCloseGuard";
 import { LicenseExpiryBanner } from "@/components/LicenseExpiryBanner";
+import { KeyboardLayer } from "@/components/KeyboardLayer";
 
 export default function RootLayout({
   children,
@@ -35,6 +36,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           <ConfirmCloseGuard />
+          <KeyboardLayer />
           <div className="no-print shrink-0">
             <Navbar />
           </div>
