@@ -329,6 +329,7 @@ LEGACY_PRODUCT_COLUMNS = {
     "base_unit": "TEXT DEFAULT 'piece'",
     "selling_units": "TEXT DEFAULT '[]'",
     "allow_decimal_qty": "BOOLEAN DEFAULT 0",
+    "sale_blocked": "BOOLEAN DEFAULT 0 NOT NULL",
 }
 
 # Columns added to store_settings after some clients already had the table.
