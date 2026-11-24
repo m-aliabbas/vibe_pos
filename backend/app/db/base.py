@@ -9,6 +9,7 @@ from app.models.pos_return import PosReturn, ReturnItem
 from app.models.accounting import Account, JournalEntry, JournalLine
 from app.models.settings import StoreSettings
 from app.models.hold_purchase import HoldPurchase
+from app.models.hold_sale import HoldSale
 from app.models.stock_adjustment import ProductStockAdjustment
 from app.models.stock_batch import StockBatch
 from app.models.expense import Expense

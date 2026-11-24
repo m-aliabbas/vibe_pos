@@ -99,14 +99,10 @@ import shutil
 import sys
 from pathlib import Path
 import socket
-import sqlite3
 import threading
 import multiprocessing
 import uvicorn
 from dotenv import load_dotenv
-from migrate_add_product_company_purchase_discount import (
-    migrate as migrate_product_company_purchase_discount,
-)
 
 
 def log(message: str) -> None:
@@ -308,148 +304,27 @@ def start_mdns(domain: str, ip: str, port: int) -> None:
         zc.close()
 
 
-# ---- DB sanity checks ----
-
-REQUIRED_TABLES = {
-    "users",
-    "customers",
-    "vendors",
-    "products",
-    "purchases",
-    "sales",
-    # If your schema doesn't have some of these, remove them
-    "purchase_items",
-    "sale_items",
-    "product_variations",
-}
-
-LEGACY_PRODUCT_COLUMNS = {
-    "has_variations": "BOOLEAN DEFAULT 0",
-    "variation_attributes": "TEXT DEFAULT '[]'",
-    "base_unit": "TEXT DEFAULT 'piece'",
-    "selling_units": "TEXT DEFAULT '[]'",
-    "allow_decimal_qty": "BOOLEAN DEFAULT 0",
-    "sale_blocked": "BOOLEAN DEFAULT 0 NOT NULL",
-}
-
-# Columns added to store_settings after some clients already had the table.
-# New columns for existing features must be added here so upgrades self-heal.
-LEGACY_STORE_SETTINGS_COLUMNS = {
-    "whatsapp_owner_number": "TEXT DEFAULT ''",
-    "whatsapp_daily_report_enabled": "BOOLEAN DEFAULT 0",
-    "whatsapp_daily_report_time": "TEXT DEFAULT '09:00'",
-    "whatsapp_last_daily_report_date": "DATE",
-    "cash_register_enabled": "BOOLEAN DEFAULT 0",
-    "store_logo_filename": "TEXT",
-    "default_print_format": "TEXT DEFAULT 'compact'",
-    "default_whatsapp_format": "TEXT DEFAULT 'mobile'",
-    "default_print_design": "TEXT DEFAULT 'classic'",
-    "default_whatsapp_design": "TEXT DEFAULT 'modern'",
-    "invoice_show_tax_id": "BOOLEAN DEFAULT 1",
-    "invoice_show_cashier": "BOOLEAN DEFAULT 1",
-    "invoice_show_sku": "BOOLEAN DEFAULT 0",
-    "invoice_show_customer_balance": "BOOLEAN DEFAULT 1",
-    "invoice_footer_message": "TEXT DEFAULT 'Thank you for your business!'",
-    "invoice_terms": "TEXT DEFAULT 'Return and exchange accepted with invoice.'",
-}
-
-
-def _get_sqlite_tables(db_path: Path) -> set[str]:
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        return {r[0] for r in cur.fetchall()}
-    finally:
-        conn.close()
-
-
-def ensure_legacy_product_columns(db_path: Path) -> None:
-    """
-    Add columns expected by current Product model when opening older SQLite DBs.
-    """
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='products'")
-        if not cur.fetchone():
-            return
-
-        cur.execute("PRAGMA table_info(products)")
-        existing = {row[1] for row in cur.fetchall()}
-
-        missing = [c for c in LEGACY_PRODUCT_COLUMNS if c not in existing]
-        for column in missing:
-            col_sql = LEGACY_PRODUCT_COLUMNS[column]
-            cur.execute(f"ALTER TABLE products ADD COLUMN {column} {col_sql}")
-            log(f"Added missing products.{column}")
-
-        if missing:
-            conn.commit()
-    finally:
-        conn.close()
-
-
-def ensure_legacy_store_settings_columns(db_path: Path) -> None:
-    """
-    Add columns expected by the current StoreSettings model when opening older
-    SQLite DBs, so shipped clients self-upgrade without a manual migration.
-    """
-    conn = sqlite3.connect(str(db_path))
-    try:
-        cur = conn.cursor()
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='store_settings'")
-        if not cur.fetchone():
-            return
-
-        cur.execute("PRAGMA table_info(store_settings)")
-        existing = {row[1] for row in cur.fetchall()}
-
-        missing = [c for c in LEGACY_STORE_SETTINGS_COLUMNS if c not in existing]
-        for column in missing:
-            col_sql = LEGACY_STORE_SETTINGS_COLUMNS[column]
-            cur.execute(f"ALTER TABLE store_settings ADD COLUMN {column} {col_sql}")
-            log(f"Added missing store_settings.{column}")
-
-        if missing:
-            conn.commit()
-    finally:
-        conn.close()
+# ---- Database schema ----
 
 
 def ensure_schema_ready() -> Path:
     """
-    Ensures DB file exists and core tables exist.
-    - Does NOT delete data
-    - If db missing/broken/empty/missing tables -> create_all()
-    Returns the db path actually used.
+    Create or upgrade the database before anything (seeding, the API) touches it.
+    Never deletes data: missing tables/columns/indexes are added, numbered
+    migrations are applied once, and a backup is taken first.
+    See backend/MIGRATIONS.md.
     """
-    data_dir = Path(os.environ["DATA_DIR"])
-    db_path = data_dir / "pos.db"
+    db_path = Path(os.environ["DATA_DIR"]) / "pos.db"
+    # IMPORTANT: Import AFTER DATA_DIR is set so session/engine uses correct path
+    from app.db.migrations import MigrationError, run_migrations
 
-    # If missing or empty => definitely create schema
-    must_create = (not db_path.exists()) or (db_path.exists() and db_path.stat().st_size == 0)
-
-    if not must_create:
-        # Check required tables
-        try:
-            tables = _get_sqlite_tables(db_path)
-            missing = REQUIRED_TABLES - tables
-            if missing:
-                log(f"DB exists but missing tables: {sorted(missing)}")
-                must_create = True
-        except Exception as e:
-            log(f"Could not read sqlite db ({db_path}): {e}")
-            must_create = True
-
-    if must_create:
-        log(f"Ensuring schema (create_all) for DB: {db_path}")
-        # IMPORTANT: Import AFTER DATA_DIR is set so session/engine uses correct path
-        from app.db.session import engine
-        from app.db.base import Base  # should import all models
-        Base.metadata.create_all(bind=engine)
-        log("Schema ready")
-
+    try:
+        run_migrations(log=log)
+    except MigrationError as exc:
+        log(f"FATAL: {exc}")
+        log("The server will not start on a partially upgraded database.")
+        sys.exit(1)
+    log("Schema ready")
     return db_path
 
 
@@ -476,13 +351,8 @@ if __name__ == "__main__":
     data_dir = resolve_data_dir()
 
     # 3) Ensure schema exists before seeding
+    # Migrations must run before seeding: the seed reads the full ORM models.
     db_path = ensure_schema_ready()
-    ensure_legacy_product_columns(db_path)
-    ensure_legacy_store_settings_columns(db_path)
-    # v1.0.27's seed check queries the full Product model, including `company`.
-    # Run this release migration before seeding so databases from older clients
-    # cannot fail before app.main's fallback schema repair is imported.
-    migrate_product_company_purchase_discount(db_path)
 
     # 4) Now seed safely
     from seed import ensure_seeded

@@ -17,7 +17,7 @@ Maintain VibePOS as a coherent desktop POS system. Complete requested changes ac
 
 1. Read the relevant model, schema, endpoint/service, typed API client, and UI route before editing.
 2. Trace financial and inventory effects end to end. Sales, purchases, returns, payments, stock, customer/vendor balances, and journal entries must remain consistent.
-3. For persistent schema changes, update the SQLAlchemy model and add an idempotent migration compatible with existing SQLite installations. Do not delete or recreate a user's database.
+3. For persistent schema changes, follow `backend/MIGRATIONS.md`: update the SQLAlchemy model (new tables/columns/indexes are applied automatically at startup, so give new columns a default), register an on-add backfill when old rows need values, and write a numbered migration (`python -m app.db.migrations new "..."`) for renames or data moves. Never add standalone `migrate_*.py` scripts, and never delete or recreate a user's database.
 4. Keep backend response schemas and `frontend/lib/api.ts` types/functions synchronized.
 5. Preserve decimal quantities and currency precision; avoid unintentional integer coercion or floating-point equality assumptions.
 6. Preserve authentication, role checks, desktop packaging, LAN behavior, and offline-safe startup unless the task explicitly changes them.
@@ -31,6 +31,7 @@ Maintain VibePOS as a coherent desktop POS system. Complete requested changes ac
 cd frontend && npm run lint
 cd frontend && npm run build
 python3 -m compileall -q backend/app backend/run_server.py
+cd backend && .venv/Scripts/python.exe -m pytest tests   # includes migration tests
 ```
 
 ## Mandatory UI and flow testing

@@ -60,3 +60,5 @@ frontend/electron-builder.yml
 
 # Auto backups
 backend/backups/
+
+.pytest_cache/

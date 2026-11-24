@@ -16,7 +16,7 @@ Use this reference to locate impact quickly. Verify paths against the current tr
 | Persistence | `backend/app/models/` | SQLAlchemy tables and relationships |
 | Domain services | `backend/app/services/` | Accounting, backup, license behavior |
 | Database setup | `backend/app/db/` | Engine, sessions, model metadata |
-| Schema upgrades | `backend/migrate_*.py` | Existing-installation migrations |
+| Schema upgrades | `backend/app/db/migrations/` (`runner.py`, `backfills.py`, `versions/`), `backend/MIGRATIONS.md` | Automatic startup migrations; `legacy_migrations/` is history only |
 | Desktop runtime | `frontend/src-tauri/` | Sidecars, ports, resources, packaging |
 
 ## Change impact checklist

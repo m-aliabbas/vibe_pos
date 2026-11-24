@@ -1,9 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect
 from app.core.config import settings
 from app.api.v1.api import api_router
-from app.db.session import engine, Base
+from app.db.migrations import run_migrations
 from app.services.license import check_license_or_exit, LicenseError
 
 # Import WhatsApp client initializer
@@ -13,73 +12,9 @@ from app.api.v1.endpoints.whatsapp import init_whatsapp
 from app.services import backup_scheduler
 from app.services import whatsapp_report_scheduler
 
-# Create tables (for simplicity in MVP, usually handled by Alembic)
-Base.metadata.create_all(bind=engine)
-
-
-def ensure_schema_columns() -> None:
-    inspector = inspect(engine)
-    table_names = set(inspector.get_table_names())
-    with engine.begin() as conn:
-        additions = {
-            "products": [
-                ("allow_decimal_qty", "BOOLEAN DEFAULT 0"),
-                ("company", "VARCHAR"),
-                ("sale_blocked", "BOOLEAN DEFAULT 0 NOT NULL"),
-            ],
-            "purchases": [
-                ("subtotal_amount", "REAL DEFAULT 0"),
-                ("discount", "REAL DEFAULT 0"),
-            ],
-            "sales": [("previous_balance", "REAL DEFAULT 0")],
-            "customer_notes": [
-                ("amount", "REAL"),
-                ("payment_method", "VARCHAR"),
-            ],
-            "store_settings": [
-                ("whatsapp_owner_number", "VARCHAR DEFAULT ''"),
-                ("whatsapp_daily_report_enabled", "BOOLEAN DEFAULT 0"),
-                ("whatsapp_daily_report_time", "VARCHAR DEFAULT '09:00'"),
-                ("whatsapp_last_daily_report_date", "DATE"),
-                ("store_logo_filename", "VARCHAR"),
-                ("default_print_format", "VARCHAR DEFAULT 'compact'"),
-                ("default_whatsapp_format", "VARCHAR DEFAULT 'mobile'"),
-                ("default_print_design", "VARCHAR DEFAULT 'classic'"),
-                ("default_whatsapp_design", "VARCHAR DEFAULT 'modern'"),
-                ("invoice_show_tax_id", "BOOLEAN DEFAULT 1"),
-                ("invoice_show_cashier", "BOOLEAN DEFAULT 1"),
-                ("invoice_show_sku", "BOOLEAN DEFAULT 0"),
-                ("invoice_show_customer_balance", "BOOLEAN DEFAULT 1"),
-                ("invoice_footer_message", "VARCHAR DEFAULT 'Thank you for your business!'"),
-                ("invoice_terms", "TEXT DEFAULT 'Return and exchange accepted with invoice.'"),
-            ],
-        }
-        for table, columns in additions.items():
-            if table not in table_names:
-                continue
-            existing = {col["name"] for col in inspector.get_columns(table)}
-            for column, definition in columns:
-                if column not in existing:
-                    conn.exec_driver_sql(
-                        f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
-                    )
-        if "purchases" in table_names:
-            conn.exec_driver_sql(
-                "UPDATE purchases "
-                "SET subtotal_amount = total_amount "
-                "WHERE subtotal_amount IS NULL "
-                "OR (subtotal_amount = 0 AND COALESCE(total_amount, 0) != 0)"
-            )
-            conn.exec_driver_sql(
-                "UPDATE purchases SET discount = 0 WHERE discount IS NULL"
-            )
-        if "products" in table_names:
-            conn.exec_driver_sql(
-                "CREATE INDEX IF NOT EXISTS ix_products_company ON products (company)"
-            )
-
-
-ensure_schema_columns()
+# Bring the database up to date (new tables/columns/indexes + numbered migrations).
+# Runs once per process; run_server.py has usually done it already before seeding.
+run_migrations()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

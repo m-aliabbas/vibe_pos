@@ -1,12 +1,14 @@
 import sqlite3
 from pathlib import Path
 
-from run_server import ensure_legacy_product_columns
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.db.migrations import run_migrations
+
 
 def test_legacy_product_is_readable_before_seeding(tmp_path: Path, monkeypatch) -> None:
+    """run_server.py migrates before seeding; the seed reads the full Product model."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     from app.models.product import Product
     from app.models.user import User
@@ -25,8 +27,8 @@ def test_legacy_product_is_readable_before_seeding(tmp_path: Path, monkeypatch) 
             "INSERT INTO products (id, name) VALUES (1, 'Existing product')"
         )
 
-    ensure_legacy_product_columns(db_path)
-    ensure_legacy_product_columns(db_path)
+    run_migrations(engine, force=True)
+    run_migrations(engine, force=True)
 
     with Session(engine) as session:
         assert is_seeded(session)
@@ -36,7 +38,7 @@ def test_legacy_product_is_readable_before_seeding(tmp_path: Path, monkeypatch) 
 
     with sqlite3.connect(db_path) as connection:
         connection.execute("UPDATE products SET sale_blocked = 1 WHERE id = 1")
-    ensure_legacy_product_columns(db_path)
+    run_migrations(engine, force=True)
     with sqlite3.connect(db_path) as connection:
         assert connection.execute(
             "SELECT name, sale_blocked FROM products WHERE id = 1"

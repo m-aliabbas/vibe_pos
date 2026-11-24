@@ -38,7 +38,7 @@ Pydantic schema ↔ FastAPI endpoint ↔ frontend/lib/api.ts ↔ page/component
 When changing persistent data:
 
 - Update the canonical SQLAlchemy model.
-- Add an idempotent `backend/migrate_*.py` migration for existing installations.
+- Rely on the startup auto-migrator (`backend/app/db/migrations`, see `backend/MIGRATIONS.md`): new tables, columns (with a model default) and indexes apply automatically. Add an on-add backfill in `backfills.py` when old rows need values, and a numbered migration (`python -m app.db.migrations new "..."`) for renames, type changes or data moves.
 - Preserve existing data and safe defaults.
 - Avoid table recreation unless a carefully tested SQLite limitation requires it.
 - Import new models from `backend/app/db/base.py` when metadata discovery requires it.
@@ -76,7 +76,7 @@ At minimum:
 - Python changes: compile touched modules and exercise pure logic or endpoints where feasible.
 - Frontend changes: run ESLint on touched files, then `npm run lint` for completed work.
 - Contract changes: compare backend schemas with TypeScript interfaces and API calls.
-- Schema changes: test the migration twice against a disposable database and confirm existing rows survive.
+- Schema changes: run `pytest backend/tests`, then `python -m app.db.migrations --data-dir <copy> status/upgrade/status` on a copied or synthetic old database. Confirm existing rows survive and the second run is a no-op.
 - Financial/inventory changes: test success, validation failure, partial payment, and rollback paths with synthetic data.
 - Tauri/build changes: run the platform-appropriate Rust check and production build when feasible.
 
