@@ -643,10 +643,10 @@ export default function InventoryPage() {
     const isAdmin = user?.role === 'admin';
 
     return (
-        <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+        <div className="p-6 h-full flex flex-col gap-5">
             <div className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Product Catalog</h1>
+                    <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Product Catalog</h1>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
                         <p className="text-gray-500">Define the items you sell. Manage stock via Purchases or Add Stock.</p>
                         <Badge variant="secondary" className="font-normal">
@@ -1137,7 +1137,7 @@ export default function InventoryPage() {
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="edit-price">Selling Price (rs)</Label>
-                            <Input id="edit-price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required />
+                            <Input showWords id="edit-price" type="number" step="0.01" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} required />
                         </div>
                         <div className="flex items-center gap-2">
                             <input

@@ -1753,7 +1753,7 @@ def get_user_activity(
                 "username": item.username,
                 "role": item.role,
                 "sales_count": item.sales_count,
-                "total_revenue": item.total_revenue
+                "total_revenue": float(item.total_revenue or 0)
             } for item in user_sales
         ],
         "user_roles": [

@@ -106,6 +106,12 @@ function activate(el: HTMLElement) {
     (el as HTMLInputElement).select?.();
     return;
   }
+  // Pressing a button by hotkey must not steal the cursor from a field the user is
+  // typing in (e.g. Alt+2 = Card while entering Amount Paid).
+  if (isTyping(document.activeElement)) {
+    el.click();
+    return;
+  }
   el.focus();
   el.click();
 }

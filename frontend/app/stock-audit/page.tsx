@@ -191,12 +191,12 @@ export default function StockAuditPage() {
     const selectedBatches = batches.filter(b => selectedIds.has(b.id));
 
     return (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-6 h-full overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                     <Layers className="w-6 h-6 text-indigo-600" />
-                    <h1 className="text-2xl font-bold">Stock Audit</h1>
+                    <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Stock Audit</h1>
                 </div>
                 <Button variant="outline" size="sm" onClick={loadData}>
                     <RefreshCw className="w-4 h-4 mr-1" /> Refresh

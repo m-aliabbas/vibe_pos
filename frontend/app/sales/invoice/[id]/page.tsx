@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
+import { Fragment, useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import api from "@/lib/api";
@@ -443,8 +443,8 @@ export default function InvoicePage() {
                   const returned = returnedBySaleItem[item.id] || 0;
                   const disc = item.item_discount ?? 0;
                   return (
-                    <>
-                      <tr key={item.id} className="border-b border-gray-300 align-top">
+                    <Fragment key={item.id}>
+                      <tr className="border-b border-gray-300 align-top">
                         <td className="px-0.5 py-0.5">{index + 1}</td>
                         <td className="px-0.5 py-0.5 font-semibold">
                           {item.product_name || item.product?.name || `#${item.product_id}`}
@@ -469,7 +469,7 @@ export default function InvoicePage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

@@ -147,7 +147,7 @@ const SalesReports: React.FC = () => {
     {
       key: 'revenue',
       label: 'Revenue',
-      render: (value: number) => `$${value?.toFixed(2) || '0.00'}`
+      render: (value: number) => `Rs ${value?.toFixed(2) || '0.00'}`
     },
     {
       key: 'revenue',
@@ -163,7 +163,7 @@ const SalesReports: React.FC = () => {
     {
       key: 'total_revenue',
       label: 'Revenue',
-      render: (value: number) => `$${value?.toFixed(2) || '0.00'}`
+      render: (value: number) => `Rs ${value?.toFixed(2) || '0.00'}`
     },
     { key: 'total_quantity', label: 'Quantity Sold' }
   ];
@@ -221,7 +221,7 @@ const SalesReports: React.FC = () => {
           {/* Header */}
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Sales Reports</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Sales Reports</h1>
               <p className="text-gray-600 mt-1">Analyze sales performance and trends</p>
             </div>
           </div>

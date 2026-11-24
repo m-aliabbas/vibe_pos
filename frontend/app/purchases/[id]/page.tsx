@@ -245,14 +245,14 @@ export default function PurchaseDetailPage() {
     if (!purchase) return <div className="h-full flex items-center justify-center">Purchase not found</div>;
 
     return (
-        <div className="p-8 max-w-7xl mx-auto h-full overflow-y-auto space-y-8">
+        <div className="p-6 h-full overflow-y-auto space-y-6">
             <Button variant="ghost" onClick={() => router.back()} className="mb-4">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back
             </Button>
 
             <div className="flex flex-col md:flex-row justify-between items-start gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900">Purchase #{purchase.id}</h1>
+                    <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Purchase #{purchase.id}</h1>
                     <p className="text-gray-500 mt-2">
                         <Calendar className="inline h-4 w-4 mr-1" />
                         {new Date(purchase.created_at).toLocaleDateString('en-US', {
@@ -343,8 +343,8 @@ export default function PurchaseDetailPage() {
                                         {item.product_name || getProductName(item.product_id)}
                                     </TableCell>
                                     <TableCell className="text-right">{item.quantity}</TableCell>
-                                    <TableCell className="text-right">${item.unit_cost.toFixed(2)}</TableCell>
-                                    <TableCell className="text-right font-medium">${item.total_cost.toFixed(2)}</TableCell>
+                                    <TableCell className="text-right">Rs {item.unit_cost.toFixed(2)}</TableCell>
+                                    <TableCell className="text-right font-medium">Rs {item.total_cost.toFixed(2)}</TableCell>
                                     <TableCell className="font-mono text-xs text-gray-500">{item.batch_number || '—'}</TableCell>
                                     <TableCell className="text-sm text-gray-500">
                                         {item.expiry_date ? new Date(item.expiry_date).toLocaleDateString() : 'N/A'}
@@ -504,7 +504,7 @@ export default function PurchaseDetailPage() {
                                     <div className="md:col-span-1">
                                         <Label className="text-xs">Total</Label>
                                         <div className="h-10 px-3 flex items-center justify-end rounded-md border bg-muted/30 text-sm font-medium">
-                                            ${(Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2)}
+                                            Rs {(Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2)}
                                         </div>
                                     </div>
 

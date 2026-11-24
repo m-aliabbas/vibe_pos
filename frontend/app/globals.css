@@ -47,71 +47,197 @@
 }
 
 
-/* Remap the app's blue/indigo utility classes to the Odoo plum scale so every
-   screen picks up the theme without per-page edits. */
+/* Black & white theme: decorative hue utilities used across pages map to a neutral
+   scale, so every screen follows the theme. Green/red/amber stay for meaning
+   (owed / errors, warnings). Green/orange/pink are neutral too: only red and amber
+   carry colour, so they stand out. Small elevations are removed (flat, Odoo-like);
+   lg+ shadows stay for floating windows and menus. */
 @theme {
-  --color-blue-50: #f8f3f7;
-  --color-blue-100: #f0e4ed;
-  --color-blue-200: #dfc7d8;
-  --color-blue-300: #c7a1bc;
-  --color-blue-400: #a67899;
-  --color-blue-500: #875a7b;
-  --color-blue-600: #714b67;
-  --color-blue-700: #5f3e56;
-  --color-blue-800: #4d3246;
-  --color-blue-900: #3f2a3a;
-  --color-blue-950: #261821;
-  --color-indigo-50: #f8f3f7;
-  --color-indigo-100: #f0e4ed;
-  --color-indigo-200: #dfc7d8;
-  --color-indigo-300: #c7a1bc;
-  --color-indigo-400: #9a6a8d;
-  --color-indigo-500: #7d5372;
-  --color-indigo-600: #66435d;
-  --color-indigo-700: #56384e;
-  --color-indigo-800: #462d40;
-  --color-indigo-900: #382433;
-  --color-indigo-950: #23161f;
-  --color-teal-odoo: #017e84;
+  --color-blue-50: #fafafa;
+  --color-blue-100: #f4f4f5;
+  --color-blue-200: #e4e4e7;
+  --color-blue-300: #d4d4d8;
+  --color-blue-400: #a1a1aa;
+  --color-blue-500: #52525b;
+  --color-blue-600: #18181b;
+  --color-blue-700: #09090b;
+  --color-blue-800: #09090b;
+  --color-blue-900: #09090b;
+  --color-blue-950: #000000;
+  --color-indigo-50: #fafafa;
+  --color-indigo-100: #f4f4f5;
+  --color-indigo-200: #e4e4e7;
+  --color-indigo-300: #d4d4d8;
+  --color-indigo-400: #a1a1aa;
+  --color-indigo-500: #52525b;
+  --color-indigo-600: #18181b;
+  --color-indigo-700: #09090b;
+  --color-indigo-800: #09090b;
+  --color-indigo-900: #09090b;
+  --color-indigo-950: #000000;
+  --color-violet-50: #fafafa;
+  --color-violet-100: #f4f4f5;
+  --color-violet-200: #e4e4e7;
+  --color-violet-300: #d4d4d8;
+  --color-violet-400: #a1a1aa;
+  --color-violet-500: #52525b;
+  --color-violet-600: #18181b;
+  --color-violet-700: #09090b;
+  --color-violet-800: #09090b;
+  --color-violet-900: #09090b;
+  --color-violet-950: #000000;
+  --color-purple-50: #fafafa;
+  --color-purple-100: #f4f4f5;
+  --color-purple-200: #e4e4e7;
+  --color-purple-300: #d4d4d8;
+  --color-purple-400: #a1a1aa;
+  --color-purple-500: #52525b;
+  --color-purple-600: #18181b;
+  --color-purple-700: #09090b;
+  --color-purple-800: #09090b;
+  --color-purple-900: #09090b;
+  --color-purple-950: #000000;
+  --color-sky-50: #fafafa;
+  --color-sky-100: #f4f4f5;
+  --color-sky-200: #e4e4e7;
+  --color-sky-300: #d4d4d8;
+  --color-sky-400: #a1a1aa;
+  --color-sky-500: #52525b;
+  --color-sky-600: #18181b;
+  --color-sky-700: #09090b;
+  --color-sky-800: #09090b;
+  --color-sky-900: #09090b;
+  --color-sky-950: #000000;
+  --color-cyan-50: #fafafa;
+  --color-cyan-100: #f4f4f5;
+  --color-cyan-200: #e4e4e7;
+  --color-cyan-300: #d4d4d8;
+  --color-cyan-400: #a1a1aa;
+  --color-cyan-500: #52525b;
+  --color-cyan-600: #18181b;
+  --color-cyan-700: #09090b;
+  --color-cyan-800: #09090b;
+  --color-cyan-900: #09090b;
+  --color-cyan-950: #000000;
+  --color-teal-50: #fafafa;
+  --color-teal-100: #f4f4f5;
+  --color-teal-200: #e4e4e7;
+  --color-teal-300: #d4d4d8;
+  --color-teal-400: #a1a1aa;
+  --color-teal-500: #52525b;
+  --color-teal-600: #18181b;
+  --color-teal-700: #09090b;
+  --color-teal-800: #09090b;
+  --color-teal-900: #09090b;
+  --color-teal-950: #000000;
+  --color-green-50: #fafafa;
+  --color-green-100: #f4f4f5;
+  --color-green-200: #e4e4e7;
+  --color-green-300: #d4d4d8;
+  --color-green-400: #a1a1aa;
+  --color-green-500: #52525b;
+  --color-green-600: #18181b;
+  --color-green-700: #09090b;
+  --color-green-800: #09090b;
+  --color-green-900: #09090b;
+  --color-green-950: #000000;
+  --color-emerald-50: #fafafa;
+  --color-emerald-100: #f4f4f5;
+  --color-emerald-200: #e4e4e7;
+  --color-emerald-300: #d4d4d8;
+  --color-emerald-400: #a1a1aa;
+  --color-emerald-500: #52525b;
+  --color-emerald-600: #18181b;
+  --color-emerald-700: #09090b;
+  --color-emerald-800: #09090b;
+  --color-emerald-900: #09090b;
+  --color-emerald-950: #000000;
+  --color-lime-50: #fafafa;
+  --color-lime-100: #f4f4f5;
+  --color-lime-200: #e4e4e7;
+  --color-lime-300: #d4d4d8;
+  --color-lime-400: #a1a1aa;
+  --color-lime-500: #52525b;
+  --color-lime-600: #18181b;
+  --color-lime-700: #09090b;
+  --color-lime-800: #09090b;
+  --color-lime-900: #09090b;
+  --color-lime-950: #000000;
+  --color-orange-50: #fafafa;
+  --color-orange-100: #f4f4f5;
+  --color-orange-200: #e4e4e7;
+  --color-orange-300: #d4d4d8;
+  --color-orange-400: #a1a1aa;
+  --color-orange-500: #52525b;
+  --color-orange-600: #18181b;
+  --color-orange-700: #09090b;
+  --color-orange-800: #09090b;
+  --color-orange-900: #09090b;
+  --color-orange-950: #000000;
+  --color-pink-50: #fafafa;
+  --color-pink-100: #f4f4f5;
+  --color-pink-200: #e4e4e7;
+  --color-pink-300: #d4d4d8;
+  --color-pink-400: #a1a1aa;
+  --color-pink-500: #52525b;
+  --color-pink-600: #18181b;
+  --color-pink-700: #09090b;
+  --color-pink-800: #09090b;
+  --color-pink-900: #09090b;
+  --color-pink-950: #000000;
+  --color-fuchsia-50: #fafafa;
+  --color-fuchsia-100: #f4f4f5;
+  --color-fuchsia-200: #e4e4e7;
+  --color-fuchsia-300: #d4d4d8;
+  --color-fuchsia-400: #a1a1aa;
+  --color-fuchsia-500: #52525b;
+  --color-fuchsia-600: #18181b;
+  --color-fuchsia-700: #09090b;
+  --color-fuchsia-800: #09090b;
+  --color-fuchsia-900: #09090b;
+  --color-fuchsia-950: #000000;
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
 }
 
 :root {
-  /* Odoo-inspired palette: plum primary (#714B67), teal accent (#017E84), quiet grays */
+  /* Black & white, Odoo-like: flat surfaces, thin borders, one strong ink colour */
   --radius: 0.375rem;
-  --app-bg: #f6f7f9;
+  --app-bg: #f7f7f7;
   --background: #ffffff;
-  --foreground: #1f2328;
+  --foreground: #111111;
   --card: #ffffff;
-  --card-foreground: #1f2328;
+  --card-foreground: #111111;
   --popover: #ffffff;
-  --popover-foreground: #1f2328;
-  --primary: #714b67;
+  --popover-foreground: #111111;
+  --primary: #111111;
   --primary-foreground: #ffffff;
-  --secondary: #e7e9ed;
-  --secondary-foreground: #1f2328;
-  --muted: #f3f4f6;
-  --muted-foreground: #5f6670;
-  --accent: #f3eef2;
-  --accent-foreground: #3f2a3a;
-  --odoo-teal: #017e84;
-  --destructive: #d23f3a;
-  --border: #dee2e6;
-  --input: #ced4da;
-  --ring: #714b67;
-  --row-active: #efe6ed;
-  --chart-1: #714b67;
-  --chart-2: #017e84;
-  --chart-3: #e49b0f;
-  --chart-4: #3f8fd2;
-  --chart-5: #d23f3a;
+  --secondary: #f1f1f1;
+  --secondary-foreground: #111111;
+  --muted: #f4f4f5;
+  --muted-foreground: #5c5c66;
+  --accent: #f1f1f1;
+  --accent-foreground: #111111;
+  --destructive: #c62828;
+  --border: #e2e2e5;
+  --input: #d4d4d8;
+  --ring: #111111;
+  --row-active: #ececec;
+  --chart-1: #111111;
+  --chart-2: #6b6b6b;
+  --chart-3: #a3a3a3;
+  --chart-4: #2e7d32;
+  --chart-5: #c62828;
   --sidebar: #fafafa;
-  --sidebar-foreground: #1f2328;
-  --sidebar-primary: #714b67;
+  --sidebar-foreground: #111111;
+  --sidebar-primary: #111111;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f3eef2;
-  --sidebar-accent-foreground: #3f2a3a;
-  --sidebar-border: #dee2e6;
-  --sidebar-ring: #714b67;
+  --sidebar-accent: #f1f1f1;
+  --sidebar-accent-foreground: #111111;
+  --sidebar-border: #e2e2e5;
+  --sidebar-ring: #111111;
 }
 
 .dark {
@@ -167,23 +293,45 @@
     outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
-  /* Odoo-style list views */
+  /* Odoo-style list views: flat, light header, thin rules, compact rows */
   [data-slot="table-head"] {
+    height: 2.25rem;
     font-weight: 600;
-    color: #374151;
+    color: #111111;
+    background: #fafafa;
+    font-size: 0.8125rem;
   }
   [data-slot="table-header"] tr {
-    border-bottom-width: 2px;
+    border-bottom: 1px solid var(--border);
+  }
+  [data-slot="table-cell"] {
+    padding-top: 0.45rem;
+    padding-bottom: 0.45rem;
+  }
+  [data-slot="table-row"] {
+    border-color: #ededf0;
   }
   [data-slot="table-row"]:hover {
-    background-color: var(--accent);
+    background-color: #f7f7f7;
   }
+  /* Cards are flat panels */
+  [data-slot="card"] {
+    box-shadow: none;
+  }
+}
+
+/* Hand-built tables follow the same list style as <Table> */
+main table thead th {
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 600;
+  color: #111111;
 }
 
 /* Keyboard row cursor (↑/↓ on any list) */
 main tr[data-kbd-active] {
   background-color: var(--row-active) !important;
-  box-shadow: inset 3px 0 0 var(--primary);
+  box-shadow: inset 3px 0 0 #111111;
 }
 
 /* Small key caps */
@@ -207,11 +355,12 @@ main tr[data-kbd-active] {
   min-width: 18px;
   padding: 0 4px;
   border-radius: 4px;
-  background: var(--odoo-teal);
-  color: #fff;
+  background: #ffffff;
+  color: #111;
   font: 700 11px/18px var(--font-geist-mono), ui-monospace, monospace;
   text-align: center;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  border: 1px solid #111;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
 
 /* Print Styles for Invoice Pages */

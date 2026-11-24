@@ -102,7 +102,7 @@ interface Product {
 
 export default function SalesHistory() {
   const router = useRouter();
-  const { user, token } = useAuthStore();
+  const { user, token, isLoading } = useAuthStore();
   const [sales, setSales] = useState<Sale[]>([]);
   const [filteredSales, setFilteredSales] = useState<Sale[]>([]);
   const [products, setProducts] = useState<{ [key: number]: Product }>({});
@@ -144,13 +144,14 @@ export default function SalesHistory() {
   };
 
   useEffect(() => {
+    if (isLoading) return;
     if (!token) {
       router.push("/login");
       return;
     }
     fetchSales();
     fetchProducts();
-  }, [token]);
+  }, [token, isLoading]);
 
   useEffect(() => {
     if (!searchQuery.trim() && paymentMethodFilter === 'all' && dateFilter === 'all') {
@@ -433,11 +434,11 @@ export default function SalesHistory() {
   };
 
   return (
-    <div className="p-6 h-full flex flex-col gap-6">
+    <div className="p-6 h-full flex flex-col gap-5">
       {/* Header */}
       <div className="shrink-0 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Sales History</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Sales History</h1>
           <p className="text-muted-foreground">
             View all completed transactions
           </p>
@@ -1037,7 +1038,7 @@ export default function SalesHistory() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Amount Paid</label>
-                  <Input
+                  <Input showWords
                     type="number"
                     min="0"
                     step="0.01"

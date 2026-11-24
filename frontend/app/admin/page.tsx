@@ -75,7 +75,7 @@ const AdminDashboard: React.FC = () => {
           {/* Header */}
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Dashboard</h1>
               <p className="text-gray-600 mt-1">Welcome to your admin dashboard</p>
             </div>
             <Button onClick={fetchDashboardStats} disabled={loading}>
@@ -92,9 +92,9 @@ const AdminDashboard: React.FC = () => {
               subtitle="Last 30 days"
               icon={DollarSign}
               trend={{ value: 12.5, label: "vs last month", isPositive: true }}
-              className="border-l-4 border-l-blue-500"
+              className=""
               onClick={() => router.push('/reports')}
-              prefix="$"
+              prefix="Rs "
             />
             <MetricCard
               title="Transactions"
@@ -102,7 +102,7 @@ const AdminDashboard: React.FC = () => {
               subtitle="Last 30 days"
               icon={ShoppingCart}
               trend={{ value: 8.2, label: "vs last month", isPositive: true }}
-              className="border-l-4 border-l-green-500"
+              className=""
               onClick={() => router.push('/reports')}
             />
             <MetricCard
@@ -110,7 +110,7 @@ const AdminDashboard: React.FC = () => {
               value={stats?.lowStockAlerts || 0}
               subtitle="Items below threshold"
               icon={Package}
-              className="border-l-4 border-l-orange-500"
+              className="border-l-4 border-l-amber-500"
               onClick={() => router.push('/reports')}
             />
             <MetricCard
@@ -118,7 +118,7 @@ const AdminDashboard: React.FC = () => {
               value={stats?.totalUsers || 0}
               subtitle="Active users"
               icon={Users}
-              className="border-l-4 border-l-purple-500"
+              className=""
               onClick={() => router.push('/users')}
             />
           </div>

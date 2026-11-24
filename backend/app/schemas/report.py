@@ -223,7 +223,7 @@ class StockLevel(BaseModel):
     product_id: int
     product_name: str
     sku: Optional[str]
-    current_stock: int
+    current_stock: float
     base_unit: str
     category: Optional[str]
     selling_price: float
@@ -247,29 +247,29 @@ class InventoryTurnoverReport(BaseModel):
     product_name: str
     sku: Optional[str]
     turnover_ratio: float
-    sold_quantity: int
+    sold_quantity: float
     average_stock: float
     period_days: int
 
 class StockMovement(BaseModel):
     date: str
     movement_type: str  # 'sale', 'purchase', 'adjustment'
-    quantity: int
+    quantity: float
     reference: str  # sale_id, purchase_id, etc.
-    balance_after: int
+    balance_after: float
 
 class StockMovementReport(BaseModel):
     product_id: int
     product_name: str
     sku: Optional[str]
     movements: List[StockMovement]
-    current_stock: int
+    current_stock: float
 
 class ProductPerformance(BaseModel):
     product_id: int
     product_name: str
     sku: Optional[str]
-    sold_quantity: int
+    sold_quantity: float
     revenue: float
     avg_daily_sales: float
     stock_turnover_days: Optional[float]
@@ -282,14 +282,14 @@ class VariationStock(BaseModel):
     variation_id: int
     attributes: dict
     sku: Optional[str]
-    current_stock: int
+    current_stock: float
     price_adjustment: float
 
 class VariationStockReport(BaseModel):
     product_id: int
     product_name: str
     variations: List[VariationStock]
-    total_stock: int
+    total_stock: float
 
 # Financial Reports
 class ProfitLossItem(BaseModel):
@@ -335,7 +335,7 @@ class CashFlowReport(BaseModel):
 class RevenueBreakdownItem(BaseModel):
     category: str
     revenue: float
-    quantity: int
+    quantity: float
 
 class PaymentMethodBreakdownItem(BaseModel):
     payment_method: str
@@ -352,7 +352,7 @@ class MarginItem(BaseModel):
     sku: Optional[str]
     selling_price: float
     purchase_price: Optional[float]
-    sold_quantity: int
+    sold_quantity: float
     revenue: float
     cost_of_goods: float
     profit: float
@@ -445,7 +445,7 @@ class ProductCostItem(BaseModel):
     avg_purchase_price: float
     min_purchase_price: float
     max_purchase_price: float
-    total_purchased_quantity: int
+    total_purchased_quantity: float
 
 class ProductCostReport(BaseModel):
     products: List[ProductCostItem]
@@ -462,7 +462,7 @@ class PurchaseTimelineReport(BaseModel):
 
 class ProductPurchase(BaseModel):
     product_name: str
-    total_quantity: int
+    total_quantity: float
     total_cost: float
     avg_unit_cost: float
     vendors: List[str]
@@ -505,11 +505,23 @@ class UserActivity(BaseModel):
     details: dict
     ip_address: Optional[str]
 
-class UserActivityReport(BaseModel):
+class UserSalesActivity(BaseModel):
     user_id: int
     username: str
-    activities: List[UserActivity]
-    total_actions: int
+    role: Optional[str] = None
+    sales_count: int
+    total_revenue: float
+
+
+class UserRoleCount(BaseModel):
+    role: Optional[str] = None
+    count: int
+
+
+class UserActivityReport(BaseModel):
+    """Sales per user and user counts per role (shape used by the Users report screen)."""
+    user_sales: List[UserSalesActivity]
+    user_roles: List[UserRoleCount]
 
 class UserPerformanceItem(BaseModel):
     user_id: int
@@ -519,7 +531,7 @@ class UserPerformanceItem(BaseModel):
     total_revenue: float
     avg_sale_value: float
     daily_avg_sales: float
-    items_sold: int
+    items_sold: float
 
 class UserPerformanceReport(BaseModel):
     users: List[UserPerformanceItem]

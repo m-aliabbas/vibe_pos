@@ -813,7 +813,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
   }
 
   return (
-    <div className="p-6 h-full flex flex-col gap-6">
+    <div className="p-6 h-full flex flex-col gap-5">
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -822,7 +822,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
             Back
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">{customer.name || "Unnamed Customer"}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{customer.name || "Unnamed Customer"}</h1>
             <p className="text-muted-foreground">
               {customer.customer_id && `Customer ID: ${customer.customer_id}`}
               {customer.phone && ` • Phone: ${customer.phone}`}
@@ -1019,7 +1019,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="payment-amount">Payment Amount ($)</Label>
+                  <Label htmlFor="payment-amount">Payment Amount (Rs)</Label>
                   <Input
                     id="payment-amount"
                     type="number"
@@ -1153,7 +1153,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="advance-amount">Amount Paid ($)</Label>
+                  <Label htmlFor="advance-amount">Amount Paid (Rs)</Label>
                   <Input
                     id="advance-amount"
                     type="number"
@@ -1512,7 +1512,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
                                     </div>
                                     <div className="space-y-2">
                                       <Label htmlFor="payment-amount">Payment Amount</Label>
-                                      <Input
+                                      <Input showWords
                                         id="payment-amount"
                                         type="number"
                                         step="0.01"
@@ -1648,7 +1648,7 @@ export default function CustomerDetailsPage({ params }: { params: Promise<{ id: 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="edit-advance-amount">Amount</Label>
-              <Input
+              <Input showWords
                 id="edit-advance-amount"
                 type="number"
                 min="0.01"
@@ -2015,7 +2015,7 @@ function AllPaymentsTab({ customerId, customerPayments, onRefresh }: { customerI
             <div className="space-y-4">
               <div>
                 <Label>Amount</Label>
-                <Input
+                <Input showWords
                   type="number"
                   value={editPayment.amount}
                   onChange={(e) => setEditPayment({ ...editPayment, amount: parseFloat(e.target.value) || 0 })}

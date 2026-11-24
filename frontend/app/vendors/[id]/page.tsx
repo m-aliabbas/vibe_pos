@@ -661,15 +661,15 @@ export default function VendorDetailsPage() {
     });
 
     return (
-        <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+        <div className="p-6 h-full flex flex-col gap-5">
             <Button variant="ghost" onClick={() => router.back()} className="shrink-0 self-start">
                 <ArrowLeft className="mr-2 h-4 w-4" /> Back to Vendors
             </Button>
 
-            <div className="shrink-0 flex flex-col md:flex-row justify-between items-start gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-gray-900">{vendor.name}</h1>
-                    <div className="flex items-center gap-4 text-gray-500 mt-2">
+            <div className="shrink-0 flex flex-col xl:flex-row justify-between items-start gap-4">
+                <div className="min-w-0">
+                    <h1 className="text-2xl font-semibold tracking-tight text-gray-900">{vendor.name}</h1>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-500 mt-2">
                         <span>{vendor.contact_name}</span>
                         <span>•</span>
                         <span>{vendor.email}</span>
@@ -678,7 +678,7 @@ export default function VendorDetailsPage() {
                     </div>
                     <p className="text-sm text-gray-400 mt-1">{vendor.address}</p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 xl:justify-end">
                     <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
                         <DialogTrigger asChild>
                             <Button variant="outline">

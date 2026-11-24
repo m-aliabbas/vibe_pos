@@ -39,6 +39,8 @@ export function AutoBreadcrumb() {
         label: labelFor(segment),
     }));
     const homeHref = user.role === 'admin' ? '/admin' : '/sales';
+    // Folders that have no page of their own are shown as plain text.
+    const NO_PAGE = new Set(['/admin/reports', '/sales/invoice', '/purchases', '/inventory/variations']);
 
     return (
         <div className="flex items-center justify-between gap-4 border-b bg-white px-4 py-1.5">
@@ -47,7 +49,7 @@ export function AutoBreadcrumb() {
                     {crumbs.length === 0 && <li className="text-base font-semibold text-gray-900">Home</li>}
                     {crumbs.length > 0 && (
                         <li>
-                            <Link href={homeHref} className="text-[#714b67] hover:underline">
+                            <Link href={homeHref} className="text-gray-600 hover:text-gray-900 hover:underline">
                                 Home
                             </Link>
                         </li>
@@ -58,12 +60,12 @@ export function AutoBreadcrumb() {
                             <React.Fragment key={crumb.href}>
                                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden="true" />
                                 <li className="truncate">
-                                    {isLast ? (
-                                        <span aria-current="page" className="text-base font-semibold text-gray-900">
+                                    {isLast || NO_PAGE.has(crumb.href) ? (
+                                        <span aria-current={isLast ? 'page' : undefined} className={isLast ? 'text-base font-semibold text-gray-900' : 'text-gray-600'}>
                                             {crumb.label}
                                         </span>
                                     ) : (
-                                        <Link href={crumb.href} className="text-[#714b67] hover:underline">
+                                        <Link href={crumb.href} className="text-gray-600 hover:text-gray-900 hover:underline">
                                             {crumb.label}
                                         </Link>
                                     )}

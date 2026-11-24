@@ -207,10 +207,10 @@ export default function VendorsPage() {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+        <div className="p-6 h-full flex flex-col gap-5">
             <div className="shrink-0 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Vendors</h1>
+                    <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Vendors</h1>
                     <p className="text-gray-500 mt-1">Manage your suppliers and partners.</p>
                 </div>
                 <div className="flex items-center gap-2">

@@ -1,9 +1,15 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { amountInWords } from "@/lib/words"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
-  return (
+type InputProps = React.ComponentProps<"input"> & {
+  /** Money field: show the typed amount in words underneath (e.g. "One Thousand Rupees Only"). */
+  showWords?: boolean
+}
+
+function Input({ className, type, showWords, ...props }: InputProps) {
+  const input = (
     <input
       type={type}
       data-slot="input"
@@ -16,6 +22,25 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
       {...props}
     />
   )
+  if (!showWords) return input
+  const words = amountInWords(props.value as string | number | undefined)
+  return (
+    <>
+      {input}
+      <AmountWords text={words} />
+    </>
+  )
 }
 
-export { Input }
+/** Small line that spells out an amount. Renders nothing when there is no amount. */
+function AmountWords({ text, value, className }: { text?: string; value?: number | string | null; className?: string }) {
+  const words = text ?? amountInWords(value)
+  if (!words) return null
+  return (
+    <p data-slot="amount-words" className={cn("mt-1 text-xs leading-snug text-muted-foreground", className)} aria-live="polite">
+      {words}
+    </p>
+  )
+}
+
+export { Input, AmountWords }

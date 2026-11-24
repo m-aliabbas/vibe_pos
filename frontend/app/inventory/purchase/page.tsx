@@ -640,8 +640,8 @@ function PurchasePageContent() {
         };
 
     return (
-        <div className="container mx-auto p-6 max-w-[1400px] h-full overflow-y-auto">
-            <h1 className="text-3xl font-bold mb-8">New Purchase Order</h1>
+        <div className="p-6 h-full overflow-y-auto">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 mb-6">New Purchase Order</h1>
 
             <div className="space-y-6">
                 {/* 1. Select Vendor */}
@@ -827,7 +827,7 @@ function PurchasePageContent() {
                             />
                         </div>
                         <div className="col-span-2">
-                            <Label className="mb-2 block">Unit Cost ($)</Label>
+                            <Label className="mb-2 block">Unit Cost (Rs)</Label>
                             <Input
                                 ref={costInputRef}
                                 type="number"
@@ -918,7 +918,7 @@ function PurchasePageContent() {
                                         )}
                                     </div>
                                     <div className="col-span-2 text-right font-medium">{item.quantity}</div>
-                                    <div className="col-span-2 text-right">${item.unit_cost.toFixed(2)}</div>
+                                    <div className="col-span-2 text-right">Rs {item.unit_cost.toFixed(2)}</div>
                                     <div className="col-span-2 text-right font-bold">rs {item.total_cost.toFixed(2)}</div>
                                     <div className="col-span-2 text-right text-sm text-muted-foreground">
                                         {item.expiry_date
@@ -967,8 +967,8 @@ function PurchasePageContent() {
                         </div>
 
                         <div>
-                            <Label className="mb-2 block">Amount Paid Now ($)</Label>
-                            <Input
+                            <Label className="mb-2 block">Amount Paid Now (Rs)</Label>
+                            <Input showWords
                                 type="number"
                                 step="0.01"
                                 value={amountPaid}
@@ -1130,7 +1130,7 @@ function PurchasePageContent() {
                                 <Label htmlFor="sellingPrice">
                                     Selling Price (rs) <span className="text-red-500">*</span>
                                 </Label>
-                                <Input
+                                <Input showWords
                                     id="sellingPrice"
                                     type="number"
                                     step="0.01"
@@ -1141,7 +1141,7 @@ function PurchasePageContent() {
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="costPrice">Cost Price (rs)</Label>
-                                <Input
+                                <Input showWords
                                     id="costPrice"
                                     type="number"
                                     step="0.01"

@@ -72,7 +72,7 @@ export default function UpdatesPage() {
       <AdminLayout>
         <div className="space-y-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Application Updates</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Application Updates</h1>
             <p className="mt-1 text-gray-600">
               Check for official VibePOS releases and download the latest installer.
             </p>

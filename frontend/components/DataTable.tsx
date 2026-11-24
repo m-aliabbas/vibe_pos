@@ -75,8 +75,8 @@ const DataTable: React.FC<DataTableProps> = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  {columns.map((column) => (
-                    <TableHead key={column.key} className={column.className}>
+                  {columns.map((column, columnIndex) => (
+                    <TableHead key={`${column.key}-${columnIndex}`} className={column.className}>
                       {column.label}
                     </TableHead>
                   ))}
@@ -85,8 +85,8 @@ const DataTable: React.FC<DataTableProps> = ({
               <TableBody>
                 {data.map((row, index) => (
                   <TableRow key={index}>
-                    {columns.map((column) => (
-                      <TableCell key={column.key} className={column.className}>
+                    {columns.map((column, columnIndex) => (
+                      <TableCell key={`${column.key}-${columnIndex}`} className={column.className}>
                         {column.render
                           ? column.render(row[column.key], row)
                           : row[column.key]?.toString() || '-'

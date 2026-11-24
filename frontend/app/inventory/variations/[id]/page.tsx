@@ -52,7 +52,7 @@ interface Product {
 export default function ManageVariationsPage() {
     const router = useRouter();
     const params = useParams();
-    const { token } = useAuthStore();
+    const { token, isLoading } = useAuthStore();
     const productId = params.id as string;
 
     const [product, setProduct] = useState<Product | null>(null);
@@ -63,12 +63,13 @@ export default function ManageVariationsPage() {
     const [generatedVariations, setGeneratedVariations] = useState<any[]>([]);
 
     useEffect(() => {
+        if (isLoading) return;
         if (!token) {
             router.push('/login');
             return;
         }
         fetchProduct();
-    }, [token, productId]);
+    }, [token, isLoading, productId]);
 
     const fetchProduct = async () => {
         try {
@@ -234,7 +235,7 @@ export default function ManageVariationsPage() {
     }
 
     return (
-        <div className="container mx-auto p-6 max-w-[1600px] h-full overflow-y-auto">
+        <div className="p-6 h-full overflow-y-auto">
             {/* Breadcrumb */}
             <Breadcrumb className="mb-6">
                 <BreadcrumbList>
@@ -259,7 +260,7 @@ export default function ManageVariationsPage() {
                         <ArrowLeft className="h-4 w-4" />
                     </Button>
                     <div>
-                        <h1 className="text-3xl font-bold">Manage Product Variations</h1>
+                        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Manage Product Variations</h1>
                         <p className="text-muted-foreground mt-1">{product.name} - Define specific variation options and their stock/pricing</p>
                     </div>
                 </div>

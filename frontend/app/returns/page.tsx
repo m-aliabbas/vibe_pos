@@ -84,11 +84,11 @@ export default function ReturnsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="p-6 h-full flex flex-col gap-6">
+      <div className="p-6 h-full flex flex-col gap-5">
         {/* Header */}
         <div className="shrink-0 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 flex items-center gap-2">
               <RotateCcw className="h-8 w-8" />
               Returns & Refunds
             </h1>

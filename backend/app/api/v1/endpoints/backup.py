@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from app.api import deps
 from app.core.config import settings
+from app.db.migrations import run_migrations
 from app.db.session import engine
 from app.services import backup_scheduler, google_drive_backup
 from app.services.backup_archive import (
@@ -86,7 +87,12 @@ def _upload_if_connected(backup: DatabaseBackup) -> tuple[bool, str | None]:
 
 
 def _restore_database(source_path: Path) -> str:
-    """Create a rollback snapshot, restore pos.db, and recycle pooled connections."""
+    """Create a rollback snapshot, restore pos.db, upgrade it, and recycle pooled connections.
+
+    A backup made by an older VibePOS is migrated immediately so the running server
+    never serves an out-of-date schema. If the upgrade fails, the previous database
+    is put back.
+    """
     safety_backup = create_database_backup(
         get_data_dir(),
         get_backup_dir(),
@@ -94,7 +100,10 @@ def _restore_database(source_path: Path) -> str:
     )
     try:
         restore_pos_database(source_path, get_data_dir())
+        engine.dispose()
+        run_migrations(engine, force=True, backup=False)  # safety_backup already holds the old state
     except Exception:
+        engine.dispose()
         restore_pos_database(safety_backup.path, get_data_dir())
         raise
     finally:
@@ -239,7 +248,7 @@ async def restore_google_drive_backup(file_id: str):
         safety_backup = await run_in_threadpool(_restore_database, temporary_path)
         return {
             "success": True,
-            "message": "pos.db restored from Google Drive successfully. Restart VibePOS before continuing.",
+            "message": "pos.db restored from Google Drive and upgraded to this version. Restart VibePOS before continuing.",
             "restored_file": POS_DATABASE_FILENAME,
             "source_filename": metadata["filename"],
             "safety_backup": safety_backup,
@@ -298,7 +307,7 @@ async def restore_backup(file: UploadFile = File(...)):
         safety_backup = await run_in_threadpool(_restore_database, temporary_path)
         return {
             "success": True,
-            "message": "pos.db restored successfully. Restart VibePOS before continuing.",
+            "message": "pos.db restored and upgraded to this version. Restart VibePOS before continuing.",
             "restored_file": POS_DATABASE_FILENAME,
             "safety_backup": safety_backup,
         }

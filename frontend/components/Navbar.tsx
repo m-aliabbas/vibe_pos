@@ -36,6 +36,8 @@ import {
   Download,
   LayoutGrid,
   Search,
+  BarChart3,
+  ClipboardCheck,
 } from 'lucide-react';
 import { getNavItems, navHotkey } from '@/lib/nav';
 
@@ -73,7 +75,7 @@ export function Navbar() {
   const visibleNavItems = getNavItems(user?.role);
 
   return (
-    <nav className="sticky top-0 z-50 bg-[#714b67] text-white shadow-sm">
+    <nav className="sticky top-0 z-50 bg-[#111111] text-white shadow-sm">
       <div className="flex h-12 items-center gap-2 px-3">
         {/* Apps menu (Ctrl+K) + brand */}
         <button
@@ -144,7 +146,7 @@ export function Navbar() {
                 className="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-white/10"
                 aria-label="User menu (Alt+U)"
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#017e84] text-sm font-semibold uppercase">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-[#111111] text-sm font-semibold uppercase">
                   {user?.username?.charAt(0) || <User className="h-4 w-4" />}
                 </span>
                 <span className="hidden md:block text-left leading-tight">
@@ -173,6 +175,16 @@ export function Navbar() {
               )}
               {user?.role === 'admin' && (
                 <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Owner tools</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => router.push('/admin/reports/sales')}>
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    Detailed Reports
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push('/stock-audit')}>
+                    <ClipboardCheck className="mr-2 h-4 w-4" />
+                    Stock Audit
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => router.push('/backup')}>
                     <Database className="mr-2 h-4 w-4" />
                     Backup
@@ -210,7 +222,7 @@ export function Navbar() {
 
       {/* Mobile Navigation */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-white/15 bg-[#714b67]">
+        <div className="md:hidden border-t border-white/15 bg-[#111111]">
           <div className="px-2 pt-2 pb-3 space-y-1">
             {visibleNavItems.map((item) => {
               const Icon = item.icon;

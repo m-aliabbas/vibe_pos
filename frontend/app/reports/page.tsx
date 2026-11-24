@@ -222,39 +222,39 @@ export default function ReportsPage() {
 
   return (
     <AdminRouteGuard>
-      <div className="h-full overflow-y-auto bg-slate-50">
-        <div className="mx-auto max-w-[1500px] space-y-6 p-4 sm:p-6 lg:p-8">
-          <div className="overflow-hidden rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-xl sm:p-8">
+      <div className="h-full overflow-y-auto">
+        <div className="space-y-5 p-6">
+          <div className="rounded-lg border bg-white p-5">
             <div className="flex flex-col justify-between gap-6 xl:flex-row xl:items-end">
               <div>
-                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-blue-200">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <BarChart3 className="h-4 w-4" /> Business intelligence
                 </div>
-                <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Reports & Analytics</h1>
-                <p className="mt-2 max-w-2xl text-sm text-slate-300 sm:text-base">
+                <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Reports & Analytics</h1>
+                <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
                   Stock risks, product demand, vendor pricing, payables, and customer value in one focused dashboard.
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-white/5 p-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 rounded-md border bg-[#fafafa] p-3 sm:grid-cols-4">
                 <div className="space-y-1">
-                  <Label htmlFor="report-start" className="text-xs text-slate-300">From</Label>
-                  <Input id="report-start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="border-white/20 bg-white text-slate-950" />
+                  <Label htmlFor="report-start" className="text-xs text-muted-foreground">From</Label>
+                  <Input id="report-start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="bg-white" />
                 </div>
                 <div className="space-y-1">
-                  <Label htmlFor="report-end" className="text-xs text-slate-300">To</Label>
-                  <Input id="report-end" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="border-white/20 bg-white text-slate-950" />
+                  <Label htmlFor="report-end" className="text-xs text-muted-foreground">To</Label>
+                  <Input id="report-end" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="bg-white" />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Show Top</Label>
+                  <Label className="text-xs text-muted-foreground">Show Top</Label>
                   <Select value={topN} onValueChange={setTopN}>
-                    <SelectTrigger className="w-full border-white/20 bg-white text-slate-950"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger>
                     <SelectContent>{[5, 10, 15, 20].map((item) => <SelectItem key={item} value={String(item)}>{item} records</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-slate-300">Trend</Label>
+                  <Label className="text-xs text-muted-foreground">Trend</Label>
                   <Select value={months} onValueChange={setMonths}>
-                    <SelectTrigger className="w-full border-white/20 bg-white text-slate-950"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-full bg-white"><SelectValue /></SelectTrigger>
                     <SelectContent>{[3, 6, 12, 18, 24].map((item) => <SelectItem key={item} value={String(item)}>{item} months</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
@@ -275,9 +275,9 @@ export default function ReportsPage() {
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { label: "Stock needs attention", value: summary.stockAttention, note: `${data?.out_of_stock_count || 0} out of stock`, icon: AlertTriangle, color: "text-amber-600", bg: "bg-amber-50" },
-              { label: "Vendor payables", value: currency.format(summary.vendorPayable), note: `Top ${topN} outstanding`, icon: WalletCards, color: "text-rose-600", bg: "bg-rose-50" },
+              { label: "Vendor payables", value: currency.format(summary.vendorPayable), note: `Top ${topN} outstanding`, icon: WalletCards, color: "text-red-600", bg: "bg-red-50" },
               { label: "Customer receivables", value: currency.format(summary.customerReceivable), note: `Top ${topN} outstanding`, icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
-              { label: "Latest month sales", value: currency.format(summary.periodRevenue), note: `${months}-month trend`, icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
+              { label: "Latest month sales", value: currency.format(summary.periodRevenue), note: `${months}-month trend`, icon: TrendingUp, color: "text-gray-700", bg: "bg-gray-100" },
             ].map(({ label, value, note, icon: Icon, color, bg }) => (
               <Card key={label} className="border-0 shadow-sm">
                 <CardContent className="flex items-center justify-between p-5">

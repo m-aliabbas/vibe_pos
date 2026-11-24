@@ -136,7 +136,7 @@ export function CashDrawerWidget({ requestId = 0, hideTrigger = false, onEnabled
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="opening-cash">Opening cash</Label>
-            <Input
+            <Input showWords
               id="opening-cash"
               type="number"
               min="0"
@@ -166,7 +166,7 @@ export function CashDrawerWidget({ requestId = 0, hideTrigger = false, onEnabled
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="closing-cash">Counted cash</Label>
-            <Input
+            <Input showWords
               id="closing-cash"
               type="number"
               min="0"

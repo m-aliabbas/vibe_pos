@@ -350,10 +350,10 @@ export default function AccountingPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto h-full flex flex-col gap-6">
+    <div className="p-6 h-full flex flex-col gap-5">
       <div className="shrink-0 flex flex-col md:flex-row justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Accounting</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Accounting</h1>
           <p className="text-gray-500">Double-entry ledger, journal, and trial balance</p>
         </div>
         <div className="flex items-center gap-2">
@@ -649,7 +649,7 @@ export default function AccountingPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="expense-amount">Amount</Label>
-                  <Input id="expense-amount" type="number" min="0.01" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))} />
+                  <Input showWords id="expense-amount" type="number" min="0.01" step="0.01" value={expenseForm.amount} onChange={(e) => setExpenseForm((prev) => ({ ...prev, amount: e.target.value }))} />
                 </div>
                 <div className="space-y-2">
                   <Label>Paid from</Label>

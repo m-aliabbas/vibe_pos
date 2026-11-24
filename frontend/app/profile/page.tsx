@@ -30,7 +30,7 @@ interface UserProfile {
 
 export default function ProfilePage() {
     const router = useRouter();
-    const { user, token } = useAuthStore();
+    const { user, token, isLoading } = useAuthStore();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
@@ -45,12 +45,13 @@ export default function ProfilePage() {
     const [saveLoading, setSaveLoading] = useState(false);
 
     useEffect(() => {
+        if (isLoading) return;
         if (!token) {
             router.push('/login');
             return;
         }
         fetchProfile();
-    }, [token, router]);
+    }, [token, isLoading, router]);
 
     const fetchProfile = async () => {
         try {
@@ -146,7 +147,7 @@ export default function ProfilePage() {
                 >
                     <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
-                <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
+                <h1 className="text-2xl font-semibold tracking-tight text-gray-900">My Profile</h1>
                 <p className="text-gray-500 mt-2">Manage your account settings and security</p>
             </div>
 

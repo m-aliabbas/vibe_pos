@@ -394,7 +394,7 @@ export default function CreateReturnPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 flex items-center gap-2">
               <RotateCcw className="h-8 w-8" />
               Process Return
             </h1>

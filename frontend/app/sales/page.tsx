@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Input, AmountWords } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -2334,7 +2334,7 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
         <div className="lg:col-span-3 flex flex-col border-r overflow-hidden">
 
           {/* Cart table header */}
-          <div className="bg-primary text-primary-foreground flex items-center text-xs font-semibold select-none shrink-0">
+          <div className="bg-[#fafafa] text-foreground border-b flex items-center text-xs font-semibold select-none shrink-0">
             <div className="grid flex-1" style={{ gridTemplateColumns: "2rem 1fr 7rem 6rem 6rem 6rem 3.5rem" }}>
               <span className="px-2 py-2 text-center">#</span>
               <span className="px-3 py-2">Description</span>
@@ -2344,7 +2344,7 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
               <span className="px-2 py-2 text-right">Total</span>
               <span className="px-2 py-2"></span>
             </div>
-            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-300 hover:text-red-100 hover:bg-red-800/40 mr-1 shrink-0" onClick={clearCart}>
+            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 mr-1 shrink-0" onClick={clearCart}>
               Clear
             </Button>
           </div>
@@ -2512,10 +2512,10 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
 
               {/* Action buttons */}
               <div className="flex flex-col gap-2 w-40 shrink-0">
-                <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-bold text-xs" size="sm" onClick={handleCheckout}>
+                <Button className="w-full h-10 font-bold text-sm" onClick={handleCheckout}>
                   <DollarSign className="h-3.5 w-3.5 mr-1 shrink-0" />Checkout (F9)
                 </Button>
-                <Button size="sm" className="w-full bg-red-700 hover:bg-red-800 text-white font-semibold text-xs" onClick={() => void holdCurrentSale()}>
+                <Button size="sm" variant="outline" className="w-full font-semibold text-xs" onClick={() => void holdCurrentSale()}>
                   Hold (F8)
                 </Button>
                 <Button size="sm" variant="outline" className="w-full text-xs" onClick={handleQuotation}>
@@ -2557,7 +2557,7 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
           </div>
 
           {/* Product list column headers */}
-          <div className="bg-primary text-primary-foreground grid text-xs font-semibold select-none shrink-0"
+          <div className="bg-[#fafafa] text-foreground border-b grid text-xs font-semibold select-none shrink-0"
             style={{ gridTemplateColumns: "1fr 5.5rem 4.5rem" }}>
             <span className="px-3 py-2">Item Name</span>
             <span className="px-2 py-2 text-right">S/Price</span>
@@ -2735,6 +2735,7 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
                   <span className="text-sm font-semibold">Payable</span>
                   <span className="text-2xl font-bold text-primary tabular-nums">rs {calculateTotal().toFixed(2)}</span>
                 </div>
+                <AmountWords value={calculateTotal()} className="-mt-2 text-right" />
                 <div className="space-y-1">
                   <Label htmlFor="amountPaid" className="flex items-center justify-between text-sm">
                     <span>Amount Paid (rs)</span>
@@ -2760,6 +2761,19 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
                   />
                   {amountPaidInWords && (
                     <p className="text-xs font-medium text-primary">In words: {amountPaidInWords}</p>
+                  )}
+                  {amountPaid.trim() !== "" && Math.abs(amountPaidValue - calculateTotal()) > 0.004 && (
+                    amountPaidValue > calculateTotal() ? (
+                      <div className="flex items-baseline justify-between rounded-md border border-foreground/20 bg-white px-3 py-2" role="status">
+                        <span className="text-sm font-semibold">Change to return</span>
+                        <span className="text-2xl font-bold tabular-nums">rs {(amountPaidValue - calculateTotal()).toFixed(2)}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-baseline justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-700" role="status">
+                        <span className="text-sm font-semibold">Remaining (udhar)</span>
+                        <span className="text-2xl font-bold tabular-nums">rs {(calculateTotal() - amountPaidValue).toFixed(2)}</span>
+                      </div>
+                    )
                   )}
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {(() => {
@@ -3385,14 +3399,14 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
                     <div className="grid gap-1.5">
                       <Label>Selling Unit</Label>
                       <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={selectedProductForVariation.base_unit}>
                             {selectedProductForVariation.base_unit} (Base unit)
                           </SelectItem>
-                          {selectedProductForVariation.selling_units.map((unit) => (
+                          {selectedProductForVariation.selling_units.filter((unit) => unit.unit !== selectedProductForVariation.base_unit).map((unit) => (
                             <SelectItem key={unit.unit} value={unit.unit}>
                               {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
                             </SelectItem>
@@ -3571,14 +3585,14 @@ Allow it again with Ctrl+B in the product list or from Inventory.`);
                 <div className="grid gap-2">
                   <Label>Selling Unit</Label>
                   <Select value={selectedUnitForRegular} onValueChange={setSelectedUnitForRegular}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={selectedProductForUnit.base_unit}>
                         {selectedProductForUnit.base_unit} (Base unit) - rs {selectedProductForUnit.selling_price.toFixed(2)}
                       </SelectItem>
-                      {selectedProductForUnit.selling_units.map((unit) => (
+                      {selectedProductForUnit.selling_units.filter((unit) => unit.unit !== selectedProductForUnit.base_unit).map((unit) => (
                         <SelectItem key={unit.unit} value={unit.unit}>
                           {unit.unit} (×{unit.conversion}) - rs {unit.price.toFixed(2)}
                         </SelectItem>

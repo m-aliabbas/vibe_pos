@@ -338,11 +338,11 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="p-6 h-full flex flex-col gap-6">
+    <div className="p-6 h-full flex flex-col gap-5">
       {/* Header */}
       <div className="shrink-0 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">Customers</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Customers</h1>
           <p className="text-muted-foreground">
             Manage customer information and purchase history
           </p>
