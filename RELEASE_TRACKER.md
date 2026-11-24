@@ -6,6 +6,34 @@ This file is the source-of-truth summary for application releases. Add user-visi
 
 
 
+## v1.0.30 - 2026-11-24
+
+### Database (automatic, no manual steps)
+
+- The database upgrades itself at every startup: missing tables, columns and indexes are added from the models, and numbered migrations run once. A backup is saved to `data/backups/pre-migration/` first. If anything fails, everything is rolled back and the server does not start on a half-upgraded database.
+- Restoring a backup from an older version upgrades it immediately; if that fails, the previous database is put back.
+- New column `products.sale_blocked` (added automatically).
+- Old `migrate_*.py` scripts moved to `backend/legacy_migrations/` (reference only, do not run).
+
+### Sales terminal
+
+- Keyboard-first: F2 search, F3 cart (arrows, +/-, D discount, Delete), F6 sell by amount, F8 hold, F9 checkout, F1 help. Enter completes a sale and starts the next one.
+- Product window: quantity and discount first, live line total, and sell-by-amount in a side panel.
+- Checkout: Amount Paid is focused first, with quick-cash buttons, Alt+1…4 payment method, a large "Change to return" / "Remaining (udhar)" line, and the payable amount in words.
+- Stop selling a product (Ctrl+B, product window, product list or Inventory). Blocked products cannot be sold, and the server enforces this.
+
+### All screens
+
+- Keyboard layer: hold Alt to see keys, Alt+1…0 menus, Ctrl+K go to any screen, / search, ↑↓ rows, Alt+N new, Alt+S save, ? help.
+- New black & white, flat, Odoo-style design with consistent page layout and list tables. Owner tools are in the user menu.
+- Amounts shown in words under money fields. "$" labels replaced by "Rs".
+
+### Fixes
+
+- Dropdowns no longer overlap neighbouring fields, and a product's base unit is no longer listed twice.
+- Inventory, Financial and Users reports no longer fail when decimal quantities have been sold. The Users report works again.
+- History, Variations and Profile no longer go to login on refresh.
+
 ## v1.0.25 - 2026-10-03
 
 ### Backup

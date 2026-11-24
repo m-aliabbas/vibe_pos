@@ -92,6 +92,8 @@ $pyInstallerArgs = @(
     "--distpath", $distDir,
     "--add-data", "${credentialFile};.",
     "--add-data", "${driveCredentialFile};.",
+    # Startup database migrations must always be bundled (see backend/MIGRATIONS.md).
+    "--collect-submodules", "app.db.migrations",
     "--collect-all", "fastapi",
     "--collect-all", "dotenv",
     "--collect-all", "starlette",
