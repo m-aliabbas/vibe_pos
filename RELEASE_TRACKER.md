@@ -4,6 +4,7 @@ This file is the source-of-truth summary for application releases. Add user-visi
 
 ## Unreleased
 
+- Fixed: databases first created by v1.0.26 failed to start on v1.0.30 ("no such column: version"). v1.0.26 used a different migration table; its history is now kept as `schema_migrations_v1026` and the upgrade continues automatically.
 
 
 ## v1.0.30 - 2026-11-24

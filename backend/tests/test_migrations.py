@@ -173,3 +173,27 @@ def test_runner_column_ddl_matches_legacy_definitions():
     assert ddl["base_unit"].endswith("DEFAULT 'piece'")
     assert ddl["selling_units"].endswith("DEFAULT '[]'")
     assert ddl["sale_blocked"].endswith("DEFAULT 0 NOT NULL")
+
+
+def test_v1026_migration_table_is_kept_aside(tmp_path):
+    """v1.0.26 created its own `schema_migrations` (no `version` column)."""
+    db = tmp_path / "pos.db"
+    _make_old_db(db)
+    with sqlite3.connect(db) as c:
+        c.executescript(
+            """
+            CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY, migration_id VARCHAR(255) NOT NULL UNIQUE,
+                checksum VARCHAR(64) NOT NULL, applied_at VARCHAR(40) NOT NULL, application_version VARCHAR(64) NOT NULL);
+            INSERT INTO schema_migrations (migration_id, checksum, applied_at, application_version)
+                VALUES ('0001_initial', 'abc', 'then', '1.0.26');
+            """
+        )
+
+    report = run_migrations(_engine(db), force=True)
+
+    assert "products.sale_blocked" in report.added_columns
+    with sqlite3.connect(db) as c:
+        assert c.execute("SELECT migration_id FROM schema_migrations_v1026").fetchall() == [("0001_initial",)]
+        assert c.execute("SELECT version FROM schema_migrations").fetchall() == [("0001",)]
+        assert c.execute("SELECT name FROM products WHERE id=1").fetchone() == ("Old rice",)
+    assert not run_migrations(_engine(db), force=True).changed

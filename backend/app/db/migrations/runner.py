@@ -188,7 +188,24 @@ def _versions():
     return sorted(VERSIONS, key=lambda m: m.VERSION)
 
 
+# v1.0.26 shipped a different migration system that also used a table called
+# ``schema_migrations`` (columns id, migration_id, checksum, ...). Its history means
+# nothing to this runner, so it is kept under another name and ours is created.
+LEGACY_MIGRATIONS_TABLE = "schema_migrations_v1026"
+
+
+def _has_foreign_migrations_table(conn: sqlite3.Connection) -> bool:
+    return MIGRATIONS_TABLE in table_names(conn) and "version" not in column_names(conn, MIGRATIONS_TABLE)
+
+
 def _ensure_migrations_table(conn: sqlite3.Connection) -> None:
+    if _has_foreign_migrations_table(conn):
+        name = LEGACY_MIGRATIONS_TABLE
+        n = 1
+        while name in table_names(conn):
+            n += 1
+            name = f"{LEGACY_MIGRATIONS_TABLE}_{n}"
+        conn.execute(f'ALTER TABLE "{MIGRATIONS_TABLE}" RENAME TO "{name}"')
     conn.execute(
         f"CREATE TABLE IF NOT EXISTS {MIGRATIONS_TABLE} ("
         "version TEXT PRIMARY KEY, "
@@ -199,7 +216,7 @@ def _ensure_migrations_table(conn: sqlite3.Connection) -> None:
 
 
 def _applied_versions(conn: sqlite3.Connection) -> list[str]:
-    if MIGRATIONS_TABLE not in table_names(conn):
+    if MIGRATIONS_TABLE not in table_names(conn) or _has_foreign_migrations_table(conn):
         return []
     return [r[0] for r in conn.execute(f"SELECT version FROM {MIGRATIONS_TABLE} ORDER BY version").fetchall()]
 
